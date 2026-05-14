@@ -49,6 +49,29 @@ body {
   z-index: 100;
 }
 
+.topbar-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--shell-text-dim);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.topbar-home:hover {
+  background: var(--shell-bg);
+  color: var(--shell-text);
+}
+
+.topbar-home:focus-visible {
+  outline: 2px solid var(--shell-accent);
+  outline-offset: 1px;
+}
+
 .topbar-logo {
   font-family: var(--hd);
   font-weight: 700;

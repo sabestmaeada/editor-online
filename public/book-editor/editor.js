@@ -207,14 +207,28 @@ function saveUserSetup() {
   if (!currentUser) return;
   const picked = document.querySelector('#userColorPalette .color-swatch.selected');
   const color = picked ? picked.dataset.color : currentUser.color;
+  const prevColor = currentUser.color;
   currentUser = { ...currentUser, color };
   persistCurrentUser(currentUser);
   // อัพเดต CSS rule → ทุก ins/del ของ user คนนี้เปลี่ยนสีพร้อมกันทันที
   applyUserColor(currentUser.uid, currentUser.color);
-  // TODO (Firebase): firestore.collection('users').doc(currentUser.uid).set({trackColor: color}, {merge:true});
   updateUserBadge();
   syncTrackingUI();
   closeUserSetup();
+
+  // 2-way sync: แจ้ง Next.js parent → save ไป Firestore
+  if (prevColor !== color) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'book-editor:color-change',
+          uid: currentUser.uid,
+          color: currentUser.color,
+        }, window.location.origin);
+      }
+    } catch (e) { /* parent cross-origin or unavailable — standalone mode */ }
+  }
+
   showToast(`เปลี่ยนสีเรียบร้อย`);
 }
 
