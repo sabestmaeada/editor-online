@@ -1,0 +1,1531 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap');
+
+/* =========================================================
+   WeasyPrint CSS - Full Replacement
+   Book Interior Trim Size: 170mm x 228mm
+   Bleed: 3mm
+   Crop Marks: enabled
+
+   ใช้ไฟล์นี้แทน CSS เดิมทั้งไฟล์
+   หมายเหตุ: .cover.cover-has-image คือ "ปกใน / หน้าเปิดเล่ม"
+   ไม่ใช่ปกหนังสือจริงแบบมีสันปก
+   ========================================================= */
+
+/* =========================================
+   1. CSS Variables & Base Setup
+   ========================================= */
+:root {
+  --bg: #FFFFFF;
+  --text: #202124;
+  --muted: #64748B;
+
+  --accent: #0078D4;
+  --accent-lt: #EAF4FF;
+  --accent-dk: #005A9E;
+
+  --border: #D6E8FA;
+  --note-bg: #F8FAFC;
+  --note-bd: #64748B;
+
+  --code-bg: #FFFFFF;
+  --code-tx: #1E293B;
+  --ln-bg: #F8FAFC;
+  --ln-tx: #64748B;
+  --ln-border: #D0D7DE;
+
+  --hd: 'IBM Plex Sans Thai', sans-serif;
+  --bd: 'Sarabun', sans-serif;
+  --cd: 'JetBrains Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: #FFFFFF;
+  color: var(--text);
+  font-family: var(--bd);
+  font-size: 10.8pt;
+  line-height: 1.48;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* =========================================
+   2. Page Setup for WeasyPrint
+   ========================================= */
+
+/* หน้าเริ่มต้น: ใช้กับหน้าที่ไม่ได้กำหนด named page */
+@page {
+  size: 170mm 228mm;
+  margin: 18mm 15mm 20mm 22mm;
+  bleed: 3mm;
+  marks: crop;
+}
+
+@page :right {
+  size: 170mm 228mm;
+  margin: 18mm 15mm 20mm 22mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-right {
+    content: counter(page);
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    font-size: 9pt;
+    color: #6B6963;
+  }
+
+  @bottom-left {
+    content: none;
+  }
+}
+
+@page :left {
+  size: 170mm 228mm;
+  margin: 18mm 22mm 20mm 15mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-left {
+    content: counter(page);
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    font-size: 9pt;
+    color: #6B6963;
+  }
+
+  @bottom-right {
+    content: none;
+  }
+}
+
+/* หน้าเต็ม: ปกใน / ภาพเปิดเล่ม / ภาพปิดเล่ม */
+@page inside-full {
+  size: 170mm 228mm;
+  margin: 0;
+  bleed: 3mm;
+  marks: crop;
+
+  @top-left { content: none; }
+  @top-center { content: none; }
+  @top-right { content: none; }
+  @bottom-left { content: none; }
+  @bottom-center { content: none; }
+  @bottom-right { content: none; }
+}
+
+/* หน้า front matter: ลิขสิทธิ์ / คำนำ / สารบัญ ไม่มีเลขหน้า */
+@page frontmatter:right {
+  size: 170mm 228mm;
+  margin: 18mm 15mm 20mm 22mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-left { content: none; }
+  @bottom-center { content: none; }
+  @bottom-right { content: none; }
+}
+
+@page frontmatter:left {
+  size: 170mm 228mm;
+  margin: 18mm 22mm 20mm 15mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-left { content: none; }
+  @bottom-center { content: none; }
+  @bottom-right { content: none; }
+}
+
+/* หน้าเนื้อหา: มีเลขหน้า */
+@page body:right {
+  size: 170mm 228mm;
+  margin: 18mm 15mm 20mm 22mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-right {
+    content: counter(page);
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    font-size: 9pt;
+    color: #6B6963;
+  }
+
+  @bottom-left { content: none; }
+}
+
+@page body:left {
+  size: 170mm 228mm;
+  margin: 18mm 22mm 20mm 15mm;
+  bleed: 3mm;
+  marks: crop;
+
+  @bottom-left {
+    content: counter(page);
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    font-size: 9pt;
+    color: #6B6963;
+  }
+
+  @bottom-right { content: none; }
+}
+
+/* ถ้ามีหน้าว่างจากการบังคับซ้าย/ขวาในอนาคต จะไม่ใส่เลขหน้า */
+@page :blank {
+  @top-left { content: none; }
+  @top-center { content: none; }
+  @top-right { content: none; }
+  @bottom-left { content: none; }
+  @bottom-center { content: none; }
+  @bottom-right { content: none; }
+}
+
+/* =========================================
+   3. Page Assignment
+   ========================================= */
+.cover,
+.cover.cover-has-image {
+  page: inside-full;
+}
+
+.copyright-page,
+.preface,
+.toc {
+  page: frontmatter;
+}
+
+.chapter {
+  page: body;
+}
+
+.back-cover {
+  page: inside-full;
+}
+
+/* =========================================
+   4. Full Page: Inside Cover / Opening Page
+   ========================================= */
+.cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 170mm;
+  height: 228mm;
+  min-height: 228mm;
+  text-align: center;
+  padding: 22mm 18mm;
+  background: #FFFFFF;
+  break-after: page;
+  page-break-after: always;
+  overflow: visible;
+}
+
+.cover.cover-has-image {
+  width: 170mm;
+  height: 228mm;
+  min-height: 228mm;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+}
+
+/*
+   ค่าเริ่มต้นนี้ทำให้ภาพปกในเต็มขอบพร้อม bleed 3mm
+   ขนาดภาพที่วางจริง = 176mm x 234mm
+   ถ้าภาพมีตัวอักษร/โลโก้สำคัญชิดขอบมาก ต้องขยับในไฟล์ภาพต้นฉบับ
+*/
+.cover-image {
+  display: block;
+  width: 176mm;
+  height: 234mm;
+  margin: -3mm;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+  object-position: center center;
+  border: none;
+  border-radius: 0;
+}
+
+.cover-title {
+  font-family: var(--hd);
+  font-size: 26pt;
+  font-weight: 700;
+  color: var(--accent-dk);
+  line-height: 1.2;
+  margin-bottom: 18pt;
+}
+
+.cover-subtitle {
+  font-family: var(--hd);
+  font-size: 12.5pt;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 28pt;
+}
+
+.cover-meta {
+  font-size: 10pt;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.cover-line {
+  width: 22mm;
+  height: 1.2mm;
+  background: var(--accent);
+  margin: 22pt auto;
+  border-radius: 0;
+}
+
+/* =========================================
+   5. Book Wrap & Sections
+   ========================================= */
+.book-wrap {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.copyright-page {
+  break-before: page;
+  page-break-before: always;
+  break-after: page;
+  page-break-after: always;
+  padding-top: 26mm;
+}
+
+.copyright-inner {
+  width: 100%;
+  max-width: 120mm;
+  margin: 0 auto;
+  text-align: left;
+  color: var(--text);
+}
+
+.copyright-label {
+  font-family: var(--hd);
+  font-size: 13.5pt;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--accent-dk);
+  margin: 0 0 12pt 0;
+}
+
+.copyright-detail {
+  font-family: var(--hd);
+  font-size: 10pt;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0 0 3pt 0;
+}
+
+.copyright-detail-label {
+  font-weight: 600;
+}
+
+.copyright-legal {
+  font-family: var(--bd);
+  font-size: 9.8pt;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 12pt 0 7pt 0;
+  font-weight: 600;
+}
+
+.copyright-restriction {
+  font-family: var(--bd);
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 0 0 5pt 0;
+}
+
+.copyright-note {
+  font-family: var(--bd);
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 5pt 0 12pt 0;
+}
+
+.copyright-info-grid {
+  border-top: 0.5pt solid var(--border);
+  padding-top: 9pt;
+  margin-top: 6pt;
+}
+
+.copyright-info-item {
+  font-family: var(--bd);
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.copyright-info-label {
+  font-family: var(--hd);
+  font-weight: 600;
+  display: inline-block;
+  min-width: 28mm;
+}
+
+.preface {
+  break-before: page;
+  page-break-before: always;
+  padding: 0;
+}
+
+.preface-title {
+  font-family: var(--hd);
+  font-size: 17pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 18pt 0;
+  color: var(--accent-dk);
+}
+
+.preface-content {
+  max-width: none;
+  margin: 0;
+}
+
+.preface-content p {
+  margin-bottom: 7pt;
+  text-align: justify;
+  text-indent: 1.6em;
+  line-height: 1.48;
+  hyphens: auto;
+  orphans: 3;
+  widows: 3;
+}
+
+.toc {
+  break-before: page;
+  page-break-before: always;
+  padding: 0;
+}
+
+.toc-title {
+  font-family: var(--hd);
+  font-size: 17pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 18pt 0;
+  color: var(--accent-dk);
+}
+
+.toc-list {
+  max-width: none;
+  margin: 0;
+}
+
+.toc-item {
+  display: block;
+  text-decoration: none;
+  color: var(--text);
+  padding: 4pt 0;
+  border-bottom: 0.5pt dashed var(--border);
+}
+
+.toc-num {
+  font-family: var(--hd);
+  font-weight: 600;
+  font-size: 9pt;
+  color: var(--accent);
+  display: inline-block;
+  min-width: 20mm;
+}
+
+.toc-name {
+  font-family: var(--hd);
+  font-weight: 500;
+  font-size: 10pt;
+}
+
+.chapter {
+  break-before: page;
+  page-break-before: always;
+  padding: 0 0 12mm 0;
+}
+
+.ch-hdr {
+  text-align: center;
+  padding-bottom: 13pt;
+  margin-bottom: 18pt;
+  border-bottom: 1.5pt solid var(--accent);
+  position: relative;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ch-hdr::after {
+  content: '';
+  position: absolute;
+  bottom: -1.5pt;
+  left: 50%;
+  width: 16mm;
+  height: 1.5pt;
+  margin-left: -8mm;
+  background: var(--accent-dk);
+}
+
+.ch-num {
+  font-family: var(--hd);
+  font-size: 8pt;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 1.4pt;
+  margin-bottom: 5pt;
+  text-transform: uppercase;
+}
+
+.ch-title {
+  font-family: var(--hd);
+  font-size: 19.5pt;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.ch-meta {
+  display: none;
+}
+
+/* =========================================
+   6. Back Cover / Closing Full Page
+   ========================================= */
+.back-cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 170mm;
+  height: 228mm;
+  min-height: 228mm;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+  background: #FFFFFF;
+  break-before: page;
+  page-break-before: always;
+  break-after: avoid;
+  page-break-after: avoid;
+  overflow: visible;
+}
+
+.back-cover-image {
+  display: block;
+  width: 176mm;
+  height: 234mm;
+  margin: -3mm;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+  object-position: center center;
+  border: none;
+  border-radius: 0;
+}
+
+/* =========================================
+   7. Content Typography
+   ========================================= */
+.content h1,
+.content h2,
+.content h3,
+.content h4 {
+  font-family: var(--hd);
+  page-break-after: avoid;
+  break-after: avoid;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.content h1 {
+  font-size: 16.5pt;
+  font-weight: 700;
+  margin: 16pt 0 7pt 0;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.content h2 {
+  font-size: 13.8pt;
+  font-weight: 700;
+  color: var(--accent-dk);
+  margin: 15pt 0 7pt 0;
+  padding: 4.5pt 7pt 5.5pt 8pt;
+  line-height: 1.3;
+  border-left: 2.2pt solid var(--accent);
+  border-bottom: 1.2pt solid var(--accent);
+  background: #FFFFFF;
+}
+
+.content h3 {
+  font-size: 12.2pt;
+  font-weight: 600;
+  margin: 12pt 0 5pt 0;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.content h4 {
+  font-size: 10pt;
+  font-weight: 700;
+  color: var(--accent-dk);
+  background: var(--accent-lt);
+  border-left: 2.2pt solid var(--accent);
+  border-radius: 0;
+  padding: 4.5pt 7pt;
+  margin: 10pt 0 5pt 0;
+  display: block;
+  line-height: 1.35;
+}
+
+.content h1 + *,
+.content h2 + *,
+.content h3 + *,
+.content h4 + * {
+  page-break-before: avoid;
+  break-before: avoid;
+}
+
+.content p {
+  margin: 0 0 6.5pt 0;
+  text-align: justify;
+  text-indent: 1.6em;
+  line-height: 1.48;
+  hyphens: auto;
+  orphans: 3;
+  widows: 3;
+}
+
+.content strong,
+.content b {
+  font-weight: 600;
+  color: var(--accent-dk);
+}
+
+.content ul,
+.content ol {
+  margin: 5pt 0 8pt 15pt;
+  padding-left: 7pt;
+  line-height: 1.45;
+  orphans: 3;
+  widows: 3;
+}
+
+.content li {
+  margin-bottom: 2.5pt;
+  padding-left: 1.5pt;
+}
+
+.content ul li::marker {
+  color: var(--accent);
+}
+
+.drop-cap::first-letter {
+  font-family: var(--hd);
+  font-size: 28pt;
+  font-weight: 700;
+  color: var(--accent);
+  float: left;
+  line-height: 0.9;
+  margin: 1pt 4pt 0 0;
+}
+
+/* =========================================
+   8. Components: Code, Note, Quote, Table, Image
+   ========================================= */
+.code-block {
+  background: var(--code-bg);
+  border-radius: 0;
+  border: 0.5pt solid var(--ln-border);
+  margin: 8pt 0 10pt 0;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  background: #F5F7FA;
+  border-bottom: 0.5pt solid var(--ln-border);
+}
+
+.code-lang-badge {
+  font-family: var(--cd);
+  font-size: 7pt;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: var(--accent);
+  padding: 3pt 6pt;
+  letter-spacing: 0.5pt;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.code-filename {
+  font-family: var(--cd);
+  font-size: 7.2pt;
+  color: var(--text);
+  padding: 3pt 6pt;
+  letter-spacing: 0.1pt;
+  font-weight: 500;
+}
+
+.code-linecount {
+  font-family: var(--cd);
+  font-size: 7.2pt;
+  color: var(--ln-tx);
+  margin-left: auto;
+  padding: 3pt 6pt;
+}
+
+.code-block pre {
+  padding: 5pt 0;
+  margin: 0;
+  white-space: pre-wrap;
+  counter-reset: line-num;
+  background: #FFFFFF;
+}
+
+.code-block code {
+  font-family: var(--cd);
+  font-size: 8pt;
+  color: var(--code-tx);
+  line-height: 1.35;
+  display: block;
+  white-space: pre-wrap;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+.line {
+  display: block;
+  counter-increment: line-num;
+  padding-left: 3.4em;
+  padding-right: 6pt;
+  position: relative;
+  min-height: 1.35em;
+  color: var(--code-tx);
+  font-size: 8pt;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.line::before {
+  content: counter(line-num);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.8em;
+  text-align: right;
+  padding-right: 0.5em;
+  color: var(--ln-tx);
+  font-size: 7pt;
+  line-height: 1.35;
+  border-right: 0.5pt solid var(--ln-border);
+  background: var(--ln-bg);
+}
+
+.inline-code {
+  font-family: var(--cd);
+  font-size: 9pt;
+  background: #F1F3F5;
+  color: #333333;
+  padding: 0.8pt 3pt;
+  border-radius: 0;
+  border: 0.5pt solid #D0D7DE;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+.note {
+  background: var(--note-bg);
+  border: 0.5pt solid #E5E7EB;
+  border-left: 2.2pt solid var(--note-bd);
+  border-radius: 0;
+  padding: 7pt 9pt;
+  margin: 9pt 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.note-label {
+  font-family: var(--hd);
+  font-weight: 700;
+  font-size: 9pt;
+  color: #7A5B00;
+  margin-bottom: 3pt;
+  display: block;
+  line-height: 1.3;
+}
+
+.note p {
+  margin: 0;
+  font-size: 9.8pt;
+  line-height: 1.45;
+  text-indent: 0;
+}
+
+blockquote {
+  border-left: 2.2pt solid var(--accent);
+  background: var(--accent-lt);
+  padding: 7pt 9pt;
+  margin: 9pt 0;
+  border-radius: 0;
+  color: var(--accent-dk);
+  font-style: italic;
+  line-height: 1.45;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+hr {
+  border: none;
+  height: 0.5pt;
+  background: var(--border);
+  margin: 14pt 0;
+}
+
+.table-wrap {
+  overflow: visible;
+  margin: 9pt 0;
+  border-radius: 0;
+  border: 0.5pt solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.2pt;
+}
+
+thead {
+  display: table-header-group;
+  background: var(--accent-lt);
+}
+
+tfoot {
+  display: table-footer-group;
+}
+
+tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+th {
+  font-family: var(--hd);
+  font-weight: 600;
+  text-align: left;
+  padding: 4.5pt 6pt;
+  border-bottom: 0.8pt solid var(--accent);
+  color: var(--accent-dk);
+}
+
+td {
+  padding: 4pt 6pt;
+  border-bottom: 0.5pt solid var(--border);
+  vertical-align: top;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.book-img {
+  margin: 11pt 0;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  display: block;
+}
+
+.book-img img {
+  max-width: 62%;
+  max-height: 105mm;
+  display: block;
+  margin: 0 auto;
+  border-radius: 0;
+  border: 0.5pt solid #CCCCCC;
+  object-fit: contain;
+}
+
+.book-img figcaption {
+  font-family: var(--hd);
+  font-size: 8.5pt;
+  color: var(--muted);
+  margin-top: 4.5pt;
+  font-style: italic;
+  text-align: center;
+}
+
+.img-placeholder {
+  background: #FFFFFF;
+  border: 0.7pt dashed #999999;
+  border-radius: 0;
+  padding: 12pt;
+  margin: 9pt 0;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.img-icon {
+  font-size: 16pt;
+  margin-bottom: 4pt;
+}
+
+.img-desc {
+  font-family: var(--hd);
+  font-size: 9pt;
+  font-weight: 600;
+  color: #3D4F7C;
+  margin-bottom: 3pt;
+}
+
+.img-prompt {
+  font-family: var(--cd);
+  font-size: 7pt;
+  color: #6B7280;
+  background: #F9FAFB;
+  padding: 3pt 5pt;
+  border-radius: 0;
+  display: inline-block;
+  border: 0.5pt solid #E5E7EB;
+}
+
+/* =========================================
+   9. WeasyPrint Print Safeguards
+   ========================================= */
+.cover-meta,
+.book-footer {
+  display: none;
+}
+
+img {
+  image-rendering: auto;
+}
+
+/* ตัด emoji generated content เพื่อเลี่ยงปัญหาฟอนต์ใน PDF โรงพิมพ์ */
+.content h4::before,
+.code-filename::before {
+  content: none;
+}
+
+/* ใช้สำหรับบังคับขึ้นหน้าใหม่ใน HTML ถ้าจำเป็น */
+.page-break,
+.break-page {
+  break-after: page;
+  page-break-after: always;
+}
+
+.keep-together {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* =========================================================
+   Prompt Headings Override
+   h1-h4 ใช้ Prompt โดยเฉพาะ
+   ========================================================= */
+.content h1,
+.content h2,
+.content h3,
+.content h4 {
+  font-family: 'Prompt', 'IBM Plex Sans Thai', 'Sarabun', sans-serif !important;
+  font-style: normal !important;
+}
+
+.content h1,
+.content h2,
+.content h4 {
+  font-weight: 700 !important;
+}
+
+.content h3 {
+  font-weight: 600 !important;
+}
+
+/* =========================================================
+   FIX 2026-05-12
+   1) ลดขนาดข้อความภายในตารางให้มีผลจริง แม้มี p/span/code อยู่ใน td
+   2) ลดโอกาสหัวข้อ h1-h4 ห้อยท้ายหน้ากระดาษใน WeasyPrint
+   ========================================================= */
+
+/* ---------- Compact table text for print ---------- */
+.table-wrap {
+  margin: 7pt 0 8pt 0 !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+}
+
+table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+}
+
+table * {
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+  box-sizing: border-box !important;
+}
+
+thead {
+  display: table-header-group !important;
+}
+
+tfoot {
+  display: table-footer-group !important;
+}
+
+th {
+  font-family: 'Prompt', 'IBM Plex Sans Thai', 'Sarabun', sans-serif !important;
+  font-size: 8.2pt !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  padding: 3.2pt 4.5pt !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  hyphens: auto !important;
+}
+
+td {
+  font-family: var(--bd) !important;
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+  padding: 3pt 4.5pt !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  hyphens: auto !important;
+}
+
+/* ถ้าใน cell มี paragraph/list จาก markdown ให้ไม่ดึง style ย่อหน้าปกติของเนื้อหาเข้ามา */
+th p,
+td p,
+th .content p,
+td .content p,
+.content th p,
+.content td p {
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+  margin: 0 0 2pt 0 !important;
+  padding: 0 !important;
+  text-indent: 0 !important;
+  text-align: left !important;
+  hyphens: auto !important;
+  orphans: 2 !important;
+  widows: 2 !important;
+}
+
+th p:last-child,
+td p:last-child,
+.content th p:last-child,
+.content td p:last-child {
+  margin-bottom: 0 !important;
+}
+
+th ul,
+th ol,
+td ul,
+td ol,
+.content th ul,
+.content th ol,
+.content td ul,
+.content td ol {
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+  margin: 1.5pt 0 1.5pt 8pt !important;
+  padding-left: 5pt !important;
+}
+
+th li,
+td li,
+.content th li,
+.content td li {
+  font-size: 8pt !important;
+  line-height: 1.28 !important;
+  margin: 0 0 1pt 0 !important;
+  padding-left: 0 !important;
+}
+
+/* inline-code/code ในตารางต้องเล็กกว่า code ปกติ ไม่เช่นนั้น cell จะสูงเกิน */
+th code,
+td code,
+th pre,
+td pre,
+th .inline-code,
+td .inline-code,
+.content th code,
+.content td code,
+.content th pre,
+.content td pre,
+.content th .inline-code,
+.content td .inline-code {
+  font-family: var(--cd) !important;
+  font-size: 7.2pt !important;
+  line-height: 1.22 !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-wrap: break-word !important;
+}
+
+th .inline-code,
+td .inline-code,
+.content th .inline-code,
+.content td .inline-code {
+  padding: 0.3pt 1.8pt !important;
+  border-width: 0.4pt !important;
+}
+
+/* รูปในตารางไม่ควรดันความสูง cell มากเกินไป */
+th img,
+td img,
+.content th img,
+.content td img {
+  max-width: 100% !important;
+  max-height: 32mm !important;
+  height: auto !important;
+  object-fit: contain !important;
+}
+
+/* ถ้าตารางไม่ใหญ่มาก ให้แถวอยู่ด้วยกัน แต่ยังยอมแตกเมื่อจำเป็น */
+tr {
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+
+/* ---------- Heading keep-with-next improvements ---------- */
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+.ch-hdr,
+.ch-title,
+.preface-title,
+.toc-title {
+  break-after: avoid-page !important;
+  page-break-after: avoid !important;
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+  orphans: 3 !important;
+  widows: 3 !important;
+}
+
+/* Element แรกหลังหัวข้อห้ามถูกดันไปขึ้นหน้าใหม่ถ้าเลี่ยงได้ */
+.content h1 + *,
+.content h2 + *,
+.content h3 + *,
+.content h4 + *,
+.ch-hdr + *,
+.preface-title + *,
+.toc-title + * {
+  break-before: avoid-page !important;
+  page-break-before: avoid !important;
+}
+
+/* ลดช่องว่างหัวข้อเล็กน้อย เพื่อให้หัวข้อ + เนื้อหาแรกมีโอกาสอยู่หน้าเดียวกันมากขึ้น */
+.content h1 {
+  font-size: 15.8pt !important;
+  line-height: 1.22 !important;
+  margin: 13pt 0 5.5pt 0 !important;
+}
+
+.content h2 {
+  font-size: 13.2pt !important;
+  line-height: 1.24 !important;
+  margin: 12pt 0 5.5pt 0 !important;
+  padding: 4pt 6.5pt 5pt 7.5pt !important;
+}
+
+.content h3 {
+  font-size: 11.7pt !important;
+  line-height: 1.25 !important;
+  margin: 10pt 0 4.5pt 0 !important;
+}
+
+.content h4 {
+  font-size: 9.7pt !important;
+  line-height: 1.28 !important;
+  margin: 8pt 0 4pt 0 !important;
+  padding: 4pt 6.5pt !important;
+}
+
+/* ย่อหน้า/รายการแรกหลังหัวข้อ: ให้เป็น block ที่ WeasyPrint พยายาม keep กับหัวข้อ */
+.content h1 + p,
+.content h2 + p,
+.content h3 + p,
+.content h4 + p,
+.content h1 + ul,
+.content h2 + ul,
+.content h3 + ul,
+.content h4 + ul,
+.content h1 + ol,
+.content h2 + ol,
+.content h3 + ol,
+.content h4 + ol,
+.content h1 + .note,
+.content h2 + .note,
+.content h3 + .note,
+.content h4 + .note,
+.content h1 + .table-wrap,
+.content h2 + .table-wrap,
+.content h3 + .table-wrap,
+.content h4 + .table-wrap,
+.content h1 + .book-img,
+.content h2 + .book-img,
+.content h3 + .book-img,
+.content h4 + .book-img,
+.content h1 + blockquote,
+.content h2 + blockquote,
+.content h3 + blockquote,
+.content h4 + blockquote {
+  break-before: avoid-page !important;
+  page-break-before: avoid !important;
+  orphans: 3 !important;
+  widows: 3 !important;
+}
+
+/* สำหรับกรณีหัวข้อตามด้วยตาราง/รูปใหญ่ ถ้ายังห้อย ให้ใส่ class นี้ครอบ h + block ถัดไปใน HTML */
+.keep-heading-with-next {
+  break-inside: avoid-page !important;
+  page-break-inside: avoid !important;
+}
+
+/* =========================================================
+   TYPOGRAPHY NORMALIZATION PATCH
+   Goal: make body text, lists, notes, code, and tables consistent
+   for WeasyPrint book output 170mm x 228mm.
+   Append at the end of the CSS file.
+   ========================================================= */
+
+/* ---------- 1) Global book text scale ---------- */
+html,
+body {
+  font-size: 10.6pt !important;
+  line-height: 1.46 !important;
+}
+
+/* ---------- 2) Normal paragraphs ---------- */
+.content p,
+.preface-content p {
+  font-size: 10.6pt !important;
+  line-height: 1.46 !important;
+  margin: 0 0 6pt 0 !important;
+  text-indent: 1.45em !important;
+  text-align: justify !important;
+  hyphens: auto !important;
+  orphans: 3 !important;
+  widows: 3 !important;
+}
+
+/* Paragraphs immediately after headings should not have top gaps */
+.content h1 + p,
+.content h2 + p,
+.content h3 + p,
+.content h4 + p {
+  margin-top: 0 !important;
+}
+
+/* ---------- 3) Lists ---------- */
+.content ul,
+.content ol {
+  font-size: 10.4pt !important;
+  line-height: 1.43 !important;
+  margin: 4.5pt 0 7pt 14pt !important;
+  padding-left: 7pt !important;
+  orphans: 3 !important;
+  widows: 3 !important;
+}
+
+.content li {
+  font-size: 10.4pt !important;
+  line-height: 1.43 !important;
+  margin: 0 0 2.2pt 0 !important;
+  padding-left: 1.2pt !important;
+}
+
+.content li > p {
+  font-size: 10.4pt !important;
+  line-height: 1.43 !important;
+  margin: 0 0 3pt 0 !important;
+  text-indent: 0 !important;
+}
+
+.content li > p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ---------- 4) Notes / callout boxes ---------- */
+.note {
+  font-size: 10pt !important;
+  line-height: 1.42 !important;
+  padding: 6.5pt 8pt !important;
+  margin: 8pt 0 !important;
+}
+
+.note-label {
+  font-size: 9.3pt !important;
+  line-height: 1.28 !important;
+  margin-bottom: 3pt !important;
+}
+
+.note p,
+.note li,
+.note span,
+.note strong,
+.note b {
+  font-size: 10pt !important;
+  line-height: 1.42 !important;
+}
+
+.note p {
+  margin: 0 0 4pt 0 !important;
+  text-indent: 0 !important;
+  text-align: left !important;
+}
+
+.note p:last-child {
+  margin-bottom: 0 !important;
+}
+
+.note ul,
+.note ol {
+  font-size: 10pt !important;
+  line-height: 1.42 !important;
+  margin: 3pt 0 3pt 12pt !important;
+  padding-left: 6pt !important;
+}
+
+/* ---------- 5) Inline code in normal text ---------- */
+.inline-code,
+.content code:not(.line):not(pre code) {
+  font-family: var(--cd) !important;
+  font-size: 8.9pt !important;
+  line-height: 1.2 !important;
+  padding: 0.6pt 2.6pt !important;
+}
+
+/* ---------- 6) Code blocks ---------- */
+.code-block {
+  margin: 7pt 0 9pt 0 !important;
+}
+
+.code-header {
+  min-height: 0 !important;
+}
+
+.code-lang-badge {
+  font-size: 6.8pt !important;
+  line-height: 1.15 !important;
+  padding: 2.6pt 5.5pt !important;
+}
+
+.code-filename,
+.code-linecount {
+  font-size: 6.9pt !important;
+  line-height: 1.15 !important;
+  padding: 2.6pt 5.5pt !important;
+}
+
+.code-block pre {
+  padding: 4.5pt 0 !important;
+}
+
+.code-block code,
+.line {
+  font-family: var(--cd) !important;
+  font-size: 7.8pt !important;
+  line-height: 1.32 !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.line {
+  min-height: 1.32em !important;
+  padding-left: 3.3em !important;
+  padding-right: 5.5pt !important;
+}
+
+.line::before {
+  font-size: 6.8pt !important;
+  line-height: 1.32 !important;
+  width: 2.75em !important;
+  padding-right: 0.45em !important;
+}
+
+/* ---------- 7) Tables ---------- */
+.table-wrap {
+  margin: 7pt 0 8pt 0 !important;
+}
+
+table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+}
+
+table * {
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+  box-sizing: border-box !important;
+}
+
+th {
+  font-family: 'Prompt', 'IBM Plex Sans Thai', 'Sarabun', sans-serif !important;
+  font-size: 8.1pt !important;
+  line-height: 1.24 !important;
+  padding: 3pt 4.2pt !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+  word-wrap: break-word !important;
+  word-break: normal !important;
+  hyphens: auto !important;
+}
+
+td {
+  font-family: var(--bd) !important;
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+  padding: 2.8pt 4.2pt !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+  word-wrap: break-word !important;
+  word-break: normal !important;
+  hyphens: auto !important;
+}
+
+th p,
+td p,
+.content th p,
+.content td p {
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+  margin: 0 0 1.8pt 0 !important;
+  padding: 0 !important;
+  text-indent: 0 !important;
+  text-align: left !important;
+}
+
+th p:last-child,
+td p:last-child,
+.content th p:last-child,
+.content td p:last-child {
+  margin-bottom: 0 !important;
+}
+
+th ul,
+th ol,
+td ul,
+td ol,
+.content th ul,
+.content th ol,
+.content td ul,
+.content td ol {
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+  margin: 1.2pt 0 1.2pt 7pt !important;
+  padding-left: 5pt !important;
+}
+
+th li,
+td li,
+.content th li,
+.content td li {
+  font-size: 8pt !important;
+  line-height: 1.26 !important;
+  margin: 0 0 0.8pt 0 !important;
+  padding-left: 0 !important;
+}
+
+th code,
+td code,
+th pre,
+td pre,
+th .inline-code,
+td .inline-code,
+.content th code,
+.content td code,
+.content th pre,
+.content td pre,
+.content th .inline-code,
+.content td .inline-code {
+  font-family: var(--cd) !important;
+  font-size: 7.1pt !important;
+  line-height: 1.2 !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-wrap: break-word !important;
+  word-break: normal !important;
+  padding: 0.2pt 1.5pt !important;
+}
+
+/* ---------- 8) Image captions and placeholders ---------- */
+.book-img figcaption {
+  font-size: 8.4pt !important;
+  line-height: 1.35 !important;
+  margin-top: 4pt !important;
+}
+
+.img-desc {
+  font-size: 8.8pt !important;
+  line-height: 1.3 !important;
+}
+
+.img-prompt {
+  font-size: 6.8pt !important;
+  line-height: 1.25 !important;
+}
+
+/* ---------- 9) Final heading scale ---------- */
+.content h1 {
+  font-size: 15.6pt !important;
+  line-height: 1.22 !important;
+  margin: 12.5pt 0 5.2pt 0 !important;
+}
+
+.content h2 {
+  font-size: 13.1pt !important;
+  line-height: 1.24 !important;
+  margin: 11.5pt 0 5.2pt 0 !important;
+  padding: 3.8pt 6.2pt 4.8pt 7.2pt !important;
+}
+
+.content h3 {
+  font-size: 11.6pt !important;
+  line-height: 1.25 !important;
+  margin: 9.5pt 0 4.2pt 0 !important;
+}
+
+.content h4 {
+  font-size: 9.7pt !important;
+  line-height: 1.28 !important;
+  margin: 7.5pt 0 3.8pt 0 !important;
+  padding: 3.8pt 6.2pt !important;
+}

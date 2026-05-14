@@ -1,0 +1,823 @@
+/* ==============================================
+   Book Editor — CSS
+   ============================================== */
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  --shell-bg: #16171B;
+  --shell-surface: #1E1F24;
+  --shell-border: #2A2B31;
+  --shell-text: #C8C9CE;
+  --shell-text-dim: #6B6D75;
+  --shell-accent: #1A6B52;
+  --shell-accent-hover: #22896A;
+  --shell-accent-lt: rgba(26,107,82,.15);
+  --shell-danger: #E55353;
+  --shell-warning: #F5C842;
+  --shell-toolbar-bg: #22232A;
+  --shell-sidebar-w: 260px;
+  --shell-toolbar-h: 44px;
+  --shell-topbar-h: 48px;
+  --hd: 'IBM Plex Sans Thai', sans-serif;
+  --bd: 'Sarabun', sans-serif;
+  --cd: 'JetBrains Mono', monospace;
+}
+
+/* ===== RESET ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--shell-bg);
+  color: var(--shell-text);
+  font-family: var(--bd);
+  font-size: 14px;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ==============================================
+   TOP BAR
+   ============================================== */
+.topbar {
+  height: var(--shell-topbar-h);
+  background: var(--shell-surface);
+  border-bottom: 1px solid var(--shell-border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  z-index: 100;
+}
+
+.topbar-logo {
+  font-family: var(--hd);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--shell-accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.topbar-logo svg { flex-shrink: 0; }
+
+.topbar-title {
+  font-family: var(--hd);
+  font-size: 13px;
+  color: var(--shell-text);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 12px;
+}
+
+.topbar-actions { display: flex; gap: 6px; }
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--shell-border);
+  color: var(--shell-text-dim);
+  font-family: var(--hd);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.user-badge:hover {
+  background: var(--shell-accent-lt);
+  color: var(--shell-text);
+}
+.user-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--shell-text-dim);
+  display: inline-block;
+}
+
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--shell-accent); }
+
+/* ==============================================
+   BUTTONS
+   ============================================== */
+.btn {
+  font-family: var(--hd);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .15s;
+  white-space: nowrap;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--shell-text-dim);
+  border: 1px solid var(--shell-border);
+}
+.btn-ghost:hover {
+  background: var(--shell-accent-lt);
+  color: var(--shell-accent);
+  border-color: var(--shell-accent);
+}
+
+.btn-primary {
+  background: var(--shell-accent);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--shell-accent-hover); }
+
+.btn-danger {
+  background: rgba(229,83,83,.12);
+  color: var(--shell-danger);
+  border: 1px solid rgba(229,83,83,.2);
+}
+.btn-danger:hover { background: rgba(229,83,83,.22); }
+
+/* ==============================================
+   MAIN LAYOUT
+   ============================================== */
+.main-layout {
+  display: flex;
+  height: calc(100vh - var(--shell-topbar-h));
+}
+
+/* ==============================================
+   SIDEBAR
+   ============================================== */
+.sidebar {
+  width: var(--shell-sidebar-w);
+  background: var(--shell-surface);
+  border-right: 1px solid var(--shell-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width .25s, opacity .25s;
+}
+
+.sidebar.collapsed { width: 0; opacity: 0; pointer-events: none; }
+
+.sidebar-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--shell-border);
+  font-family: var(--hd);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--shell-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.sidebar-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all .15s;
+  margin-bottom: 2px;
+}
+.sidebar-item:hover { background: var(--shell-accent-lt); }
+.sidebar-item.active {
+  background: var(--shell-accent-lt);
+  border-left: 3px solid var(--shell-accent);
+}
+
+.sidebar-item-num {
+  font-family: var(--cd);
+  font-size: 10px;
+  color: var(--shell-accent);
+  font-weight: 600;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.sidebar-item-title {
+  font-family: var(--hd);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--shell-text);
+  line-height: 1.4;
+}
+
+.sidebar-item-meta {
+  font-size: 11px;
+  color: var(--shell-text-dim);
+  margin-top: 2px;
+}
+
+/* ==============================================
+   EDITOR PANEL
+   ============================================== */
+.editor-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0; /* flex fix: ให้ editor-panel หดได้ — กัน banner ถูก clip เมื่อ iframe มี content เกิน */
+}
+
+/* ==============================================
+   TOOLBAR
+   ============================================== */
+.toolbar {
+  height: var(--shell-toolbar-h);
+  background: var(--shell-toolbar-bg);
+  border-bottom: 1px solid var(--shell-border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 2px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.toolbar::-webkit-scrollbar { height: 3px; }
+.toolbar::-webkit-scrollbar-thumb { background: var(--shell-border); border-radius: 3px; }
+
+.tb-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--shell-text-dim);
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .12s;
+  flex-shrink: 0;
+  position: relative;
+}
+.tb-btn:hover { background: var(--shell-accent-lt); color: var(--shell-accent); }
+.tb-btn.active { background: var(--shell-accent); color: #fff; }
+.tb-btn svg { width: 16px; height: 16px; }
+
+.tb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--shell-border);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.tb-select {
+  font-family: var(--hd);
+  font-size: 12px;
+  background: transparent;
+  color: var(--shell-text);
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+}
+.tb-select:hover { border-color: var(--shell-accent); }
+.tb-select option { background: var(--shell-surface); color: var(--shell-text); }
+
+/* Tooltip */
+.tb-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+  z-index: 50;
+}
+.tb-btn:hover[data-tip]::after { opacity: 1; }
+
+/* ==============================================
+   EDITOR AREA
+   ============================================== */
+.editor-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* flex fix: หดได้ตามที่ parent บีบ */
+}
+
+.editor-area iframe {
+  width: 100%;
+  flex: 1;
+  border: none;
+  background: #FDFBF7;
+  min-height: 0; /* flex fix สำคัญ: iframe มี intrinsic min-height — ต้อง override ให้หดได้ */
+}
+
+/* ==============================================
+   STATUS BAR
+   ============================================== */
+.statusbar {
+  height: 26px;
+  background: var(--shell-surface);
+  border-top: 1px solid var(--shell-border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--shell-text-dim);
+  flex-shrink: 0;
+}
+
+.statusbar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--shell-accent);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+/* ==============================================
+   MODAL / DIALOG
+   ============================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 500;
+}
+.modal-overlay.show { display: flex; }
+
+.modal {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 380px;
+  max-width: 500px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.4);
+}
+
+.modal h3 {
+  font-family: var(--hd);
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--shell-text);
+}
+
+.modal-field { margin-bottom: 14px; }
+
+.modal-field label {
+  display: block;
+  font-family: var(--hd);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--shell-text-dim);
+  margin-bottom: 5px;
+}
+
+.modal-field input,
+.modal-field textarea {
+  width: 100%;
+  background: var(--shell-bg);
+  border: 1px solid var(--shell-border);
+  color: var(--shell-text);
+  font-family: var(--bd);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  outline: none;
+}
+.modal-field input:focus,
+.modal-field textarea:focus {
+  border-color: var(--shell-accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* ==============================================
+   FILE UPLOAD OVERLAY
+   ============================================== */
+.upload-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 600;
+}
+.upload-overlay.hidden { display: none; }
+
+.upload-box {
+  background: var(--shell-surface);
+  border: 2px dashed var(--shell-accent);
+  border-radius: 16px;
+  padding: 60px 80px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+}
+.upload-box:hover { background: var(--shell-accent-lt); }
+
+.upload-box-icon { font-size: 48px; margin-bottom: 16px; }
+
+.upload-box-title {
+  font-family: var(--hd);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--shell-text);
+  margin-bottom: 8px;
+}
+
+.upload-box-sub {
+  font-size: 13px;
+  color: var(--shell-text-dim);
+}
+
+/* ==============================================
+   TOAST NOTIFICATION
+   ============================================== */
+.toast {
+  position: fixed;
+  bottom: 40px;
+  right: 20px;
+  background: var(--shell-accent);
+  color: #fff;
+  font-family: var(--hd);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 20px;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all .3s;
+  z-index: 700;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ==============================================
+   IMAGE PREVIEW IN MODAL
+   ============================================== */
+.img-preview {
+  display: none;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-bg);
+  max-height: 200px;
+}
+.img-preview.show { display: block; }
+.img-preview img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  display: block;
+}
+
+/* ==============================================
+   IMAGE FILE PICKER
+   ============================================== */
+.img-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--shell-bg);
+  border: 1px dashed var(--shell-border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--shell-text-dim);
+  font-size: 13px;
+  transition: all .15s;
+}
+.img-file-picker:hover {
+  border-color: var(--shell-accent);
+  color: var(--shell-accent);
+  background: var(--shell-accent-lt);
+}
+.img-file-picker.has-file {
+  border-color: var(--shell-accent);
+  border-style: solid;
+  color: var(--shell-accent);
+}
+
+/* ==============================================
+   END MARK MODAL
+   ============================================== */
+.endmark-preview {
+  text-align: center;
+  font-size: 20px;
+  color: #C8C5BB;
+  padding: 20px;
+  margin-bottom: 14px;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: var(--shell-bg);
+}
+
+.modal-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+/* ==============================================
+   QUICK INSERT (HOVER MENU)
+   ============================================== */
+.quick-insert-btn {
+  position: absolute;
+  left: 10px;
+  width: 26px;
+  height: 26px;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  color: var(--shell-text-dim);
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, background 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.quick-insert-btn svg { width: 14px; height: 14px; }
+.quick-insert-btn.show { opacity: 1; pointer-events: auto; }
+.quick-insert-btn:hover, .quick-insert-btn.active {
+  background: var(--shell-accent);
+  color: #fff;
+  border-color: var(--shell-accent);
+}
+
+.quick-insert-menu {
+  position: absolute;
+  left: 40px;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 6px;
+  width: 160px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  z-index: 55;
+  display: none;
+  flex-direction: column;
+}
+.quick-insert-menu.show { display: flex; }
+
+.qi-item {
+  padding: 8px 10px;
+  font-family: var(--hd);
+  font-size: 13px;
+  color: var(--shell-text);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qi-item:hover { background: var(--shell-accent-lt); color: var(--shell-accent); }
+
+/* ==============================================
+   TRACK CHANGES — HOVER TOOLTIP (JS-positioned)
+   ============================================== */
+.track-hover-tooltip {
+  position: fixed;
+  display: none;
+  pointer-events: none;
+  z-index: 200;
+  font-family: 'IBM Plex Sans Thai', 'Sarabun', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+  background: #2c2c2e;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  white-space: nowrap;
+}
+.track-hover-tooltip.show { display: block; }
+.track-hover-tooltip::after { /* arrow ชี้ลง */
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--tooltip-bg, #2c2c2e);
+}
+.track-hover-tooltip.bottom::after { /* arrow ชี้ขึ้น (flip) */
+  bottom: auto;
+  top: -4px;
+  border-top: none;
+  border-bottom: 4px solid var(--tooltip-bg, #2c2c2e);
+}
+
+/* ==============================================
+   TRACK CHANGES — POPOVER (FLIP + ARROW)
+   ============================================== */
+.track-popover {
+  position: fixed;
+  display: none;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  padding: 4px;
+  z-index: 1000;
+  border: 1px solid #eee;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  --popover-accent: var(--shell-accent);
+  animation: trackPopIn 0.15s ease-out;
+}
+.track-popover.show { display: flex; }
+
+/* arrow ชี้ลง (popover อยู่ "เหนือ" node) */
+.track-popover::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #fff;
+}
+
+/* arrow ชี้ขึ้น (popover อยู่ "ใต้" node — flip) */
+.track-popover.bottom::after {
+  bottom: auto;
+  top: -6px;
+  border-top: none;
+  border-bottom: 6px solid #fff;
+}
+
+.track-popover-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--popover-accent);
+  padding: 4px 8px;
+  border-right: 1px solid #eee;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: var(--hd);
+}
+
+.track-popover-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 600;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--hd);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.track-popover-btn.accept { background: #ecfdf5; color: #059669; }
+.track-popover-btn.accept:hover { background: #10b981; color: #fff; }
+.track-popover-btn.reject { background: #fef2f2; color: #dc2626; }
+.track-popover-btn.reject:hover { background: #ef4444; color: #fff; }
+
+@keyframes trackPopIn {
+  from { opacity: 0; transform: scale(0.9) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ==============================================
+   TRACK CHANGES — REVIEWING MODE BANNER
+   ============================================== */
+.review-banner {
+  height: 0;
+  overflow: hidden;
+  /* โปร่งใสเล็กน้อย — mix กับ transparent 18% เพื่อให้สีดูนุ่ม ไม่ทึบ */
+  background: color-mix(in srgb, var(--user-color, var(--shell-accent)) 82%, transparent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--hd);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0 16px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 11;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12); /* แยกชั้นจาก iframe เล็กน้อย */
+  backdrop-filter: blur(4px);              /* frosted glass — เผื่อมี content ใต้ banner */
+  -webkit-backdrop-filter: blur(4px);
+}
+.editor-area.review-active .review-banner { height: 32px; }
+.editor-area.review-active {
+  box-shadow: inset 0 0 0 2px var(--user-color, var(--shell-accent));
+  transition: box-shadow 0.25s ease;
+}
+
+.review-banner-text { display: flex; align-items: center; gap: 8px; }
+.review-banner-text strong { font-weight: 700; }
+.review-banner-actions { display: flex; gap: 6px; }
+
+.review-banner-btn {
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.4);
+  color: #fff;
+  padding: 3px 12px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  font-family: var(--hd);
+  transition: all 0.15s;
+}
+.review-banner-btn:hover {
+  background: #fff;
+  color: var(--user-color, var(--shell-accent));
+}
+.review-banner-btn.reject:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* ==============================================
+   RESPONSIVE
+   ============================================== */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    z-index: 200;
+    height: calc(100vh - var(--shell-topbar-h));
+    top: var(--shell-topbar-h);
+    left: 0;
+  }
+  .sidebar.collapsed { width: 0; }
+}

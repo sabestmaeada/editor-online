@@ -23,6 +23,14 @@
 # misc
 .DS_Store
 *.pem
+*.p12
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.bak
 
 # debug
 npm-debug.log*
@@ -32,9 +40,30 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
 
 # vercel
 .vercel
+
+# firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+firestore-export-*/
+
+# service accounts / credentials (defense in depth — never commit)
+*-firebase-adminsdk-*.json
+*serviceAccount*.json
+*credentials*.json
+*secrets*.json
+
+# SSH keys (defense in depth)
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.ppk
 
 # typescript
 *.tsbuildinfo

@@ -1,0 +1,2728 @@
+/* ==============================================
+   Book Editor — JavaScript (Complete Build + Base64 Fix)
+   ============================================== */
+
+// ===== STATE =====
+let originalHeadHtml = '';
+let savedSelection = null;
+let fileName = '';
+let editingImage = null;
+let isDirty = false;
+let cleanTitle = '';
+
+// ===== TRACK CHANGES STATE =====
+let currentUser = null;          // { name, color }
+let trackingEnabled = false;
+const trackUndoStack = [];
+const trackRedoStack = [];
+const TRACK_UNDO_LIMIT = 50;
+const USER_STORAGE_KEY = 'bookEditor.user';
+const TRACK_COLORS = [
+  '#E55353', '#F5A623', '#F5C842', '#7CB342',
+  '#1A6B52', '#26C6DA', '#5B7FFF', '#7E57C2',
+  '#EC407A', '#FF7043', '#8D6E63', '#546E7A',
+  '#9C27B0', '#3F51B5', '#009688', '#827717'
+];
+const TRACK_BLOCK_TAGS = /^(P|DIV|H[1-6]|LI|BLOCKQUOTE|UL|OL|FIGURE|FIGCAPTION|SECTION|ARTICLE|HEADER|FOOTER|NAV|ASIDE|MAIN|TABLE|TR|TD|TH|BODY|HTML|HR|PRE)$/;
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeLinkUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return '#';
+  return trimmed;
+}
+
+function safeImageUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (/^(javascript|vbscript):/i.test(trimmed)) return '';
+  return trimmed;
+}
+
+function setDirty(dirty) {
+  isDirty = dirty;
+  const titleEl = document.getElementById('docTitle');
+  if (titleEl) titleEl.textContent = dirty ? '● ' + cleanTitle : cleanTitle;
+  const dot = document.querySelector('.statusbar-dot');
+  if (dot) dot.style.background = dirty ? '#E67E50' : '';
+}
+
+// ==============================================
+// TRACK CHANGES — USER IDENTITY
+// ==============================================
+
+function generateUid() {
+  return 'u-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+}
+
+function loadCurrentUser() {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    const u = raw ? JSON.parse(raw) : null;
+    if (u && !u.uid) {
+      u.uid = generateUid();
+      persistCurrentUser(u);
+    }
+    return u;
+  } catch (e) { return null; }
+}
+
+function persistCurrentUser(user) {
+  try { localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user)); }
+  catch (e) { /* localStorage blocked */ }
+}
+
+// hash uid → สี (stable: เปลี่ยนชื่อแล้วสีไม่กระโดด)
+// พร้อมต่อ Firebase Auth: ใช้ firebase.auth().currentUser.uid โดยตรง
+function pickColorForUid(uid) {
+  let h = 0;
+  for (const c of String(uid)) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return TRACK_COLORS[Math.abs(h) % TRACK_COLORS.length];
+}
+
+// ===== TRACK COLOR REGISTRY =====
+// uid → color (single source of truth ของสีต่อ user ใน session)
+// CSS rule ถูก inject ตามแผน C: ไม่มี inline color บน <ins>/<del>
+// → เปลี่ยนสี = อัพเดต rule ครั้งเดียว ทุก ins/del ของ user คนนั้นเปลี่ยนพร้อม
+const trackColorMap = new Map();
+
+function getColorStyleEl(doc) {
+  if (!doc || !doc.head) return null;
+  let el = doc.getElementById('__trackColorRules');
+  if (!el) {
+    el = doc.createElement('style');
+    el.id = '__trackColorRules';
+    el.setAttribute('data-editor-runtime', '');
+    doc.head.appendChild(el);
+  }
+  return el;
+}
+
+function rebuildColorStyleSheet() {
+  const doc = getDoc();
+  const styleEl = getColorStyleEl(doc);
+  if (!styleEl) return;
+  let css = '';
+  for (const [uid, color] of trackColorMap) {
+    const safe = String(uid).replace(/["\\]/g, '\\$&');
+    css += `ins[data-uid="${safe}"], del[data-uid="${safe}"] { color: ${color}; }\n`;
+  }
+  styleEl.textContent = css;
+}
+
+function applyUserColor(uid, color) {
+  if (!uid || !color) return;
+  trackColorMap.set(uid, color);
+  rebuildColorStyleSheet();
+}
+
+function injectUserColorsForDoc(doc) {
+  // strip inline color/CSS variable ที่อาจตกค้างจากไฟล์เก่า (ของ Beta-03 และก่อนหน้า)
+  // → ให้ CSS rule per-uid จาก trackColorMap ทำงานเต็มที่
+  doc.querySelectorAll('ins[data-uid], del[data-uid]').forEach(el => {
+    if (el.style.color) el.style.color = '';
+    if (el.style.getPropertyValue('--author-color')) el.style.removeProperty('--author-color');
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+
+    const uid = el.getAttribute('data-uid');
+    if (uid && !trackColorMap.has(uid)) {
+      trackColorMap.set(uid, pickColorForUid(uid)); // default hash
+    }
+  });
+  // override ของ user ปัจจุบัน (อาจเลือกสีเองผ่าน palette)
+  if (currentUser && currentUser.uid) {
+    trackColorMap.set(currentUser.uid, currentUser.color);
+  }
+  rebuildColorStyleSheet();
+}
+
+// (Firebase phase) preload user colors จาก Firestore:
+// async function loadUserColorsFromFirestore(uids) {
+//   const snap = await firestore.collection('users').where(FieldPath.documentId(), 'in', [...uids]).get();
+//   snap.forEach(doc => trackColorMap.set(doc.id, doc.data().trackColor || pickColorForUid(doc.id)));
+//   rebuildColorStyleSheet();
+// }
+
+function updateUserBadge() {
+  const badge = document.getElementById('userBadge');
+  if (!badge) return;
+  const dot = document.getElementById('userBadgeDot');
+  const nameEl = document.getElementById('userBadgeName');
+  if (currentUser) {
+    nameEl.textContent = currentUser.name;
+    dot.style.background = currentUser.color;
+    badge.style.borderColor = currentUser.color;
+    badge.style.color = '#fff';
+  } else {
+    nameEl.textContent = 'ตั้งชื่อ';
+    dot.style.background = 'var(--shell-text-dim)';
+    badge.style.borderColor = '';
+    badge.style.color = '';
+  }
+}
+
+function renderColorPalette(selectedColor) {
+  const wrap = document.getElementById('userColorPalette');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  TRACK_COLORS.forEach(c => {
+    const sw = document.createElement('div');
+    sw.className = 'color-swatch' + (c === selectedColor ? ' selected' : '');
+    sw.style.background = c;
+    sw.dataset.color = c;
+    sw.addEventListener('click', () => {
+      wrap.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      sw.dataset.picked = '1';
+    });
+    wrap.appendChild(sw);
+  });
+}
+
+function showUserSetupModal() {
+  // ต้องมี currentUser อยู่แล้ว (จาก auth หรือ default mock) — modal แค่ให้เปลี่ยนสี
+  if (!currentUser) {
+    showToast('ยังไม่มีข้อมูลผู้ใช้');
+    return;
+  }
+  const nameDisplay = document.getElementById('userSetupName');
+  nameDisplay.textContent = currentUser.name;
+  renderColorPalette(currentUser.color);
+  document.getElementById('userSetupModal').classList.add('show');
+}
+
+function closeUserSetup() {
+  document.getElementById('userSetupModal').classList.remove('show');
+}
+
+function saveUserSetup() {
+  if (!currentUser) return;
+  const picked = document.querySelector('#userColorPalette .color-swatch.selected');
+  const color = picked ? picked.dataset.color : currentUser.color;
+  currentUser = { ...currentUser, color };
+  persistCurrentUser(currentUser);
+  // อัพเดต CSS rule → ทุก ins/del ของ user คนนี้เปลี่ยนสีพร้อมกันทันที
+  applyUserColor(currentUser.uid, currentUser.color);
+  // TODO (Firebase): firestore.collection('users').doc(currentUser.uid).set({trackColor: color}, {merge:true});
+  updateUserBadge();
+  syncTrackingUI();
+  closeUserSetup();
+  showToast(`เปลี่ยนสีเรียบร้อย`);
+}
+
+// โหลด user จาก auth — รับผ่าน URL hash จาก Next.js parent (Firebase Auth + Firestore)
+// fallback: localStorage / mock เมื่อเปิดเป็น standalone โดยไม่มี hash
+async function loadUserFromAuth() {
+  try {
+    const params = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    const uid = params.get('uid');
+    const name = params.get('name');
+    const colorFromHash = params.get('color');
+    if (uid && name) {
+      let color;
+      if (colorFromHash && /^#[0-9a-fA-F]{6}$/.test(colorFromHash)) {
+        color = colorFromHash;
+      } else {
+        const saved = loadCurrentUser();
+        color = (saved && saved.uid === uid && saved.color)
+          ? saved.color
+          : pickColorForUid(uid);
+      }
+      return { uid, name, color };
+    }
+  } catch (e) { /* fall through to localStorage */ }
+
+  const saved = loadCurrentUser();
+  if (saved && saved.uid && saved.name) return saved;
+
+  const uid = generateUid();
+  return {
+    uid,
+    name: 'ผู้เขียน',
+    color: pickColorForUid(uid)
+  };
+}
+
+function toggleTracking() {
+  if (!currentUser) {
+    showToast('กำลังโหลดข้อมูลผู้ใช้...');
+    return;
+  }
+  trackingEnabled = !trackingEnabled;
+  syncTrackingUI();
+  showToast(trackingEnabled
+    ? `Track Changes เปิด — แก้ในนามของ ${currentUser.name}`
+    : 'Track Changes ปิด');
+}
+
+function syncTrackingUI() {
+  const btn = document.getElementById('trackToggle');
+  if (btn) btn.classList.toggle('active', trackingEnabled);
+
+  const area = document.getElementById('editorArea');
+  if (area) area.classList.toggle('review-active', trackingEnabled);
+
+  const nameEl = document.getElementById('reviewBannerName');
+  if (nameEl && currentUser) nameEl.textContent = currentUser.name;
+
+  if (currentUser) {
+    document.documentElement.style.setProperty('--user-color', currentUser.color);
+  }
+}
+
+// ==============================================
+// TRACK CHANGES — INPUT INTERCEPTION
+// ==============================================
+
+function attachTrackingListeners(doc) {
+  if (!doc.body || doc.body._trackBound) return;
+  doc.body._trackBound = true;
+  doc.body.addEventListener('beforeinput', handleBeforeInput);
+}
+
+function handleBeforeInput(e) {
+  if (!trackingEnabled || !currentUser) return;
+
+  if (e.inputType === 'insertText') {
+    handleTrackedInsert(e);
+    return;
+  }
+  if (e.inputType === 'deleteContentBackward'
+      || e.inputType === 'deleteContentForward'
+      || e.inputType === 'deleteByCut'
+      || e.inputType.startsWith('delete')) {
+    handleTrackedDelete(e);
+    return;
+  }
+  // ปล่อย: insertParagraph (Enter), insertCompositionText (IME),
+  // insertFromPaste, formatBold ฯลฯ
+}
+
+function getLiveRangeFromEvent(e, doc) {
+  if (typeof e.getTargetRanges === 'function') {
+    const ranges = e.getTargetRanges();
+    if (ranges && ranges.length > 0) {
+      const sr = ranges[0];
+      try {
+        const live = doc.createRange();
+        live.setStart(sr.startContainer, sr.startOffset);
+        live.setEnd(sr.endContainer, sr.endOffset);
+        return live;
+      } catch (err) { /* fall through */ }
+    }
+  }
+  const sel = getWin().getSelection();
+  if (sel.rangeCount > 0) return sel.getRangeAt(0).cloneRange();
+  return null;
+}
+
+function handleTrackedInsert(e) {
+  const data = e.data;
+  if (data == null || data === '') return;
+
+  const doc = getDoc();
+  const live = getLiveRangeFromEvent(e, doc);
+  if (!live) return;
+
+  e.preventDefault();
+  pushUndoSnapshot();
+
+  if (!live.collapsed) {
+    if (rangeCrossesBlocks(live)) {
+      // selection คร่อม block — แค่ลบเฉย ๆ ไม่ wrap del
+      live.deleteContents();
+    } else {
+      performTrackedDeleteInto(live, doc, false);
+    }
+  }
+
+  // \u0E16\u0E49\u0E32 caret \u0E2D\u0E22\u0E39\u0E48\u0E20\u0E32\u0E22\u0E43\u0E19 ins \u0E02\u0E2D\u0E07\u0E40\u0E23\u0E32 \u2192 \u0E43\u0E2A\u0E48 text \u0E17\u0E35\u0E48\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07 caret (extend ins \u0E40\u0E14\u0E34\u0E21)
+  // \u2192 \u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E16\u0E31\u0E14\u0E44\u0E1B\u0E01\u0E47\u0E08\u0E30\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19 ins \u0E40\u0E14\u0E34\u0E21 \u2192 \u0E01\u0E25\u0E32\u0E22\u0E40\u0E1B\u0E47\u0E19 "\u0E1A\u0E25\u0E47\u0E2D\u0E01\u0E40\u0E14\u0E35\u0E22\u0E27"
+  const enclosingIns = findEnclosingInsForUser(live.startContainer, currentUser);
+  if (enclosingIns) {
+    const tn = doc.createTextNode(data);
+    live.insertNode(tn); // insertNode \u0E08\u0E30 split text node \u0E16\u0E49\u0E32\u0E08\u0E33\u0E40\u0E1B\u0E47\u0E19
+    live.setStart(tn, tn.length);
+  } else {
+    // \u0E44\u0E21\u0E48\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19 ins \u2192 \u0E2A\u0E23\u0E49\u0E32\u0E07 ins \u0E43\u0E2B\u0E21\u0E48 \u0E1E\u0E23\u0E49\u0E2D\u0E21 text \u2192 caret \u0E22\u0E49\u0E32\u0E22\u0E44\u0E1B "\u0E20\u0E32\u0E22\u0E43\u0E19" ins
+    // \u2192 \u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E16\u0E31\u0E14\u0E44\u0E1B\u0E08\u0E30\u0E15\u0E01\u0E40\u0E02\u0E49\u0E32 branch \u0E14\u0E49\u0E32\u0E19\u0E1A\u0E19 (extend ins \u0E40\u0E14\u0E34\u0E21 \u0E44\u0E21\u0E48\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E17\u0E38\u0E01\u0E15\u0E31\u0E27)
+    const ins = makeInsEl(doc, currentUser, data);
+    live.insertNode(ins);
+    const insertedText = ins.firstChild; // text node \u0E17\u0E35\u0E48\u0E40\u0E1E\u0E34\u0E48\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E43\u0E19 ins
+    const merged = mergeAdjacentIns(ins);
+    if (insertedText && insertedText.parentNode) {
+      // text node \u0E22\u0E31\u0E07\u0E04\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19 DOM (\u0E2D\u0E32\u0E08\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19 merged) \u2014 caret \u0E44\u0E1B end \u0E02\u0E2D\u0E07 text \u0E19\u0E31\u0E49\u0E19
+      live.setStart(insertedText, insertedText.length);
+    } else {
+      live.setStart(merged, merged.childNodes.length);
+    }
+  }
+  live.collapse(true);
+  setLiveSelection(live);
+
+  setDirty(true);
+  updateStatus();
+}
+
+function handleTrackedDelete(e) {
+  const doc = getDoc();
+  const live = getLiveRangeFromEvent(e, doc);
+  if (!live || live.collapsed) return;
+
+  // Cross-block delete (เช่น Backspace ที่ต้น p, Delete ที่ท้าย p — merge paragraph)
+  // ปล่อย browser ทำเอง ไม่ต้อง track เพราะเป็น structural change
+  if (rangeCrossesBlocks(live)) return;
+
+  e.preventDefault();
+  pushUndoSnapshot();
+  const isBackward = e.inputType === 'deleteContentBackward';
+  performTrackedDeleteInto(live, doc, isBackward);
+  setLiveSelection(live);
+
+  setDirty(true);
+  updateStatus();
+}
+
+// "ว่างจริง" = textContent ว่าง + ไม่มี media/break ภายใน (กันลบ ins ที่มีแต่รูป/hr)
+function isEmptyContent(el) {
+  return el.textContent === '' && !el.querySelector('img,br,hr,svg,video,audio,iframe');
+}
+
+// ลบ wrapper ที่ว่างเปล่าทิ้ง + set range ที่ตำแหน่งที่ wrapper เคยอยู่ + normalize เพื่อ merge text nodes
+function removeEmptyWrapper(wrapper, range) {
+  const parent = wrapper.parentNode;
+  if (!parent) return;
+  const next = wrapper.nextSibling;
+  wrapper.remove();
+  if (next) range.setStartBefore(next);
+  else range.setStart(parent, parent.childNodes.length);
+  range.collapse(true);
+  parent.normalize(); // merge text nodes ติดกันที่เคยถูกคั่นด้วย wrapper
+}
+
+function performTrackedDeleteInto(range, doc, isBackward) {
+  if (range.collapsed) return;
+
+  // (1) อยู่ใน <del> เดียวกัน (ของใครก็ได้) → shrink/ลบ del นั้น (un-delete)
+  const startDel = findEnclosingDel(range.startContainer);
+  const endDel = findEnclosingDel(range.endContainer);
+  if (startDel && startDel === endDel) {
+    range.deleteContents();
+    if (isEmptyContent(startDel)) removeEmptyWrapper(startDel, range);
+    return;
+  }
+
+  // (2) อยู่ใน <ins> ของเราเอง → ลบจริง (เพิ่งพิมพ์เอง)
+  const startIns = findEnclosingInsForUser(range.startContainer, currentUser);
+  const endIns = findEnclosingInsForUser(range.endContainer, currentUser);
+  if (startIns && startIns === endIns) {
+    range.deleteContents();
+    if (isEmptyContent(startIns)) removeEmptyWrapper(startIns, range);
+    return;
+  }
+
+  // (3) กรณีอื่น — extract + wrap เป็น <del> + merge
+  const fragment = range.extractContents();
+  if (!fragment || !fragment.firstChild) {
+    range.collapse(true);
+    return;
+  }
+  // Safety: ถ้า fragment ไม่มี text จริง ๆ (โครงสร้างเปล่า) → ไม่ wrap
+  if (fragment.textContent.trim() === '' && !fragment.querySelector('img')) {
+    range.collapse(true);
+    return;
+  }
+  const del = makeDelEl(doc, currentUser);
+  del.appendChild(fragment);
+  range.insertNode(del);
+  const merged = mergeAdjacentDel(del);
+
+  if (isBackward) range.setStartBefore(merged);
+  else range.setStartAfter(merged);
+  range.collapse(true);
+}
+
+function setLiveSelection(range) {
+  const sel = getWin().getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// ไม่ใส่ inline color — ใช้ CSS rule per-uid (injected ผ่าน trackColorMap)
+// → user เปลี่ยนสี = rule update = ทุก ins/del ของ user เปลี่ยนพร้อมกัน
+function makeInsEl(doc, user, text) {
+  const el = doc.createElement('ins');
+  el.setAttribute('data-user', user.name);
+  el.setAttribute('data-uid', user.uid);
+  el.setAttribute('data-time', new Date().toISOString());
+  if (text) el.appendChild(doc.createTextNode(text));
+  return el;
+}
+
+function makeDelEl(doc, user) {
+  const el = doc.createElement('del');
+  el.setAttribute('data-user', user.name);
+  el.setAttribute('data-uid', user.uid);
+  el.setAttribute('data-time', new Date().toISOString());
+  el.setAttribute('contenteditable', 'false'); // ล็อก: ห้ามคลิก/พิมพ์ภายใน
+  return el;
+}
+
+function isOurIns(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE || el.tagName !== 'INS') return false;
+  const uid = el.getAttribute('data-uid');
+  if (uid) return uid === currentUser.uid;
+  // legacy fallback: ของเก่าที่ไม่มี uid ใช้ชื่อเทียบ
+  return el.getAttribute('data-user') === currentUser.name;
+}
+
+function isOurDel(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE || el.tagName !== 'DEL') return false;
+  const uid = el.getAttribute('data-uid');
+  if (uid) return uid === currentUser.uid;
+  return el.getAttribute('data-user') === currentUser.name;
+}
+
+function isOnlyZwsp(n) {
+  return n && n.nodeType === Node.TEXT_NODE && /^[​]+$/.test(n.nodeValue);
+}
+
+// ลบ ZWSP text node ที่ติดกับ el ในทิศที่ระบุ (prev/next) แล้วคืน sibling ที่อยู่ถัดจากนั้น
+function stripZwspSibling(el, dir) {
+  while (true) {
+    const s = dir === 'prev' ? el.previousSibling : el.nextSibling;
+    if (!isOnlyZwsp(s)) return s;
+    s.remove();
+  }
+}
+
+function mergeAdjacentIns(el) {
+  let final = el;
+  const prev = stripZwspSibling(final, 'prev');
+  if (isOurIns(prev)) {
+    while (final.firstChild) prev.appendChild(final.firstChild);
+    final.remove();
+    final = prev;
+  }
+  const next = stripZwspSibling(final, 'next');
+  if (isOurIns(next)) {
+    while (next.firstChild) final.appendChild(next.firstChild);
+    next.remove();
+  }
+  return final;
+}
+
+function mergeAdjacentDel(el) {
+  let final = el;
+  const prev = stripZwspSibling(final, 'prev');
+  if (isOurDel(prev)) {
+    while (final.firstChild) prev.appendChild(final.firstChild);
+    final.remove();
+    final = prev;
+  }
+  const next = stripZwspSibling(final, 'next');
+  if (isOurDel(next)) {
+    while (next.firstChild) final.appendChild(next.firstChild);
+    next.remove();
+  }
+  return final;
+}
+
+function findEnclosingInsForUser(node, user) {
+  let n = node;
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'INS') {
+      const uid = n.getAttribute('data-uid');
+      if (uid ? uid === user.uid : n.getAttribute('data-user') === user.name) return n;
+    }
+    n = n.parentNode;
+  }
+  return null;
+}
+
+function findEnclosingDel(node) {
+  let n = node;
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE && n.tagName === 'DEL') return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+
+function findBlockAncestor(node) {
+  let n = node;
+  if (n && n.nodeType === Node.TEXT_NODE) n = n.parentNode;
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE && TRACK_BLOCK_TAGS.test(n.tagName)) return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+
+function rangeCrossesBlocks(range) {
+  const startBlock = findBlockAncestor(range.startContainer);
+  const endBlock = findBlockAncestor(range.endContainer);
+  return startBlock && endBlock && startBlock !== endBlock;
+}
+
+// ==============================================
+// TRACK CHANGES — UNDO STACK
+// preventDefault ทำให้ browser undo ไม่รู้จัก op ของเรา — เก็บ snapshot เอง
+// ==============================================
+
+// ==============================================
+// TRACK CHANGES — ACCEPT / REJECT
+// ==============================================
+
+let currentTrackChangeNode = null;
+
+function acceptAllChanges() {
+  const doc = getDoc();
+  if (!doc) return;
+  const insertions = doc.querySelectorAll('ins[data-user]');
+  const deletions = doc.querySelectorAll('del[data-user]');
+  const total = insertions.length + deletions.length;
+  if (total === 0) {
+    showToast('ไม่มีการแก้ไขให้ยอมรับ');
+    return;
+  }
+  if (!confirm(`ยอมรับการแก้ไขทั้งหมด ${total} รายการ?\n(เพิ่ม ${insertions.length} · ลบ ${deletions.length})`)) return;
+
+  pushUndoSnapshot();
+  insertions.forEach(ins => {
+    while (ins.firstChild) ins.parentNode.insertBefore(ins.firstChild, ins);
+    ins.remove();
+  });
+  deletions.forEach(del => del.remove());
+
+  setDirty(true);
+  updateStatus();
+  showToast(`ยอมรับการแก้ไข ${total} รายการแล้ว`);
+}
+
+function acceptMyChanges() {
+  if (!currentUser) {
+    showToast('กรุณาตั้งชื่อผู้ใช้ก่อน');
+    return;
+  }
+  const doc = getDoc();
+  if (!doc) return;
+  const myIns = Array.from(doc.querySelectorAll('ins[data-user]')).filter(isOurIns);
+  const myDel = Array.from(doc.querySelectorAll('del[data-user]')).filter(isOurDel);
+  const total = myIns.length + myDel.length;
+  if (total === 0) {
+    showToast('ไม่มีการแก้ไขของคุณให้ยอมรับ');
+    return;
+  }
+  if (!confirm(`ยอมรับการแก้ไขของคุณ (${currentUser.name}) ทั้งหมด ${total} รายการ?\n(เพิ่ม ${myIns.length} · ลบ ${myDel.length})`)) return;
+
+  pushUndoSnapshot();
+  myIns.forEach(ins => {
+    while (ins.firstChild) ins.parentNode.insertBefore(ins.firstChild, ins);
+    ins.remove();
+  });
+  myDel.forEach(del => del.remove());
+
+  setDirty(true);
+  updateStatus();
+  showToast(`ยอมรับการแก้ไขของคุณ ${total} รายการแล้ว`);
+}
+
+function rejectMyChanges() {
+  if (!currentUser) {
+    showToast('กรุณาตั้งชื่อผู้ใช้ก่อน');
+    return;
+  }
+  const doc = getDoc();
+  if (!doc) return;
+  const myIns = Array.from(doc.querySelectorAll('ins[data-user]')).filter(isOurIns);
+  const myDel = Array.from(doc.querySelectorAll('del[data-user]')).filter(isOurDel);
+  const total = myIns.length + myDel.length;
+  if (total === 0) {
+    showToast('ไม่มีการแก้ไขของคุณให้ปฏิเสธ');
+    return;
+  }
+  if (!confirm(`ปฏิเสธการแก้ไขของคุณ (${currentUser.name}) ทั้งหมด ${total} รายการ? (คืนค่ากลับเป็นต้นฉบับ)\n(เพิ่ม ${myIns.length} · ลบ ${myDel.length})`)) return;
+
+  pushUndoSnapshot();
+  myIns.forEach(ins => ins.remove());
+  myDel.forEach(del => {
+    while (del.firstChild) del.parentNode.insertBefore(del.firstChild, del);
+    del.remove();
+  });
+
+  setDirty(true);
+  updateStatus();
+  showToast(`ปฏิเสธการแก้ไขของคุณ ${total} รายการแล้ว`);
+}
+
+function rejectAllChanges() {
+  const doc = getDoc();
+  if (!doc) return;
+  const insertions = doc.querySelectorAll('ins[data-user]');
+  const deletions = doc.querySelectorAll('del[data-user]');
+  const total = insertions.length + deletions.length;
+  if (total === 0) {
+    showToast('ไม่มีการแก้ไขให้ปฏิเสธ');
+    return;
+  }
+  if (!confirm(`ปฏิเสธการแก้ไขทั้งหมด ${total} รายการ? (คืนค่ากลับเป็นต้นฉบับ)\n(เพิ่ม ${insertions.length} · ลบ ${deletions.length})`)) return;
+
+  pushUndoSnapshot();
+  insertions.forEach(ins => ins.remove());
+  deletions.forEach(del => {
+    while (del.firstChild) del.parentNode.insertBefore(del.firstChild, del);
+    del.remove();
+  });
+
+  setDirty(true);
+  updateStatus();
+  showToast(`ปฏิเสธการแก้ไข ${total} รายการแล้ว`);
+}
+
+// Tooltip ลอย แสดงชื่อผู้ใช้ตอน hover ที่ ins/del
+// เหตุที่ใช้ JS แทน CSS ::after: เมื่อ ins/del wrap หลายบรรทัด ::after จะ anchor ที่ "บรรทัดสุดท้าย"
+// ทำให้ดูชิดขวา — JS คำนวณกึ่งกลางจริงของ element ผ่าน getBoundingClientRect
+function getOrCreateTrackTooltip() {
+  let tip = document.getElementById('trackHoverTooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'trackHoverTooltip';
+    tip.className = 'track-hover-tooltip';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function bindTrackHoverTooltip(doc) {
+  if (!doc.body || doc.body._tcHoverBound) return;
+  doc.body._tcHoverBound = true;
+
+  const tip = getOrCreateTrackTooltip();
+  const frameEl = document.getElementById('editFrame');
+
+  function showTip(target) {
+    const name = target.getAttribute('data-user') || '';
+    const uid = target.getAttribute('data-uid');
+    const color = (uid && trackColorMap.get(uid)) || pickColorForUid(uid || name) || '#2c2c2e';
+    tip.textContent = name;
+    tip.style.background = color;
+    tip.style.setProperty('--tooltip-bg', color);
+    tip.classList.add('show');
+    tip.classList.remove('bottom');
+
+    // position: กึ่งกลาง element เหนือ element 8px (flip ลงล่างถ้าที่ไม่พอ)
+    const frameRect = frameEl.getBoundingClientRect();
+    const elRect = target.getBoundingClientRect();
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    let left = frameRect.left + elRect.left + elRect.width / 2 - tipW / 2;
+    let top = frameRect.top + elRect.top - tipH - 8;
+    if (top < 4) {
+      top = frameRect.top + elRect.top + elRect.height + 8;
+      tip.classList.add('bottom');
+    }
+    const pad = 4;
+    if (left < pad) left = pad;
+    if (left + tipW > window.innerWidth - pad) left = window.innerWidth - tipW - pad;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+
+  function hideTip() { tip.classList.remove('show'); }
+
+  doc.body.addEventListener('mouseover', (e) => {
+    const target = e.target.closest && e.target.closest('ins[data-user], del[data-user]');
+    if (target) showTip(target);
+  });
+  doc.body.addEventListener('mouseout', (e) => {
+    const target = e.target.closest && e.target.closest('ins[data-user], del[data-user]');
+    if (target && (!e.relatedTarget || !target.contains(e.relatedTarget))) hideTip();
+  });
+  doc.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+}
+
+function bindTrackChangesClicks(doc) {
+  if (!doc.body || doc.body._tcClickBound) return;
+  doc.body._tcClickBound = true;
+
+  doc.addEventListener('contextmenu', (e) => {
+    const target = e.target.closest && e.target.closest('ins[data-user], del[data-user]');
+    if (target) {
+      e.preventDefault();
+      showTrackChangeMenu(target);
+    }
+  });
+  doc.addEventListener('click', (e) => {
+    const target = e.target.closest && e.target.closest('ins[data-user], del[data-user]');
+    if (target) {
+      e.stopPropagation();
+      showTrackChangeMenu(target);
+    } else {
+      hideTrackChangeMenu();
+    }
+  });
+  doc.addEventListener('scroll', hideTrackChangeMenu, { passive: true });
+  window.addEventListener('resize', hideTrackChangeMenu);
+}
+
+function showTrackChangeMenu(node) {
+  currentTrackChangeNode = node;
+  const menu = document.getElementById('trackChangeMenu');
+  if (!menu) return;
+
+  const label = document.getElementById('trackPopoverLabel');
+  if (label) label.textContent = node.tagName === 'INS' ? 'เพิ่ม' : 'ลบ';
+
+  // เซ็ตสีตาม user ของ node เพื่อให้ปุ่ม match สี
+  const userColor = node.style.color || '';
+  menu.style.setProperty('--popover-accent', userColor || 'var(--shell-accent)');
+
+  // แสดงก่อนเพื่อให้ offsetWidth/Height คำนวณได้
+  menu.classList.add('show');
+  menu.classList.remove('bottom');
+
+  const frameEl = document.getElementById('editFrame');
+  const frameRect = frameEl.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+
+  // คำนวณตำแหน่ง (popover เป็น position:fixed → ใช้ viewport coord)
+  const popW = menu.offsetWidth;
+  const popH = menu.offsetHeight;
+  let left = frameRect.left + nodeRect.left + nodeRect.width / 2 - popW / 2;
+  let top = frameRect.top + nodeRect.top - popH - 10;
+
+  // ถ้าไม่มีที่ด้านบน → flip ลงล่าง
+  if (top < 8) {
+    top = frameRect.top + nodeRect.top + nodeRect.height + 10;
+    menu.classList.add('bottom');
+  }
+
+  // Clamp ซ้าย-ขวา ไม่ให้หลุดจอ
+  const pad = 8;
+  if (left < pad) left = pad;
+  if (left + popW > window.innerWidth - pad) left = window.innerWidth - popW - pad;
+
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+}
+
+function hideTrackChangeMenu() {
+  const menu = document.getElementById('trackChangeMenu');
+  if (menu) menu.classList.remove('show');
+  currentTrackChangeNode = null;
+}
+
+function acceptCurrentChange() {
+  if (!currentTrackChangeNode) return;
+  pushUndoSnapshot();
+  
+  const node = currentTrackChangeNode;
+  if (node.tagName === 'INS') {
+    while (node.firstChild) node.parentNode.insertBefore(node.firstChild, node);
+    node.remove();
+  } else if (node.tagName === 'DEL') {
+    node.remove();
+  }
+  
+  hideTrackChangeMenu();
+  setDirty(true);
+  updateStatus();
+}
+
+function rejectCurrentChange() {
+  if (!currentTrackChangeNode) return;
+  pushUndoSnapshot();
+  
+  const node = currentTrackChangeNode;
+  if (node.tagName === 'INS') {
+    node.remove();
+  } else if (node.tagName === 'DEL') {
+    while (node.firstChild) node.parentNode.insertBefore(node.firstChild, node);
+    node.remove();
+  }
+  
+  hideTrackChangeMenu();
+  setDirty(true);
+  updateStatus();
+}
+
+function clearTrackUndo() {
+  trackUndoStack.length = 0;
+  trackRedoStack.length = 0;
+}
+
+function getNodePath(node, root) {
+  const path = [];
+  while (node && node !== root) {
+    const parent = node.parentNode;
+    if (!parent) return null;
+    path.unshift(Array.prototype.indexOf.call(parent.childNodes, node));
+    node = parent;
+  }
+  return node === root ? path : null;
+}
+
+function getNodeByPath(path, root) {
+  let node = root;
+  for (const idx of path) {
+    if (!node || !node.childNodes[idx]) return null;
+    node = node.childNodes[idx];
+  }
+  return node;
+}
+
+function captureUndoSnapshot() {
+  const doc = getDoc();
+  if (!doc || !doc.body) return null;
+  let cursor = null;
+  try {
+    const sel = doc.defaultView.getSelection();
+    if (sel.rangeCount) {
+      const r = sel.getRangeAt(0);
+      cursor = {
+        startPath: getNodePath(r.startContainer, doc.body),
+        startOffset: r.startOffset,
+        endPath: getNodePath(r.endContainer, doc.body),
+        endOffset: r.endOffset,
+      };
+    }
+  } catch (e) { /* cursor optional */ }
+  return { html: doc.body.innerHTML, cursor };
+}
+
+function restoreSnapshot(snap) {
+  if (!snap) return;
+  const doc = getDoc();
+  doc.body.innerHTML = snap.html;
+  if (snap.cursor && snap.cursor.startPath && snap.cursor.endPath) {
+    try {
+      const startNode = getNodeByPath(snap.cursor.startPath, doc.body);
+      const endNode = getNodeByPath(snap.cursor.endPath, doc.body);
+      if (startNode && endNode) {
+        const range = doc.createRange();
+        const maxStart = startNode.nodeType === Node.TEXT_NODE ? startNode.length : startNode.childNodes.length;
+        const maxEnd = endNode.nodeType === Node.TEXT_NODE ? endNode.length : endNode.childNodes.length;
+        range.setStart(startNode, Math.min(snap.cursor.startOffset, maxStart));
+        range.setEnd(endNode, Math.min(snap.cursor.endOffset, maxEnd));
+        const sel = doc.defaultView.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } catch (e) { /* cursor restore is best-effort */ }
+  }
+}
+
+function pushUndoSnapshot() {
+  const snap = captureUndoSnapshot();
+  if (!snap) return;
+  trackUndoStack.push(snap);
+  trackRedoStack.length = 0;
+  if (trackUndoStack.length > TRACK_UNDO_LIMIT) trackUndoStack.shift();
+}
+
+function trackUndo() {
+  if (trackUndoStack.length === 0) return false;
+  const cur = captureUndoSnapshot();
+  if (cur) trackRedoStack.push(cur);
+  restoreSnapshot(trackUndoStack.pop());
+  setDirty(true);
+  updateStatus();
+  return true;
+}
+
+function trackRedo() {
+  if (trackRedoStack.length === 0) return false;
+  const cur = captureUndoSnapshot();
+  if (cur) trackUndoStack.push(cur);
+  restoreSnapshot(trackRedoStack.pop());
+  setDirty(true);
+  updateStatus();
+  return true;
+}
+
+// ===== FILE SYSTEM API & IMAGE STATE =====
+let projectDirHandle = null;
+let htmlFileHandle = null;
+let activeObjectUrls = [];
+window.tempInsertObjUrl = null;
+let currentSelectedFile = null;
+const projectImageCache = new Map(); // './images/foo.png' -> Blob/File (กัน OS disk sync ช้า)
+
+// ตัวแปรสำคัญ: เก็บโค้ด Base64 ไว้ใน RAM เพื่อเลี่ยงปัญหา Input ถูกตัดโค้ดทิ้ง (Truncate)
+let currentBase64Data = null; 
+
+// ===== QUICK INSERT STATE =====
+let hoveredBlock = null;
+let isQuickMenuOpen = false;
+let quickMenuHideTimeout = null;
+
+// ==============================================
+// IFRAME HELPERS
+// ==============================================
+
+function getDoc() {
+  const fr = document.getElementById('editFrame');
+  return fr.contentDocument || fr.contentWindow.document;
+}
+
+function getWin() {
+  return document.getElementById('editFrame').contentWindow;
+}
+
+
+async function resolveProjectFile(rootHandle, relativePath) {
+  if (!rootHandle || !relativePath) return null;
+  const path = String(relativePath).replace(/^\.\//, '').replace(/^\//, '');
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length === 0) return null;
+  let handle = rootHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    try { handle = await handle.getDirectoryHandle(parts[i]); }
+    catch (e) { return null; }
+  }
+  try {
+    const fileHandle = await handle.getFileHandle(parts[parts.length - 1]);
+    return await fileHandle.getFile();
+  } catch (e) { return null; }
+}
+
+async function resolveLinkedStylesheets(parsedDoc) {
+  const result = { resolvedCss: '', resolvedHrefs: [] };
+  if (!projectDirHandle || !parsedDoc.head) return result;
+
+  const links = parsedDoc.head.querySelectorAll('link');
+  for (const link of links) {
+    const rel = (link.getAttribute('rel') || '').toLowerCase().trim();
+    if (rel !== 'stylesheet') continue;
+    const href = link.getAttribute('href');
+    if (!href) continue;
+    if (/^(https?:)?\/\//i.test(href)) continue;
+    if (href.startsWith('data:')) continue;
+
+    try {
+      const file = await resolveProjectFile(projectDirHandle, href);
+      if (file) {
+        const text = await file.text();
+        result.resolvedCss += `\n/* @ ${href} */\n${text}\n`;
+        result.resolvedHrefs.push(href);
+      } else {
+        console.warn('ไม่พบไฟล์ CSS:', href);
+      }
+    } catch (e) {
+      console.warn('โหลด CSS ผิดพลาด:', href, e);
+    }
+  }
+  return result;
+}
+
+function mimeToExt(mime) {
+  const map = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+    'image/bmp': 'bmp',
+    'image/x-icon': 'ico'
+  };
+  return map[(mime || '').toLowerCase()] || 'png';
+}
+
+function generateEmbedFilename(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+)/);
+  const mime = match ? match[1] : 'image/png';
+  return `embed-${Date.now()}.${mimeToExt(mime)}`;
+}
+
+async function safeBlobToUrl(blobOrFile) {
+  try {
+    return URL.createObjectURL(blobOrFile);
+  } catch (e) {
+    console.warn('[safeBlobToUrl] createObjectURL ถูกบล็อก (extension?):', e?.message);
+    return await readFileAsDataUrl(blobOrFile);
+  }
+}
+
+function safeRevokeObjectURL(url) {
+  if (!url || !url.startsWith || !url.startsWith('blob:')) return;
+  try { URL.revokeObjectURL(url); } catch (e) { /* extension may block */ }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobFromDataUrl(dataUrl) {
+  const str = String(dataUrl || '');
+  const commaIdx = str.indexOf(',');
+  if (commaIdx === -1) throw new Error('Invalid data URL: ไม่พบเครื่องหมาย ","');
+  const meta = str.slice(0, commaIdx);
+  const data = str.slice(commaIdx + 1);
+  const mime = (meta.match(/^data:([^;]+)/) || [])[1] || 'application/octet-stream';
+  const isBase64 = /;base64/i.test(meta);
+  let bytes;
+  if (isBase64) {
+    const cleaned = data.replace(/\s/g, '');
+    if (!cleaned) throw new Error('Base64 payload ว่างเปล่า');
+    let bin;
+    try { bin = atob(cleaned); }
+    catch (e) { throw new Error('Base64 decode ล้มเหลว: ' + (e.message || e)); }
+    bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  } else {
+    try { bytes = new TextEncoder().encode(decodeURIComponent(data)); }
+    catch (e) { bytes = new TextEncoder().encode(data); }
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+async function createObjectUrlForProjectImage(src) {
+  if (!src || !src.startsWith('./images/')) return null;
+
+  // 1) cache ก่อน — กันกรณีไฟล์เพิ่งเขียน OS ยัง flush ไม่เสร็จ
+  if (projectImageCache.has(src)) {
+    const objUrl = await safeBlobToUrl(projectImageCache.get(src));
+    if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+    return objUrl;
+  }
+
+  if (!projectDirHandle) return null;
+
+  try {
+    const filename = decodeURIComponent(src.replace('./images/', ''));
+    const imgDirHandle = await projectDirHandle.getDirectoryHandle('images');
+    const fileHandle = await imgDirHandle.getFileHandle(filename);
+    const file = await fileHandle.getFile();
+    projectImageCache.set(src, file);
+    const objUrl = await safeBlobToUrl(file);
+    if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+    return objUrl;
+  } catch (err) {
+    console.warn('ไม่สามารถสร้าง preview รูปภาพจากโฟลเดอร์ images:', src, err);
+    return null;
+  }
+}
+
+async function resolveImagePreviewSrc(src) {
+  if (!src) return '';
+  if (src.startsWith('./images/')) {
+    return (await createObjectUrlForProjectImage(src)) || src;
+  }
+  return src;
+}
+
+async function updateImagePreviewFromUrl(url) {
+  const preview = document.getElementById('imgPreview');
+  const previewImg = document.getElementById('imgPreviewSrc');
+  if (!url) {
+    preview.classList.remove('show');
+    previewImg.removeAttribute('src');
+    return;
+  }
+
+  previewImg.src = await resolveImagePreviewSrc(url);
+  preview.classList.add('show');
+}
+
+function focusEditor() {
+  getWin().focus();
+}
+
+// ==============================================
+// FILE SYSTEM - เปิดโปรเจกต์
+// ==============================================
+
+async function ensureWritePermission(handle) {
+  if (!handle) {
+    console.warn('[ensureWritePermission] no handle');
+    return false;
+  }
+  if (!handle.queryPermission || !handle.requestPermission) {
+    console.warn('[ensureWritePermission] API not supported, assuming granted');
+    return true;
+  }
+  try {
+    const opts = { mode: 'readwrite' };
+    const q = await handle.queryPermission(opts);
+    console.log('[ensureWritePermission] query =', q);
+    if (q === 'granted') return true;
+    const r = await handle.requestPermission(opts);
+    console.log('[ensureWritePermission] request =', r);
+    if (r === 'granted') return true;
+  } catch (e) {
+    console.warn('[ensureWritePermission] failed:', e?.name, e?.message);
+  }
+  return false;
+}
+
+async function openProjectFolder() {
+  try {
+    projectDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    projectImageCache.clear();
+    setDirty(false);
+
+    let foundHtml = false;
+    for await (const entry of projectDirHandle.values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.html')) {
+        htmlFileHandle = entry;
+        fileName = entry.name;
+        const file = await entry.getFile();
+        const htmlText = await file.text();
+        
+        await processAndLoadHtml(htmlText, fileName);
+        foundHtml = true;
+        break;
+      }
+    }
+    
+    if (!foundHtml) {
+      alert("ไม่พบไฟล์ .html ในโฟลเดอร์ที่เลือกครับ\nกรุณาเลือกโฟลเดอร์ที่มีไฟล์หนังสืออยู่");
+    }
+    
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      showToast("ไม่สามารถเปิดโฟลเดอร์ได้");
+    }
+  }
+}
+
+const DEFAULT_DOC_TITLE = 'เปิดโฟลเดอร์โปรเจกต์เพื่อเริ่มทำงาน';
+const EDITOR_FALLBACK_CSS = new URL('css/style.css', document.baseURI).href;
+
+function closeProject() {
+  if (!projectDirHandle && !htmlFileHandle) {
+    showToast('ยังไม่มีโปรเจกต์ที่เปิดอยู่');
+    return;
+  }
+  if (isDirty) {
+    document.getElementById('closeConfirmModal').classList.add('show');
+    return;
+  }
+  doCloseProject();
+}
+
+function cancelCloseProject() {
+  document.getElementById('closeConfirmModal').classList.remove('show');
+}
+
+function discardAndClose() {
+  document.getElementById('closeConfirmModal').classList.remove('show');
+  doCloseProject();
+}
+
+async function saveAndClose() {
+  document.getElementById('closeConfirmModal').classList.remove('show');
+  await saveProject();
+  if (!isDirty) doCloseProject();
+}
+
+function doCloseProject() {
+  activeObjectUrls.forEach(safeRevokeObjectURL);
+  activeObjectUrls = [];
+  clearTrackUndo();
+  if (window.tempInsertObjUrl) {
+    safeRevokeObjectURL(window.tempInsertObjUrl);
+    window.tempInsertObjUrl = null;
+  }
+
+  try {
+    const frame = document.getElementById('editFrame');
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    if (doc) {
+      if (doc.body) doc.body.innerHTML = '';
+      doc.open();
+      doc.write('<!DOCTYPE html><html><head><style>html,body{margin:0;background:#FDFBF7;}</style></head><body></body></html>');
+      doc.close();
+    }
+  } catch (e) { /* iframe might be in transitional state */ }
+
+  projectDirHandle = null;
+  htmlFileHandle = null;
+  fileName = '';
+  originalHeadHtml = '';
+  projectImageCache.clear();
+  editingImage = null;
+  savedSelection = null;
+  currentSelectedFile = null;
+  currentBase64Data = null;
+  hoveredBlock = null;
+  cleanTitle = DEFAULT_DOC_TITLE;
+  setDirty(false);
+
+  document.getElementById('sidebarList').innerHTML =
+    '<div style="padding:20px;text-align:center;color:var(--shell-text-dim);font-size:12px;">ยังไม่ได้เปิดไฟล์</div>';
+  document.getElementById('statusInfo').textContent = 'พร้อมใช้งาน';
+  document.getElementById('quickInsertBtn').classList.remove('show', 'active');
+  document.getElementById('quickInsertMenu').classList.remove('show');
+  isQuickMenuOpen = false;
+
+  document.getElementById('uploadOverlay').classList.remove('hidden');
+  showToast('ปิดโฟลเดอร์แล้ว');
+}
+
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  alert("กรุณาเปิดไฟล์ผ่านปุ่ม 'เปิดโฟลเดอร์' ครับ เพื่อให้เอดิเตอร์เห็นโครงสร้างไฟล์ภาพ");
+});
+
+// ==============================================
+// แปลง HTML และ LOAD เข้าระบบ
+// ==============================================
+
+async function processAndLoadHtml(htmlString, name) {
+  activeObjectUrls.forEach(safeRevokeObjectURL);
+  activeObjectUrls = [];
+
+  const parser = new DOMParser();
+  const docObj = parser.parseFromString(htmlString, 'text/html');
+  const images = docObj.querySelectorAll('img');
+
+  let imgDirHandle = null;
+  try {
+    imgDirHandle = await projectDirHandle.getDirectoryHandle('images');
+  } catch (e) {
+    console.log("ยังไม่มีโฟลเดอร์ images ในโปรเจกต์");
+  }
+
+  const imgTasks = Array.from(images).filter(img => {
+    const src = img.getAttribute('src');
+    return src && src.startsWith('./images/');
+  });
+
+  // ตรวจครั้งแรกว่า URL.createObjectURL ใช้ได้ไหม — ถ้าโดน extension บล็อก
+  // และไฟล์ใหญ่ จะปล่อยให้ src เป็น ./images/... แทนการ inline data URL
+  // (ดีกว่า browser crash จาก OOM)
+  let blobUrlsBlocked = false;
+  try { URL.revokeObjectURL(URL.createObjectURL(new Blob(['test']))); }
+  catch (e) { blobUrlsBlocked = true; }
+
+  const SKIP_THRESHOLD = 30; // ถ้ารูปเกิน threshold + blob ถูกบล็อก = ข้ามการ inline
+  const skipInline = blobUrlsBlocked && imgTasks.length > SKIP_THRESHOLD;
+  if (skipInline) {
+    console.warn(`[performance] ${imgTasks.length} รูป + extension บล็อก blob URL — ข้าม preview เพื่อไม่ให้ browser crash. ปิด extension แล้วลองใหม่จะได้ preview ครบ`);
+    showToast(`รูปจะไม่แสดงใน editor (extension บล็อก blob URL) — ปิด extension เพื่อแก้`);
+  }
+
+  async function resolveOneImage(img) {
+    const src = img.getAttribute('src');
+    if (projectImageCache.has(src)) {
+      const objUrl = await safeBlobToUrl(projectImageCache.get(src));
+      img.setAttribute('data-original-src', src);
+      img.setAttribute('src', objUrl);
+      if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+      return;
+    }
+    if (!imgDirHandle) return;
+    const filename = src.replace('./images/', '');
+    try {
+      const fileHandle = await imgDirHandle.getFileHandle(filename);
+      const file = await fileHandle.getFile();
+      // ถ้า skipInline: เก็บ cache แต่ไม่ resolve src → iframe จะ render broken
+      // แต่หลัง save จะได้ ./images/... กลับมาเหมือนเดิม
+      if (skipInline) {
+        projectImageCache.set(src, file);
+        img.setAttribute('data-original-src', src);
+        return;
+      }
+      const objUrl = await safeBlobToUrl(file);
+      projectImageCache.set(src, file);
+      img.setAttribute('data-original-src', src);
+      img.setAttribute('src', objUrl);
+      if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+    } catch (e) {
+      console.warn("หาไฟล์รูปไม่เจอ:", filename);
+    }
+  }
+
+  const CONCURRENCY = 8;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, imgTasks.length) }, async () => {
+    while (cursor < imgTasks.length) {
+      const i = cursor++;
+      await resolveOneImage(imgTasks[i]);
+    }
+  });
+  await Promise.all(workers);
+
+  const linkResults = await resolveLinkedStylesheets(docObj);
+  loadHtml(docObj, name, linkResults);
+}
+
+function loadHtml(parsedDoc, name, linkResults) {
+  originalHeadHtml = parsedDoc.head ? parsedDoc.head.innerHTML : '';
+  clearTrackUndo();
+
+  const titleEl = parsedDoc.querySelector('title');
+  const title = titleEl ? titleEl.textContent : name;
+  cleanTitle = title;
+  setDirty(isDirty);
+
+  const bodyContent = parsedDoc.body ? parsedDoc.body.innerHTML : '';
+  const lang = (parsedDoc.documentElement && parsedDoc.documentElement.getAttribute('lang')) || 'th';
+
+  let previewHeadHtml = originalHeadHtml;
+  if (linkResults && linkResults.resolvedHrefs.length > 0) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = originalHeadHtml;
+    tmp.querySelectorAll('link').forEach(link => {
+      const rel = (link.getAttribute('rel') || '').toLowerCase().trim();
+      if (rel !== 'stylesheet') return;
+      if (linkResults.resolvedHrefs.includes(link.getAttribute('href'))) link.remove();
+    });
+    previewHeadHtml = tmp.innerHTML + `\n<style data-resolved-link-css>\n${linkResults.resolvedCss}\n</style>`;
+  }
+
+  // ถ้า user HTML ไม่มี styling เลย — fallback ไปใช้ css/style.css ของ editor (preview-only ไม่บันทึก)
+  const hasUserStyling = !!(parsedDoc.head && parsedDoc.head.querySelector('style, link[rel="stylesheet" i]'));
+  if (!hasUserStyling) {
+    previewHeadHtml += `\n<link rel="stylesheet" href="${EDITOR_FALLBACK_CSS}" data-editor-fallback>`;
+    console.log('[fallback CSS] ไม่พบ styling ใน HTML ของผู้ใช้ — โหลด editor css/style.css เป็น preview');
+  }
+
+  const doc = getDoc();
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html lang="${escapeHtml(lang)}">
+<head>
+${previewHeadHtml}
+<style data-editor-runtime>
+.cover { min-height: auto !important; height: auto !important; }
+.cover.cover-has-image { height: auto !important; margin: 0 !important; }
+.cover-image { height: 400px !important; }
+body { padding-bottom: 200px; }
+
+.chapter:hover, .preface:hover, .toc:hover, .cover:hover {
+  outline: 2px dashed rgba(26,107,82,.3);
+  outline-offset: 4px;
+}
+
+[contenteditable]:focus { outline: none; }
+
+@media screen {
+  .content::after { display: none !important; }
+}
+
+::selection { background: rgba(26,107,82,.25); }
+
+.content b, .content strong { font-weight: 600; color: var(--accent-dk); }
+.content i, .content em { font-style: italic; }
+.preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
+.preface-content i, .preface-content em { font-style: italic; }
+
+.book-img img, .cover-image, img {
+  cursor: pointer;
+  transition: outline .15s, box-shadow .15s;
+}
+.book-img img:hover, .cover-image:hover, .content img:hover {
+  outline: 3px solid rgba(26,107,82,.5);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(26,107,82,.1);
+}
+.img-editing {
+  outline: 3px solid #1A6B52 !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(26,107,82,.18) !important;
+}
+.img-selected {
+  outline: 2px solid rgba(26,107,82,.6) !important;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+.book-img img:hover::after, img.img-selected::after {
+  content: '';
+}
+.book-img:hover::before {
+  content: 'ดับเบิลคลิกเพื่อแก้ไขรูป';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,.7);
+  color: #fff;
+  font-family: var(--hd);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+.book-img { position: relative; }
+
+/* Track Changes — ins / del rendering */
+ins[data-user], del[data-user] { position: relative; }
+ins[data-user] {
+  text-decoration: none;
+  background: rgba(0,0,0,.04);
+  border-bottom: 2px solid currentColor;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+del[data-user] {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;     /* เส้นขีดฆ่าหนาขึ้น = visual cue ที่ชัด */
+  text-decoration-color: currentColor; /* ขีดสีเดียวกับ user */
+  background-color: rgba(128,128,128,0.08); /* tint จาง ๆ บอก "ลบไปแล้ว" */
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  /* ไม่ใช้ opacity เพราะ inherit ลง ::after → tooltip โปร่งใส อ่านยาก */
+}
+ins[data-user]:hover, del[data-user]:hover {
+  outline: 1px dashed currentColor;
+  outline-offset: 1px;
+}
+/* tooltip แสดงชื่อผู้ใช้ — render ด้วย JS ใน parent document (ดู bindTrackHoverTooltip) */
+</style>
+</head>
+<body>
+${bodyContent}
+</body>
+</html>`);
+  doc.close();
+
+  setTimeout(() => {
+    doc.body.setAttribute('contenteditable', 'true');
+    doc.body.addEventListener('input', () => { setDirty(true); updateStatus(); });
+    doc.addEventListener('keydown', handleEditorKeys);
+    bindImageClicks(doc);
+    bindAnchorClicks(doc);
+    buildSidebar(doc);
+    bindHoverInsert(doc);
+    attachTrackingListeners(doc);
+    bindTrackChangesClicks(doc);
+    bindTrackHoverTooltip(doc);
+    injectUserColorsForDoc(doc);
+    document.getElementById('uploadOverlay').classList.add('hidden');
+    updateStatus();
+    showToast('โหลดไฟล์สำเร็จ ✓');
+  }, 200);
+}
+
+// ==============================================
+// SIDEBAR
+// ==============================================
+
+function buildSidebar(doc) {
+  const list = document.getElementById('sidebarList');
+  list.innerHTML = '';
+
+  const cover = doc.querySelector('.cover');
+  if (cover) list.appendChild(createSidebarItem('📕', 'หน้าปก', '', () => scrollToEl(cover)));
+
+  const preface = doc.querySelector('.preface');
+  if (preface) list.appendChild(createSidebarItem('📝', 'คำนำ', '', () => scrollToEl(preface)));
+
+  const toc = doc.querySelector('.toc');
+  if (toc) list.appendChild(createSidebarItem('📋', 'สารบัญ', '', () => scrollToEl(toc)));
+
+  const chapters = doc.querySelectorAll('.chapter');
+  chapters.forEach((ch) => {
+    const numEl = ch.querySelector('.ch-num');
+    const titleEl = ch.querySelector('.ch-title');
+    const metaEl = ch.querySelector('.ch-meta');
+    const num = numEl ? numEl.textContent.trim() : '';
+    const title = titleEl ? titleEl.textContent.trim() : 'ไม่มีชื่อ';
+    const meta = metaEl ? metaEl.textContent.trim() : '';
+    list.appendChild(createSidebarItem(num, title, meta, () => scrollToEl(ch)));
+  });
+}
+
+function createSidebarItem(num, title, meta, onclick) {
+  const div = document.createElement('div');
+  div.className = 'sidebar-item';
+
+  const numEl = document.createElement('div');
+  numEl.className = 'sidebar-item-num';
+  numEl.textContent = num;
+  div.appendChild(numEl);
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'sidebar-item-title';
+  titleEl.textContent = title;
+  div.appendChild(titleEl);
+
+  if (meta) {
+    const metaEl = document.createElement('div');
+    metaEl.className = 'sidebar-item-meta';
+    metaEl.textContent = meta;
+    div.appendChild(metaEl);
+  }
+
+  div.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar-item').forEach((s) => s.classList.remove('active'));
+    div.classList.add('active');
+    onclick();
+  });
+  return div;
+}
+
+function scrollToEl(el) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ==============================================
+// EDITOR COMMANDS
+// ==============================================
+
+function execCmd(cmd, value) {
+  // Track Changes มี undo stack ของตัวเอง — ใช้ก่อนถ้ามี snapshot
+  if (cmd === 'undo' && trackUndoStack.length > 0) { trackUndo(); return; }
+  if (cmd === 'redo' && trackRedoStack.length > 0) { trackRedo(); return; }
+  focusEditor();
+  getDoc().execCommand(cmd, false, value || null);
+}
+
+function execBlockFormat(tag) {
+  focusEditor();
+  if (tag === 'blockquote') {
+    const sel = getWin().getSelection();
+    if (sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      const bq = getDoc().createElement('blockquote');
+      try {
+        range.surroundContents(bq);
+      } catch (e) {
+        // Selection ข้าม block — fallback ไปใช้ execCommand
+        getDoc().execCommand('formatBlock', false, '<blockquote>');
+      }
+    }
+  } else {
+    getDoc().execCommand('formatBlock', false, `<${tag}>`);
+  }
+  document.getElementById('blockFormat').value = 'p';
+}
+
+function wrapInlineCode() {
+  focusEditor();
+  const sel = getWin().getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) {
+    getDoc().execCommand('insertHTML', false, '<code class="inline-code">code</code>');
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  const code = getDoc().createElement('code');
+  code.className = 'inline-code';
+  try {
+    range.surroundContents(code);
+  } catch (e) {
+    // Selection ข้าม node — extract แล้ว wrap แทน (split boundary nodes ให้)
+    try {
+      code.appendChild(range.extractContents());
+      range.insertNode(code);
+    } catch (e2) {
+      // กรณีสุดท้าย: ฉีดด้วย insertHTML (อาจ strip HTML ภายในออก)
+      const text = sel.toString();
+      getDoc().execCommand('insertHTML', false, `<code class="inline-code">${escapeHtml(text)}</code>`);
+    }
+  }
+}
+
+function insertCodeBlock() {
+  focusEditor();
+  const html = `
+<div class="code-block">
+  <div class="code-header">
+    <span class="code-lang-badge">code</span>
+    <span class="code-linecount">1 บรรทัด</span>
+  </div>
+  <pre><code><span class="line">// เขียนโค้ดที่นี่</span></code></pre>
+</div>
+<p><br></p>`;
+  getDoc().execCommand('insertHTML', false, html);
+}
+
+function insertHR() {
+  focusEditor();
+  getDoc().execCommand('insertHTML', false, '<hr><p><br></p>');
+}
+
+function insertNoteBox() {
+  focusEditor();
+  const html = `
+<div class="note">
+  <div class="note-label">📌 Note</div>
+  <p>เขียนหมายเหตุที่นี่</p>
+</div>
+<p><br></p>`;
+  getDoc().execCommand('insertHTML', false, html);
+}
+
+// ==============================================
+// END MARK
+// ==============================================
+
+function showEndMarkModal() {
+  const sel = getWin().getSelection();
+  if (sel.rangeCount) {
+    savedSelection = sel.getRangeAt(0).cloneRange();
+  }
+  document.getElementById('endMarkText').value = '— ✤ —';
+  document.getElementById('endMarkTop').value = '80';
+  document.getElementById('endMarkBottom').value = '20';
+  updateEndMarkPreview();
+  document.getElementById('endMarkModal').classList.add('show');
+}
+
+function closeEndMarkModal() {
+  document.getElementById('endMarkModal').classList.remove('show');
+}
+
+function updateEndMarkPreview() {
+  const text = document.getElementById('endMarkText').value || '— ✤ —';
+  document.getElementById('endMarkPreview').textContent = text;
+}
+
+function insertEndMark() {
+  const text = document.getElementById('endMarkText').value || '— ✤ —';
+  const top = document.getElementById('endMarkTop').value || '80';
+  const bottom = document.getElementById('endMarkBottom').value || '20';
+
+  focusEditor();
+  if (savedSelection) {
+    const sel = getWin().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedSelection);
+  }
+
+  const topNum = parseInt(top, 10) || 0;
+  const bottomNum = parseInt(bottom, 10) || 0;
+  const html = `<div class="end-mark" style="text-align:center;font-size:20px;color:#C8C5BB;margin-top:${topNum}px;margin-bottom:${bottomNum}px;" contenteditable="false">${escapeHtml(text)}</div><p><br></p>`;
+  getDoc().execCommand('insertHTML', false, html);
+
+  closeEndMarkModal();
+  showToast('แทรกสัญลักษณ์จบบทแล้ว');
+}
+
+// ==============================================
+// LINK
+// ==============================================
+
+function showLinkModal() {
+  const sel = getWin().getSelection();
+  if (sel.rangeCount) {
+    savedSelection = sel.getRangeAt(0).cloneRange();
+    document.getElementById('linkText').value = sel.toString();
+  }
+  document.getElementById('linkUrl').value = '';
+  document.getElementById('linkModal').classList.add('show');
+  document.getElementById('linkUrl').focus();
+}
+
+function closeLinkModal() {
+  document.getElementById('linkModal').classList.remove('show');
+}
+
+function insertLink() {
+  const url = document.getElementById('linkUrl').value.trim();
+  const text = document.getElementById('linkText').value.trim();
+  if (!url) return;
+
+  focusEditor();
+  if (savedSelection) {
+    const sel = getWin().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedSelection);
+  }
+
+  const safeUrl = safeLinkUrl(url);
+  if (text && getWin().getSelection().isCollapsed) {
+    getDoc().execCommand('insertHTML', false, `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`);
+  } else {
+    getDoc().execCommand('createLink', false, safeUrl);
+  }
+
+  closeLinkModal();
+  showToast('แทรกลิงก์แล้ว');
+}
+
+// ==============================================
+// IMAGE (FIXED BASE64 TRUNCATION)
+// ==============================================
+
+function bindImageClicks(doc) {
+  if (!doc.body || doc.body._imgClickBound) return;
+  doc.body._imgClickBound = true;
+
+  doc.body.addEventListener('dblclick', (e) => {
+    const img = e.target.closest('img');
+    if (!img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    showImageModalForEdit(img);
+  }, true);
+
+  doc.body.addEventListener('mousedown', (e) => {
+    const img = e.target.closest('img');
+    doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
+    if (img) img.classList.add('img-selected');
+  }, true);
+}
+
+// ลิงก์ใน contenteditable: browser ไม่ navigate เอง — ดักจับ click แล้ว scroll/open ให้
+function bindAnchorClicks(doc) {
+  if (!doc.body || doc.body._anchorBound) return;
+  doc.body._anchorBound = true;
+
+  doc.body.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    const href = a.getAttribute('href') || '';
+
+    // Internal anchor (#id) — smooth scroll ใน iframe
+    // ใช้ explicit scrollTo (ไม่ใช้ scrollIntoView) เพราะใน contenteditable=true Chrome จะ
+    // วาง caret ตอน click → race กับ scrollIntoView → scroll ไม่ทำงาน
+    // raF ทำให้ click event settle ก่อน แล้วค่อย scroll
+    if (href.startsWith('#')) {
+      const id = decodeURIComponent(href.slice(1));
+      if (!id) return;
+      const target = doc.getElementById(id) || doc.querySelector(`[name="${CSS.escape(id)}"]`);
+      if (target) {
+        e.preventDefault();
+        const win = doc.defaultView;
+        requestAnimationFrame(() => {
+          const rect = target.getBoundingClientRect();
+          const currentTop = win.scrollY || doc.documentElement.scrollTop || 0;
+          win.scrollTo({
+            top: Math.max(0, currentTop + rect.top - 20),
+            behavior: 'smooth'
+          });
+        });
+      }
+      return;
+    }
+
+    // External (http/https/mailto/tel) — block default; Ctrl/Cmd+click เปิดแท็บใหม่
+    if (/^(https?:|mailto:|tel:)/i.test(href)) {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+      }
+    }
+  });
+}
+
+function showImageModalForEdit(img) {
+  editingImage = img;
+  const doc = getDoc();
+  doc.querySelectorAll('.img-editing').forEach((el) => el.classList.remove('img-editing'));
+  img.classList.add('img-editing');
+
+  document.getElementById('imageModalTitle').textContent = '🖼️ แก้ไขรูปภาพ';
+  document.getElementById('imgSubmitBtn').textContent = 'บันทึก';
+  document.getElementById('imgDeleteBtn').style.display = 'flex';
+
+  resetImageFilePicker(); // ล้างค่าก่อนเปิด
+
+  const currentSrc = img.getAttribute('data-original-src') || img.getAttribute('src') || '';
+  
+  // เช็คว่าเป็น Base64 เดิมหรือไม่ ถ้าใช่ให้โหลดเข้า RAM เพื่อป้องกันการตัดโค้ด
+  const cb = document.getElementById('imgEmbedFile');
+  if (currentSrc.startsWith('data:image/')) {
+    currentBase64Data = currentSrc;
+    document.getElementById('imgUrl').value = "ภาพ Base64 ฝังในเอกสาร (อ่านอย่างเดียว)";
+    document.getElementById('imgUrl').setAttribute('readonly', 'true');
+    if (cb) cb.checked = true;
+  } else {
+    currentBase64Data = null;
+    document.getElementById('imgUrl').value = currentSrc;
+    document.getElementById('imgUrl').removeAttribute('readonly');
+    if (cb) cb.checked = false;
+  }
+
+  document.getElementById('imgAlt').value = img.getAttribute('alt') || '';
+  document.getElementById('imgWidth').value = img.style.width || '';
+  document.getElementById('imgHeight').value = img.style.height || '';
+  document.getElementById('imgObjectFit').value = img.style.objectFit || '';
+
+  updateImagePreviewFromUrl(img.getAttribute('src') || currentSrc);
+
+  document.getElementById('imageModal').classList.add('show');
+}
+
+async function handleImageFile(e) {
+  const file = e.target.files[0];
+  if (file) {
+    currentSelectedFile = file;
+    await processSelectedImage(file);
+  }
+  e.target.value = ''; 
+}
+
+async function handleEmbedCheckboxChange() {
+  const checkbox = document.getElementById('imgEmbedFile');
+  const embedFile = checkbox.checked;
+
+  if (currentSelectedFile) {
+    await processSelectedImage(currentSelectedFile);
+    return;
+  }
+
+  if (!editingImage) return;
+
+  const isCurrentlyEmbedded = !!currentBase64Data;
+  if (embedFile === isCurrentlyEmbedded) return;
+
+  checkbox.disabled = true;
+  try {
+    if (embedFile) {
+      const currentPath = document.getElementById('imgUrl').value.trim();
+      if (!currentPath.startsWith('./images/')) {
+        showToast('แปลงเป็น Base64 ได้เฉพาะรูปในโฟลเดอร์โปรเจกต์');
+        checkbox.checked = false;
+        return;
+      }
+      if (!projectDirHandle) {
+        showToast('ยังไม่ได้เปิดโฟลเดอร์โปรเจกต์');
+        checkbox.checked = false;
+        return;
+      }
+      const file = await resolveProjectFile(projectDirHandle, currentPath);
+      if (!file) {
+        showToast('ไม่พบไฟล์รูปในโปรเจกต์');
+        checkbox.checked = false;
+        return;
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      currentBase64Data = dataUrl;
+      safeRevokeObjectURL(window.tempInsertObjUrl);
+      window.tempInsertObjUrl = null;
+      document.getElementById('imgUrl').value = 'ภาพ Base64 ฝังในเอกสาร (อ่านอย่างเดียว)';
+      document.getElementById('imgUrl').setAttribute('readonly', 'true');
+      await updateImagePreviewFromUrl(dataUrl);
+      showToast('แปลงเป็น Base64 พร้อมฝังในเอกสารแล้ว');
+    } else {
+      if (!currentBase64Data) return;
+      if (!projectDirHandle) {
+        alert('กรุณาเปิดโฟลเดอร์โปรเจกต์ก่อนแปลงเป็นลิงก์ไฟล์');
+        checkbox.checked = true;
+        return;
+      }
+      if (!(await ensureWritePermission(projectDirHandle))) {
+        showToast('ไม่ได้รับสิทธิ์เขียนไฟล์ในโฟลเดอร์โปรเจกต์ — กดอนุญาตในแถบเบราว์เซอร์');
+        checkbox.checked = true;
+        return;
+      }
+      const filename = generateEmbedFilename(currentBase64Data);
+      const blob = blobFromDataUrl(currentBase64Data);
+      if (blob.size === 0) throw new Error('Decoded blob is empty');
+
+      const imgDirHandle = await projectDirHandle.getDirectoryHandle('images', { create: true });
+      const fileHandle = await imgDirHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
+      const writtenFile = await fileHandle.getFile();
+      if (!writtenFile || writtenFile.size === 0) {
+        throw new Error('ไฟล์ที่บันทึกว่างเปล่า — การเขียนอาจล้มเหลว');
+      }
+
+      currentBase64Data = null;
+      const relativePath = `./images/${filename}`;
+      projectImageCache.set(relativePath, blob);
+      document.getElementById('imgUrl').value = relativePath;
+      document.getElementById('imgUrl').removeAttribute('readonly');
+
+      const objUrl = await safeBlobToUrl(blob);
+      if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+      window.tempInsertObjUrl = objUrl;
+
+      const previewImg = document.getElementById('imgPreviewSrc');
+      previewImg.removeAttribute('src');
+      previewImg.src = objUrl;
+      document.getElementById('imgPreview').classList.add('show');
+      showToast(`บันทึกรูปลง ${relativePath} (${(writtenFile.size/1024).toFixed(1)} KB)`);
+    }
+  } catch (e) {
+    console.error('[handleEmbedCheckboxChange] failed:', e?.name, e?.message, e);
+    let msg;
+    if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') {
+      msg = 'ไม่ได้รับสิทธิ์เขียนไฟล์ — กดอนุญาตในเบราว์เซอร์แล้วลองใหม่';
+    } else if (e?.name === 'InvalidStateError') {
+      msg = 'ไฟล์ถูกใช้งานอยู่ ลองปิด preview/โปรแกรมอื่นที่เปิดไฟล์อยู่';
+    } else if (e?.name === 'NotFoundError') {
+      msg = 'หาโฟลเดอร์/ไฟล์ไม่เจอ — โปรเจกต์อาจถูกย้ายหรือลบ';
+    } else {
+      msg = `แปลงรูปไม่สำเร็จ: ${e?.name || ''} ${e?.message || e}`.trim();
+    }
+    showToast(msg);
+    checkbox.checked = !embedFile;
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+let isProcessingImage = false;
+
+function setImageProcessing(processing) {
+  isProcessingImage = processing;
+  const submit = document.getElementById('imgSubmitBtn');
+  const embedCb = document.getElementById('imgEmbedFile');
+  if (submit) {
+    submit.disabled = processing;
+    submit.textContent = processing
+      ? 'กำลังประมวลผล...'
+      : (editingImage ? 'บันทึก' : 'แทรก');
+  }
+  if (embedCb) embedCb.disabled = processing;
+}
+
+async function processSelectedImage(file) {
+  const embedFile = document.getElementById('imgEmbedFile').checked;
+  const altInput = document.getElementById('imgAlt');
+
+  document.getElementById('imgFileName').textContent = file.name;
+  document.querySelector('.img-file-picker').classList.add('has-file');
+  if (!altInput.value.trim()) {
+    altInput.value = file.name.replace(/\.[^.]+$/, '');
+  }
+
+  setImageProcessing(true);
+  try {
+  if (embedFile) {
+    const dataUrl = await readFileAsDataUrl(file);
+    currentBase64Data = dataUrl;
+    document.getElementById('imgUrl').value = "ภาพ Base64 ฝังในเอกสาร (อ่านอย่างเดียว)";
+    document.getElementById('imgUrl').setAttribute('readonly', 'true');
+    document.getElementById('imgPreviewSrc').src = dataUrl;
+    document.getElementById('imgPreview').classList.add('show');
+    safeRevokeObjectURL(window.tempInsertObjUrl);
+    window.tempInsertObjUrl = null;
+  } else {
+    if (!projectDirHandle) {
+      alert("กรุณาเปิดโฟลเดอร์โปรเจกต์ก่อนแทรกรูปแบบอ้างอิงไฟล์ครับ");
+      return;
+    }
+    if (!(await ensureWritePermission(projectDirHandle))) {
+      alert("ไม่ได้รับสิทธิ์เขียนไฟล์ในโฟลเดอร์โปรเจกต์ — กรุณากดอนุญาตเมื่อเบราว์เซอร์ถาม แล้วลองใหม่");
+      return;
+    }
+    try {
+      showToast("กำลังเตรียมรูปภาพลงโปรเจกต์...");
+      const imgDirHandle = await projectDirHandle.getDirectoryHandle('images', { create: true });
+      const fileHandle = await imgDirHandle.getFileHandle(file.name, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
+
+      // อ่านไฟล์กลับมาจากดิสก์ — ได้ File reference สด ๆ ที่อ่านได้แน่นอน
+      // (file เดิมจาก <input> อาจถูก invalidate หลัง writable.write)
+      const freshFile = await fileHandle.getFile();
+
+      currentBase64Data = null;
+      document.getElementById('imgUrl').removeAttribute('readonly');
+
+      const relativePath = `./images/${file.name}`;
+      projectImageCache.set(relativePath, freshFile);
+      document.getElementById('imgUrl').value = relativePath;
+
+      const objUrl = await safeBlobToUrl(freshFile);
+      document.getElementById('imgPreviewSrc').src = objUrl;
+      document.getElementById('imgPreview').classList.add('show');
+
+      safeRevokeObjectURL(window.tempInsertObjUrl);
+      if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
+      window.tempInsertObjUrl = objUrl;
+    } catch (err) {
+      console.error('[processSelectedImage embed=false] failed:', err?.name, err?.message, err);
+      const msg = err?.name === 'NotReadableError'
+        ? 'อ่านไฟล์ไม่ได้ — อาจเป็นปัญหาสิทธิ์หรือไฟล์ถูกย้าย ลองเลือกไฟล์ใหม่อีกครั้ง'
+        : err?.name === 'NotAllowedError'
+        ? 'ไม่ได้รับสิทธิ์เขียนไฟล์ — กดอนุญาตในเบราว์เซอร์'
+        : `บันทึกรูปไม่สำเร็จ: ${err?.message || err}`;
+      alert(msg);
+    }
+  }
+  } finally {
+    setImageProcessing(false);
+  }
+}
+
+function resetImageFilePicker() {
+  setImageProcessing(false);
+  currentSelectedFile = null;
+  safeRevokeObjectURL(window.tempInsertObjUrl);
+  window.tempInsertObjUrl = null;
+  currentBase64Data = null;
+  
+  const fileInput = document.getElementById('imgFileInput');
+  if (fileInput) fileInput.value = '';
+  const picker = document.querySelector('.img-file-picker');
+  if (picker) picker.classList.remove('has-file');
+  const nameEl = document.getElementById('imgFileName');
+  if (nameEl) nameEl.textContent = 'คลิกเพื่อเลือกรูปภาพ...';
+  
+  const imgUrlEl = document.getElementById('imgUrl');
+  if (imgUrlEl) imgUrlEl.removeAttribute('readonly');
+  
+  const embedCheckbox = document.getElementById('imgEmbedFile');
+  if (embedCheckbox) embedCheckbox.checked = true;
+}
+
+function showImageModal() {
+  editingImage = null;
+  document.getElementById('imageModalTitle').textContent = '🖼️ แทรกรูปภาพ';
+  document.getElementById('imgSubmitBtn').textContent = 'แทรก';
+  document.getElementById('imgDeleteBtn').style.display = 'none';
+
+  document.getElementById('imgUrl').value = '';
+  document.getElementById('imgAlt').value = '';
+  document.getElementById('imgWidth').value = '';
+  document.getElementById('imgHeight').value = '';
+  document.getElementById('imgObjectFit').value = '';
+
+  document.getElementById('imgPreview').classList.remove('show');
+  resetImageFilePicker();
+
+  const sel = getWin().getSelection();
+  if (sel.rangeCount) {
+    savedSelection = sel.getRangeAt(0).cloneRange();
+  }
+
+  document.getElementById('imageModal').classList.add('show');
+  document.getElementById('imgUrl').focus();
+}
+
+function closeImageModal() {
+  document.getElementById('imageModal').classList.remove('show');
+  if (editingImage) {
+    editingImage.classList.remove('img-editing');
+    editingImage = null;
+  }
+}
+
+async function insertImage() {
+  if (isProcessingImage) {
+    showToast('กำลังประมวลผลรูปอยู่ กรุณารอสักครู่');
+    return;
+  }
+  // ดึงค่า URL ปกติ หรือดึงจาก RAM ถ้าเป็น Base64
+  let url = document.getElementById('imgUrl').value.trim();
+  if (currentBase64Data) {
+    url = currentBase64Data;
+  }
+
+  const alt = document.getElementById('imgAlt').value.trim() || 'รูปภาพ';
+  const width = document.getElementById('imgWidth').value.trim();
+  const height = document.getElementById('imgHeight').value.trim();
+  const objectFit = document.getElementById('imgObjectFit').value;
+
+  if (!url) return;
+
+  if (editingImage) {
+    const previousOriginalSrc = editingImage.getAttribute('data-original-src') || '';
+    const previousPreviewSrc = editingImage.getAttribute('src') || '';
+
+    if (window.tempInsertObjUrl && url.startsWith('./images/')) {
+      editingImage.removeAttribute('src');
+      editingImage.setAttribute('src', window.tempInsertObjUrl);
+      editingImage.setAttribute('data-original-src', url);
+      window.tempInsertObjUrl = null;
+    } else if (url.startsWith('./images/')) {
+      // รักษา preview ใน editor ไว้เป็น blob URL แต่บันทึก path จริงไว้ที่ data-original-src
+      // เพื่อให้ saveProject() เขียน HTML ออกมาเป็น ./images/... เหมือนเดิม
+      let previewSrc = previousOriginalSrc === url ? previousPreviewSrc : '';
+      if (!previewSrc || previewSrc === url || previewSrc.startsWith('./images/')) {
+        previewSrc = await createObjectUrlForProjectImage(url) || url;
+      }
+      editingImage.removeAttribute('src');
+      editingImage.setAttribute('src', previewSrc);
+      editingImage.setAttribute('data-original-src', url);
+    } else {
+      editingImage.removeAttribute('src');
+      editingImage.setAttribute('src', url);
+      editingImage.removeAttribute('data-original-src');
+    }
+
+    editingImage.setAttribute('alt', alt);
+    editingImage.style.width = width || '';
+    editingImage.style.height = height || '';
+    editingImage.style.objectFit = objectFit || '';
+
+    const figure = editingImage.closest('figure');
+    if (figure) {
+      const caption = figure.querySelector('figcaption');
+      if (caption) caption.textContent = alt;
+    }
+
+    setDirty(true);
+    closeImageModal();
+    showToast('อัปเดตรูปภาพแล้ว ✓');
+  } else {
+    focusEditor();
+    if (savedSelection) {
+      const sel = getWin().getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedSelection);
+    }
+    
+    const safeUrl = safeImageUrl(url);
+    const cssLenRe = /^(\d+(\.\d+)?(px|%|em|rem|vh|vw|pt|cm|mm|in|pc)?|auto|inherit)$/;
+    const safeWidth = cssLenRe.test(width) ? width : '';
+    const safeHeight = cssLenRe.test(height) ? height : '';
+    const safeFit = ['cover', 'contain'].includes(objectFit) ? objectFit : '';
+
+    let styleStr = '';
+    if (safeWidth) styleStr += `width: ${safeWidth}; `;
+    if (safeHeight) styleStr += `height: ${safeHeight}; `;
+    if (safeFit) styleStr += `object-fit: ${safeFit}; `;
+    const styleAttr = styleStr ? ` style="${styleStr.trim()}"` : '';
+
+    let finalSrc = safeUrl;
+    let dataOriginalSrcAttr = '';
+
+    if (window.tempInsertObjUrl && safeUrl.startsWith('./images/')) {
+      finalSrc = window.tempInsertObjUrl;
+      dataOriginalSrcAttr = ` data-original-src="${escapeHtml(safeUrl)}"`;
+      window.tempInsertObjUrl = null;
+    } else if (safeUrl.startsWith('./images/')) {
+      const previewSrc = await createObjectUrlForProjectImage(safeUrl);
+      if (previewSrc) {
+        finalSrc = previewSrc;
+        dataOriginalSrcAttr = ` data-original-src="${escapeHtml(safeUrl)}"`;
+      }
+    }
+
+    const escAlt = escapeHtml(alt);
+    const html = `
+<figure class="book-img">
+  <img src="${escapeHtml(finalSrc)}" alt="${escAlt}" loading="lazy"${styleAttr}${dataOriginalSrcAttr}>
+  <figcaption>${escAlt}</figcaption>
+</figure>
+<p><br></p>`;
+    getDoc().execCommand('insertHTML', false, html);
+
+    closeImageModal();
+    showToast('แทรกรูปภาพแล้ว');
+  }
+}
+
+function deleteImage() {
+  if (!editingImage) return;
+  const figure = editingImage.closest('figure');
+  if (figure) {
+    figure.remove();
+  } else {
+    editingImage.remove();
+  }
+  setDirty(true);
+  closeImageModal();
+  showToast('ลบรูปภาพแล้ว');
+}
+
+// ==============================================
+// LIST SETTINGS (ตั้งค่าตัวเลข)
+// ==============================================
+
+function showListSettingModal() {
+  const sel = getWin().getSelection();
+  if (!sel.rangeCount) return showToast('กรุณาคลิกที่รายการ (OL) ก่อนครับ');
+  
+  let node = sel.anchorNode;
+  if (node && node.nodeType === 3) node = node.parentNode;
+  if (!node) return;
+
+  const ol = node.closest('ol');
+  if (!ol) {
+    showToast('กรุณาคลิกเคอร์เซอร์ไว้ในรายการที่มีตัวเลขก่อนตั้งค่าครับ');
+    return;
+  }
+
+  savedSelection = sel.getRangeAt(0).cloneRange();
+  document.getElementById('listStartInput').value = ol.getAttribute('start') || 1;
+  document.getElementById('listSettingModal').classList.add('show');
+}
+
+function closeListSettingModal() {
+  document.getElementById('listSettingModal').classList.remove('show');
+}
+
+function getEditingOl() {
+  focusEditor();
+  if (savedSelection) {
+    const sel = getWin().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedSelection);
+    let node = sel.anchorNode;
+    if (node && node.nodeType === 3) node = node.parentNode;
+    return node ? node.closest('ol') : null;
+  }
+  return null;
+}
+
+function applyListStart() {
+  const ol = getEditingOl();
+  const val = document.getElementById('listStartInput').value;
+  if (ol) {
+    ol.setAttribute('start', val);
+    setDirty(true);
+    showToast(`เริ่มรันเลขใหม่ที่ ${val} แล้ว`);
+  }
+  closeListSettingModal();
+}
+
+function autoContinueList() {
+  const ol = getEditingOl();
+  if (ol) {
+    const allOls = Array.from(getDoc().querySelectorAll('ol'));
+    const currentIndex = allOls.indexOf(ol);
+    
+    if (currentIndex > 0) {
+      const prevOl = allOls[currentIndex - 1];
+      const prevStart = parseInt(prevOl.getAttribute('start') || 1);
+      const prevCount = prevOl.querySelectorAll('li').length;
+      
+      const nextStart = prevStart + prevCount;
+      ol.setAttribute('start', nextStart);
+      setDirty(true);
+      showToast(`รันตัวเลขต่อเป็นเลข ${nextStart} แล้ว`);
+    } else {
+      showToast('ไม่พบรายการด้านบนให้เชื่อมต่อ');
+    }
+  }
+  closeListSettingModal();
+}
+
+// ==============================================
+// HOVER QUICK INSERT (เมนูแทรกด่วนเมื่อเลื่อนเมาส์)
+// ==============================================
+
+function bindHoverInsert(doc) {
+  const btn = document.getElementById('quickInsertBtn');
+  const menu = document.getElementById('quickInsertMenu');
+  
+  doc.body.addEventListener('mousemove', (e) => {
+    if (isQuickMenuOpen) return;
+
+    const block = e.target.closest('p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol');
+    
+    if (block) {
+      clearTimeout(quickMenuHideTimeout);
+      hoveredBlock = block;
+      const rect = block.getBoundingClientRect();
+      btn.classList.add('show');
+      btn.style.top = (rect.top + 2) + 'px';
+    } else {
+      scheduleHide();
+    }
+  });
+
+  doc.addEventListener('scroll', () => {
+    if (!isQuickMenuOpen) {
+      btn.classList.remove('show');
+      menu.classList.remove('show');
+    }
+  });
+  
+  doc.body.addEventListener('mouseleave', () => {
+    if (!isQuickMenuOpen) scheduleHide();
+  });
+
+  btn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+  menu.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+
+  function scheduleHide() {
+    clearTimeout(quickMenuHideTimeout);
+    quickMenuHideTimeout = setTimeout(() => {
+      if (!isQuickMenuOpen) {
+        btn.classList.remove('show');
+        hoveredBlock = null;
+      }
+    }, 300);
+  }
+}
+
+function toggleQuickMenu() {
+  const menu = document.getElementById('quickInsertMenu');
+  const btn = document.getElementById('quickInsertBtn');
+  
+  if (isQuickMenuOpen) {
+    menu.classList.remove('show');
+    btn.classList.remove('active');
+    isQuickMenuOpen = false;
+  } else {
+    if (hoveredBlock) {
+      const sel = getWin().getSelection();
+      const range = getDoc().createRange();
+      range.setStart(hoveredBlock, 0);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      focusEditor();
+      savedSelection = range; 
+    }
+    
+    btn.classList.add('active');
+    menu.style.top = btn.style.top;
+    menu.classList.add('show');
+    isQuickMenuOpen = true;
+  }
+}
+
+function quickAction(action) {
+  // ควบคุมคำสั่งที่มาจากเมนู Quick Insert
+  if (action === 'image') showImageModal();
+  else if (action === 'p') {
+    focusEditor();
+    getDoc().execCommand('insertHTML', false, '<p><br></p>'); // แทรกย่อหน้าใหม่
+  }
+  else if (action === 'note') insertNoteBox();
+  else if (action === 'endmark') showEndMarkModal();
+  else if (action === 'code') insertCodeBlock();
+  
+  document.getElementById('quickInsertMenu').classList.remove('show');
+  document.getElementById('quickInsertBtn').classList.remove('active');
+  isQuickMenuOpen = false;
+}
+
+document.addEventListener('click', (e) => {
+  const btn = document.getElementById('quickInsertBtn');
+  const menu = document.getElementById('quickInsertMenu');
+  if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+    menu.classList.remove('show');
+    btn.classList.remove('active');
+    isQuickMenuOpen = false;
+  }
+});
+
+// ==============================================
+// KEYBOARD SHORTCUTS
+// ==============================================
+
+function handleEditorKeys(e) {
+  if (e.ctrlKey || e.metaKey) {
+    switch (e.key.toLowerCase()) {
+      case 'b': e.preventDefault(); execCmd('bold'); break;
+      case 'i': e.preventDefault(); execCmd('italic'); break;
+      case 'u': e.preventDefault(); execCmd('underline'); break;
+      case 'z':
+        e.preventDefault();
+        if (e.shiftKey) execCmd('redo');
+        else execCmd('undo');
+        break;
+      case 'y': e.preventDefault(); execCmd('redo'); break;
+      case 's': e.preventDefault(); saveProject(); break;
+    }
+  }
+}
+
+// ==============================================
+// SAVE PROJECT
+// ==============================================
+
+function buildFullHtml(content) {
+  let lang = 'th';
+  try {
+    const iframeRoot = getDoc() && getDoc().documentElement;
+    if (iframeRoot && iframeRoot.getAttribute('lang')) lang = iframeRoot.getAttribute('lang');
+  } catch (e) { /* iframe not ready */ }
+
+  return `<!DOCTYPE html>
+<html lang="${escapeHtml(lang)}">
+<head>
+${originalHeadHtml}</head>
+<body>
+${content}
+</body>
+</html>`;
+}
+
+function buildSaveContent() {
+  const doc = getDoc();
+  const cloneBody = doc.body.cloneNode(true);
+  const images = cloneBody.querySelectorAll('img[data-original-src]');
+  images.forEach(img => {
+    img.setAttribute('src', img.getAttribute('data-original-src'));
+    img.removeAttribute('data-original-src');
+  });
+  // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
+  cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
+  let content = cloneBody.innerHTML;
+  content = content.replace(/<b\b[^>]*>/gi, '<strong>').replace(/<\/b>/gi, '</strong>');
+  content = content.replace(/​/g, ''); // strip zero-width space ที่อาจตกค้างจากการพิมพ์ใน track mode
+  return buildFullHtml(content);
+}
+
+async function saveProject() {
+  if (!htmlFileHandle) {
+    showToast('ยังไม่มีการเปิดโปรเจกต์');
+    return;
+  }
+
+  if (!(await ensureWritePermission(htmlFileHandle))) {
+    showToast('ไม่ได้รับสิทธิ์เขียนไฟล์ HTML — กดอนุญาตเมื่อเบราว์เซอร์ถาม');
+    return;
+  }
+
+  const fullHtml = buildSaveContent();
+
+  try {
+    const writable = await htmlFileHandle.createWritable();
+    await writable.write(fullHtml);
+    await writable.close();
+
+    setDirty(false);
+    showToast('บันทึกทับไฟล์เดิมสำเร็จ ✓');
+  } catch (err) {
+    console.error(err);
+    showToast('บันทึกไม่สำเร็จ (ตรวจสอบสิทธิ์การเขียนไฟล์)');
+  }
+}
+
+async function saveProjectAs() {
+  if (!htmlFileHandle && !getDoc().body) {
+    showToast('ยังไม่มีเนื้อหาให้บันทึก');
+    return;
+  }
+
+  let newHandle;
+  try {
+    newHandle = await window.showSaveFilePicker({
+      suggestedName: fileName || 'book.html',
+      types: [{
+        description: 'HTML file',
+        accept: { 'text/html': ['.html', '.htm'] }
+      }]
+    });
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      showToast('เปิดหน้าต่างบันทึกไม่สำเร็จ');
+    }
+    return;
+  }
+
+  const fullHtml = buildSaveContent();
+
+  try {
+    const writable = await newHandle.createWritable();
+    await writable.write(fullHtml);
+    await writable.close();
+
+    htmlFileHandle = newHandle;
+    fileName = newHandle.name;
+    cleanTitle = fileName;
+    setDirty(false);
+
+    if (fullHtml.includes('./images/')) {
+      showToast('บันทึกเป็นไฟล์ใหม่แล้ว ✓ — อย่าลืมคัดลอกโฟลเดอร์ images ไปด้วยถ้าย้ายที่');
+    } else {
+      showToast('บันทึกเป็นไฟล์ใหม่แล้ว ✓');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('บันทึกไม่สำเร็จ (ตรวจสอบสิทธิ์การเขียนไฟล์)');
+  }
+}
+
+// ==============================================
+// UTILITIES
+// ==============================================
+
+function updateStatus() {
+  const doc = getDoc();
+  if (!doc.body) return;
+  const text = doc.body.innerText || '';
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const chars = text.length;
+  document.getElementById('statusInfo').textContent =
+    `${words.toLocaleString()} คำ · ${chars.toLocaleString()} ตัวอักษร`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ==============================================
+// EVENT LISTENERS
+// ==============================================
+
+const MODAL_CLOSERS = {
+  linkModal: closeLinkModal,
+  imageModal: closeImageModal,
+  endMarkModal: closeEndMarkModal,
+  listSettingModal: closeListSettingModal,
+  closeConfirmModal: cancelCloseProject,
+  userSetupModal: closeUserSetup,
+};
+
+function closeTopMostModal() {
+  const ids = Object.keys(MODAL_CLOSERS);
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const el = document.getElementById(ids[i]);
+    if (el && el.classList.contains('show')) {
+      MODAL_CLOSERS[ids[i]]();
+      return true;
+    }
+  }
+  return false;
+}
+
+function getOpenModalOverlay() {
+  for (const id of Object.keys(MODAL_CLOSERS)) {
+    const el = document.getElementById(id);
+    if (el && el.classList.contains('show')) return el;
+  }
+  return null;
+}
+
+function getFocusableEls(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+let lastFocusedBeforeModal = null;
+
+function setupModalFocusManagement() {
+  Object.keys(MODAL_CLOSERS).forEach(id => {
+    const overlay = document.getElementById(id);
+    if (!overlay) return;
+    let wasOpen = overlay.classList.contains('show');
+
+    new MutationObserver(() => {
+      const isOpen = overlay.classList.contains('show');
+      if (isOpen === wasOpen) return;
+      wasOpen = isOpen;
+      if (isOpen) {
+        const active = document.activeElement;
+        if (active && active !== document.body && !overlay.contains(active)) {
+          lastFocusedBeforeModal = active;
+        }
+        const focusable = getFocusableEls(overlay.querySelector('.modal'));
+        const focusTarget = overlay.querySelector('input:not([readonly]):not([type="hidden"]), textarea:not([readonly])')
+          || focusable[0];
+        if (focusTarget) setTimeout(() => focusTarget.focus(), 30);
+      } else {
+        if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+          try { lastFocusedBeforeModal.focus(); } catch (e) { /* element gone */ }
+        }
+        lastFocusedBeforeModal = null;
+      }
+    }).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+  });
+}
+
+function syncAriaLabels() {
+  document.querySelectorAll('.tb-btn[data-tip]').forEach(btn => {
+    const tip = btn.getAttribute('data-tip');
+    if (tip && !btn.getAttribute('aria-label')) btn.setAttribute('aria-label', tip);
+  });
+  document.querySelectorAll('button svg, .quick-insert-btn svg, .tb-btn svg').forEach(svg => {
+    if (!svg.hasAttribute('aria-hidden')) svg.setAttribute('aria-hidden', 'true');
+  });
+  document.querySelectorAll('.toolbar').forEach(tb => {
+    if (!tb.hasAttribute('role')) tb.setAttribute('role', 'toolbar');
+    if (!tb.hasAttribute('aria-label')) tb.setAttribute('aria-label', 'แถบเครื่องมือจัดรูปแบบ');
+  });
+  document.querySelectorAll('.modal').forEach((modal, i) => {
+    if (!modal.hasAttribute('role')) modal.setAttribute('role', 'dialog');
+    if (!modal.hasAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
+    const heading = modal.querySelector('h3');
+    if (heading && !modal.hasAttribute('aria-labelledby')) {
+      if (!heading.id) heading.id = `modal-heading-${i}`;
+      modal.setAttribute('aria-labelledby', heading.id);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  syncAriaLabels();
+  setupModalFocusManagement();
+
+  // Track Changes — load user จาก auth (Firebase) หรือ fallback mock
+  loadUserFromAuth().then(u => {
+    currentUser = u;
+    persistCurrentUser(currentUser); // เก็บ localStorage เผื่อ session ต่อไป
+    updateUserBadge();
+    syncTrackingUI();
+  });
+
+  document.getElementById('userSetupModal').addEventListener('click', function (e) {
+    if (e.target === this) closeUserSetup();
+  });
+
+  document.getElementById('linkUrl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') insertLink();
+    if (e.key === 'Escape') closeLinkModal();
+  });
+  document.getElementById('imgUrl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') insertImage();
+    if (e.key === 'Escape') closeImageModal();
+  });
+
+  document.getElementById('linkModal').addEventListener('click', function (e) {
+    if (e.target === this) closeLinkModal();
+  });
+  document.getElementById('imageModal').addEventListener('click', function (e) {
+    if (e.target === this) closeImageModal();
+  });
+  document.getElementById('endMarkModal').addEventListener('click', function (e) {
+    if (e.target === this) closeEndMarkModal();
+  });
+  document.getElementById('listSettingModal').addEventListener('click', function (e) {
+    if (e.target === this) closeListSettingModal();
+  });
+  document.getElementById('closeConfirmModal').addEventListener('click', function (e) {
+    if (e.target === this) cancelCloseProject();
+  });
+
+  document.getElementById('imgUrl').addEventListener('input', async function () {
+    await updateImagePreviewFromUrl(this.value.trim());
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && closeTopMostModal()) {
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'Tab') {
+      const overlay = getOpenModalOverlay();
+      if (!overlay) return;
+      const focusable = getFocusableEls(overlay.querySelector('.modal'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !overlay.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !overlay.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+
+  document.getElementById('uploadOverlay').classList.remove('hidden');
+});

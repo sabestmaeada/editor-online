@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function diff() {
+      return request.resource.data.diff(resource.data);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      // self update — เปลี่ยนได้แค่ trackColor, displayName, photoURL
+      allow update: if isOwner(uid)
+        && diff().affectedKeys()
+          .hasOnly(['trackColor', 'displayName', 'photoURL', 'updatedAt']);
+
+      // admin update — เปลี่ยน role ได้ (และ field อื่นทุกตัวยกเว้น uid/email/createdAt)
+      allow update: if isAdmin()
+        && diff().affectedKeys()
+          .hasOnly(['role', 'trackColor', 'displayName', 'photoURL', 'updatedAt']);
+
+      // create/delete: server-only (admin SDK bypass rules)
+      allow create, delete: if false;
+    }
+
+    match /authEvents/{eventId} {
+      // อ่านได้เฉพาะ admin (ทั้งหมด); user ทั่วไปอ่านของตัวเองไม่ได้ตามที่ตั้งไว้
+      allow read: if isAdmin();
+      // เขียน/ลบ: server-only ผ่าน admin SDK
+      allow create, update, delete: if false;
+    }
+  }
+}
