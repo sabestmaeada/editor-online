@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
         ? String((err as { code: unknown }).code)
         : "verify-failed";
     await logAuthEvent({
-      req,
+      headers: req.headers,
       uid: "unknown",
       email: "unknown",
       eventType: "failed-login",
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   const photoURL =
     typeof decoded.picture === "string" ? decoded.picture : null;
 
-  const rawIp = getClientIp(req);
+  const rawIp = getClientIp(req.headers);
   const truncatedIp = truncateIp(rawIp);
 
   await upsertUserProfile({
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
   } catch {
     await logAuthEvent({
-      req,
+      headers: req.headers,
       uid: decoded.uid,
       email,
       eventType: "failed-login",
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   });
 
   await logAuthEvent({
-    req,
+    headers: req.headers,
     uid: decoded.uid,
     email,
     eventType: "login",
@@ -115,7 +115,7 @@ export async function DELETE(req: NextRequest) {
     try {
       const decoded = await adminAuth.verifySessionCookie(existing, false);
       await logAuthEvent({
-        req,
+        headers: req.headers,
         uid: decoded.uid,
         email: decoded.email ?? "unknown",
         eventType: "logout",

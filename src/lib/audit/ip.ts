@@ -1,19 +1,26 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import type { NextRequest } from "next/server";
+
+/**
+ * Anything header-like: Web Headers, ReadonlyHeaders from next/headers,
+ * or NextRequest.headers — all expose `.get(name) -> string | null`.
+ */
+export type HeaderReader = {
+  get(name: string): string | null;
+};
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const IPV6 = /:/;
 
-export function getClientIp(req: NextRequest): string {
-  const xff = req.headers.get("x-forwarded-for");
+export function getClientIp(headers: HeaderReader): string {
+  const xff = headers.get("x-forwarded-for");
   if (xff) {
     const first = xff.split(",")[0]?.trim();
     if (first) return first;
   }
-  const real = req.headers.get("x-real-ip");
+  const real = headers.get("x-real-ip");
   if (real) return real.trim();
-  const cf = req.headers.get("cf-connecting-ip");
+  const cf = headers.get("cf-connecting-ip");
   if (cf) return cf.trim();
   return "unknown";
 }
@@ -45,17 +52,17 @@ export type GeoInfo = {
   city: string | null;
 };
 
-export function getGeoFromHeaders(req: NextRequest): GeoInfo {
+export function getGeoFromHeaders(headers: HeaderReader): GeoInfo {
   return {
     country:
-      req.headers.get("x-vercel-ip-country") ??
-      req.headers.get("cf-ipcountry") ??
+      headers.get("x-vercel-ip-country") ??
+      headers.get("cf-ipcountry") ??
       null,
-    region: req.headers.get("x-vercel-ip-country-region") ?? null,
-    city: req.headers.get("x-vercel-ip-city") ?? null,
+    region: headers.get("x-vercel-ip-country-region") ?? null,
+    city: headers.get("x-vercel-ip-city") ?? null,
   };
 }
 
-export function getUserAgent(req: NextRequest): string {
-  return req.headers.get("user-agent") ?? "unknown";
+export function getUserAgent(headers: HeaderReader): string {
+  return headers.get("user-agent") ?? "unknown";
 }

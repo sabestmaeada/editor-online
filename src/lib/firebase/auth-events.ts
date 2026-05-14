@@ -1,6 +1,5 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
-import type { NextRequest } from "next/server";
 import { db, AUTH_EVENTS_COLLECTION } from "./firestore-admin";
 import {
   getClientIp,
@@ -8,6 +7,7 @@ import {
   getUserAgent,
   hashIp,
   truncateIp,
+  type HeaderReader,
 } from "@/lib/audit/ip";
 import {
   RETENTION_DAYS,
@@ -18,7 +18,7 @@ import {
 } from "@/lib/types";
 
 export type LogAuthEventInput = {
-  req: NextRequest;
+  headers: HeaderReader;
   uid: string;
   email: string;
   eventType: AuthEventType;
@@ -33,8 +33,8 @@ export type LogAuthEventInput = {
 };
 
 export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
-  const rawIp = getClientIp(input.req);
-  const geo = getGeoFromHeaders(input.req);
+  const rawIp = getClientIp(input.headers);
+  const geo = getGeoFromHeaders(input.headers);
   const now = Timestamp.now();
   const retentionDays = RETENTION_DAYS[input.eventType];
   const expiresAt = Timestamp.fromMillis(
@@ -48,7 +48,7 @@ export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
     provider: input.provider,
     ip: truncateIp(rawIp),
     ipHash: hashIp(rawIp),
-    userAgent: getUserAgent(input.req),
+    userAgent: getUserAgent(input.headers),
     country: geo.country,
     region: geo.region,
     city: geo.city,
