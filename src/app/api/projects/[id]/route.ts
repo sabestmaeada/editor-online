@@ -149,7 +149,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     headers: req.headers,
     uid: profile.uid,
     email: profile.email,
-    eventType: "project-update",
+    eventType: "project-metadata-update",
     provider: "system",
     success: true,
     projectId: id,

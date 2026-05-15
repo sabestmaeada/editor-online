@@ -121,11 +121,10 @@ export function streamProjectZip(projectId: string): Readable {
 }
 
 /**
- * Delete every object under a project's prefix. Used when deleting a project.
+ * Delete every object under a given R2 prefix. Returns count deleted.
  */
-export async function deleteProjectFiles(projectId: string): Promise<number> {
+async function deleteAllUnderPrefix(prefix: string): Promise<number> {
   const { DeleteObjectsCommand } = await import("@aws-sdk/client-s3");
-  const prefix = `projects/${projectId}/`;
   let deleted = 0;
   let continuationToken: string | undefined = undefined;
 
@@ -159,4 +158,20 @@ export async function deleteProjectFiles(projectId: string): Promise<number> {
   } while (continuationToken);
 
   return deleted;
+}
+
+/**
+ * Delete EVERY object under a project's prefix (source/, exports/, ...).
+ * Used when deleting an entire project.
+ */
+export function deleteProjectFiles(projectId: string): Promise<number> {
+  return deleteAllUnderPrefix(`projects/${projectId}/`);
+}
+
+/**
+ * Delete only the source/ files of a project. Used when replacing files.
+ * Preserves any exports/ or other auxiliary objects.
+ */
+export function deleteProjectSourceFiles(projectId: string): Promise<number> {
+  return deleteAllUnderPrefix(projectSourcePrefix(projectId));
 }

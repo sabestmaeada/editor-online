@@ -41,9 +41,10 @@ export const ALL_AUTH_EVENT_TYPES = [
   "role-change",
   // Project
   "project-create",
-  "project-update",
+  "project-metadata-update",
   "project-delete",
   "project-download",
+  "project-files-replace",
   // Project member
   "project-member-invite",
   "project-member-remove",
@@ -91,9 +92,10 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "email-change": 730,
   "role-change": 730,
   "project-create": 730,
-  "project-update": 730,
+  "project-metadata-update": 730,
   "project-delete": 730,
   "project-download": 90,
+  "project-files-replace": 730,
   "project-member-invite": 730,
   "project-member-remove": 730,
   "project-member-role-change": 730,
@@ -156,6 +158,10 @@ export type Project = {
   totalSize: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  // Cover image (optional — existing docs may have undefined)
+  coverKey?: string | null;          // R2 object key, e.g. "projects/abc/meta/cover.jpg"
+  coverContentType?: string | null;  // MIME type for response Content-Type
+  coverUpdatedAt?: Timestamp | null; // for cache busting in <img src=...?v=>
 };
 
 export type ProjectMember = {

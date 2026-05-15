@@ -12,6 +12,7 @@ import {
   MemberRow,
   StatusSelector,
 } from "./member-controls";
+import { ReplaceFilesForm } from "./replace-files-form";
 import type { ProjectStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,26 @@ export default async function ProjectDetailPage({
         </div>
 
         {/* Header */}
-        <header className="mt-2 flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+        <header className="mt-2 flex flex-wrap items-start gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+          {/* Cover thumbnail */}
+          <div className="size-24 sm:size-32 flex-shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+            {project.coverKey ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={`/api/projects/${project.id}/cover?v=${project.coverUpdatedAt?.toMillis() ?? 0}`}
+                alt={`Cover of ${project.title}`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src="/cover-placeholder.svg"
+                alt=""
+                className="h-full w-full object-cover opacity-80"
+              />
+            )}
+          </div>
+
           <div className="grow">
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">
@@ -98,6 +118,26 @@ export default async function ProjectDetailPage({
           </div>
 
           <div className="flex items-center gap-2">
+            {access.canManage && (
+              <Link
+                href={`/projects/${project.id}/edit`}
+                className="inline-flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+                Edit
+              </Link>
+            )}
             <a
               href={`/api/projects/${project.id}/download`}
               className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
@@ -184,6 +224,26 @@ export default async function ProjectDetailPage({
           <p className="mt-1 text-sm text-zinc-500">
             ทุกไฟล์ใน R2 prefix <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{project.r2Prefix}source/</code>
           </p>
+
+          {/* Replace files — owner / admin only */}
+          {access.canManage && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                ⚠ Replace all files
+              </h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                อัปโหลด ZIP ใหม่ — ลบไฟล์เดิม{" "}
+                <strong>{project.fileCount}</strong> ไฟล์ทั้งหมดและแทนด้วยไฟล์จาก ZIP
+              </p>
+              <div className="mt-3">
+                <ReplaceFilesForm
+                  projectId={project.id}
+                  currentFileCount={project.fileCount}
+                />
+              </div>
+            </div>
+          )}
+
           {files.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-500">ไม่มีไฟล์</p>
           ) : (

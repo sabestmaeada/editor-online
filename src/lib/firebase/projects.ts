@@ -29,6 +29,8 @@ export type UpdateProjectInput = Partial<{
   status: ProjectStatus;
   fileCount: number;
   totalSize: number;
+  coverKey: string | null;
+  coverContentType: string | null;
 }>;
 
 function newProjectId(): string {
@@ -59,6 +61,9 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
     totalSize: 0,
     createdAt: now,
     updatedAt: now,
+    coverKey: null,
+    coverContentType: null,
+    coverUpdatedAt: null,
   };
   await db.collection(PROJECTS_COLLECTION).doc(id).set(project);
   return project;
@@ -82,6 +87,28 @@ export async function updateProject(
 
 export async function deleteProjectDoc(id: string): Promise<void> {
   await db.collection(PROJECTS_COLLECTION).doc(id).delete();
+}
+
+export async function setProjectCover(
+  id: string,
+  coverKey: string,
+  coverContentType: string,
+): Promise<void> {
+  await db.collection(PROJECTS_COLLECTION).doc(id).update({
+    coverKey,
+    coverContentType,
+    coverUpdatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+export async function clearProjectCover(id: string): Promise<void> {
+  await db.collection(PROJECTS_COLLECTION).doc(id).update({
+    coverKey: null,
+    coverContentType: null,
+    coverUpdatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
 }
 
 export async function listProjectsOwnedBy(uid: string): Promise<Project[]> {

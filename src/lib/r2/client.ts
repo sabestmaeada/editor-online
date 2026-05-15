@@ -40,3 +40,12 @@ export function projectSourceKey(projectId: string, relPath: string): string {
   const normalized = relPath.replace(/^\/+/, "").replace(/\\/g, "/");
   return `${projectSourcePrefix(projectId)}${normalized}`;
 }
+
+export function projectMetaPrefix(projectId: string): string {
+  return `${projectPrefix(projectId)}meta/`;
+}
+
+/** Build cover R2 key for the given project + file extension (no leading dot). */
+export function projectCoverKey(projectId: string, ext: string): string {
+  return `${projectMetaPrefix(projectId)}cover.${ext}`;
+}
