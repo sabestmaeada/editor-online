@@ -1,7 +1,11 @@
 import "server-only";
 import { Readable } from "node:stream";
 import unzipper from "unzipper";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { r2, R2_BUCKET, projectSourceKey } from "./client";
 
 // Some entry filenames inside ZIPs should be skipped:
@@ -115,3 +119,39 @@ export async function uploadZipToProject(
 
   return { fileCount, totalSize, skipped };
 }
+
+
+/**
+ * Fetch a staging ZIP from R2 and stream-unzip it into the project's source/ prefix.
+ * Deletes the staging object after processing (best-effort).
+ */
+export async function processStagedUpload(
+  projectId: string,
+  stagingKey: string,
+): Promise<UploadResult> {
+  const get = await r2().send(
+    new GetObjectCommand({ Bucket: R2_BUCKET, Key: stagingKey }),
+  );
+  if (!get.Body) {
+    throw new Error("Staging object has no body");
+  }
+
+  const nodeStream =
+    get.Body instanceof Readable
+      ? (get.Body as Readable)
+      : Readable.fromWeb(
+          get.Body as unknown as Parameters<typeof Readable.fromWeb>[0],
+        );
+
+  let result: UploadResult;
+  try {
+    result = await uploadZipToProject(projectId, nodeStream);
+  } finally {
+    // Best-effort cleanup; orphan staging files are harmless but wasteful
+    await r2()
+      .send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: stagingKey }))
+      .catch(() => {});
+  }
+  return result;
+}
+

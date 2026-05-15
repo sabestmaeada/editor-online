@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Readable } from "node:stream";
 import { getCurrentUserProfile } from "@/lib/firebase/get-current-profile";
 import {
   createProject,
@@ -8,13 +7,14 @@ import {
 } from "@/lib/firebase/projects";
 import { addProjectMember } from "@/lib/firebase/project-members";
 import { listProjectsForUser } from "@/lib/firebase/list-my-projects";
-import { uploadZipToProject } from "@/lib/r2/upload";
+import { processStagedUpload } from "@/lib/r2/upload";
 import { deleteProjectFiles } from "@/lib/r2/download";
+import { isValidStagingKey } from "@/lib/r2/presigned";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import type { ProjectMemberRole, UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // seconds — for ZIP upload
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const CREATABLE_ROLES: UserRole[] = ["admin", "editor"];
@@ -33,17 +33,21 @@ export async function GET() {
 }
 
 // ────────────────────────────────────────────────────────────
-// POST /api/projects — create project (multipart: metadata + zip)
+// POST /api/projects — create project from staged upload
+// Body: { metadata: {...}, uploadKey: "projects/_staging/uuid.zip" }
 // ────────────────────────────────────────────────────────────
 type CreatePayload = {
-  title?: unknown;
-  customer?: unknown;
-  pages?: unknown;
-  description?: unknown;
-  isbn?: unknown;
-  language?: unknown;
-  author?: unknown;
-  edition?: unknown;
+  metadata?: {
+    title?: unknown;
+    customer?: unknown;
+    pages?: unknown;
+    description?: unknown;
+    isbn?: unknown;
+    language?: unknown;
+    author?: unknown;
+    edition?: unknown;
+  };
+  uploadKey?: unknown;
 };
 
 function asStr(v: unknown): string | null {
@@ -70,59 +74,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Parse multipart
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
+  const body = (await req.json().catch(() => ({}))) as CreatePayload;
+  const metadata = body.metadata ?? {};
+  const uploadKey = typeof body.uploadKey === "string" ? body.uploadKey : "";
+
+  if (!isValidStagingKey(uploadKey)) {
     return NextResponse.json(
-      { error: "Invalid multipart body" },
+      { error: "Invalid uploadKey — must be from /api/projects/upload-url" },
       { status: 400 },
     );
   }
 
-  const metadataRaw = formData.get("metadata");
-  const zipFile = formData.get("zip");
-
-  if (typeof metadataRaw !== "string") {
-    return NextResponse.json(
-      { error: "Missing 'metadata' field" },
-      { status: 400 },
-    );
-  }
-  if (!(zipFile instanceof File)) {
-    return NextResponse.json(
-      { error: "Missing 'zip' file" },
-      { status: 400 },
-    );
-  }
-
-  let payload: CreatePayload;
-  try {
-    payload = JSON.parse(metadataRaw);
-  } catch {
-    return NextResponse.json({ error: "Invalid metadata JSON" }, { status: 400 });
-  }
-
-  const title = asStr(payload.title);
-  const customer = asStr(payload.customer);
-  const pages = asInt(payload.pages);
+  const title = asStr(metadata.title);
+  const customer = asStr(metadata.customer);
+  const pages = asInt(metadata.pages);
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
   if (!customer) return NextResponse.json({ error: "customer required" }, { status: 400 });
   if (pages === null) return NextResponse.json({ error: "pages required" }, { status: 400 });
 
-  // Create project doc + owner membership FIRST so R2 prefix is known
+  // Create project + owner membership FIRST
   const project = await createProject({
     ownerUid: profile.uid,
     ownerEmail: profile.email,
     title,
     customer,
     pages,
-    description: asStr(payload.description),
-    isbn: asStr(payload.isbn),
-    language: asStr(payload.language),
-    author: asStr(payload.author),
-    edition: asStr(payload.edition),
+    description: asStr(metadata.description),
+    isbn: asStr(metadata.isbn),
+    language: asStr(metadata.language),
+    author: asStr(metadata.author),
+    edition: asStr(metadata.edition),
   });
 
   const ownerMembershipRole: ProjectMemberRole = "project_owner";
@@ -133,14 +114,10 @@ export async function POST(req: NextRequest) {
     addedBy: profile.uid,
   });
 
-  // Now upload the ZIP to R2 — convert Web stream to Node stream
+  // Process the staged upload (download from R2 → unzip → upload to source/)
   let uploadResult;
   try {
-    const webStream = zipFile.stream();
-    const nodeStream = Readable.fromWeb(
-      webStream as unknown as Parameters<typeof Readable.fromWeb>[0],
-    );
-    uploadResult = await uploadZipToProject(project.id, nodeStream);
+    uploadResult = await processStagedUpload(project.id, uploadKey);
   } catch (err) {
     // Roll back: delete project doc + any R2 objects already written
     await Promise.allSettled([
@@ -169,7 +146,11 @@ export async function POST(req: NextRequest) {
   }).catch(() => {});
 
   return NextResponse.json({
-    project: { ...project, fileCount: uploadResult.fileCount, totalSize: uploadResult.totalSize },
+    project: {
+      ...project,
+      fileCount: uploadResult.fileCount,
+      totalSize: uploadResult.totalSize,
+    },
     upload: uploadResult,
   });
 }

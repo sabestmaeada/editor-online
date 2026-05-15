@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Readable } from "node:stream";
 import { getCurrentUserProfile } from "@/lib/firebase/get-current-profile";
 import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { updateProject } from "@/lib/firebase/projects";
-import { uploadZipToProject } from "@/lib/r2/upload";
+import { processStagedUpload } from "@/lib/r2/upload";
 import { deleteProjectSourceFiles } from "@/lib/r2/download";
+import { isValidStagingKey } from "@/lib/r2/presigned";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 
 export const runtime = "nodejs";
@@ -16,16 +16,25 @@ type RouteContext = { params: Promise<{ id: string }> };
 /**
  * PUT /api/projects/[id]/files
  *
- * Replace ALL source files of a project with the contents of an uploaded ZIP.
+ * Replace ALL source files of a project with a previously-uploaded ZIP.
  * Owner / admin only.
+ *
+ * Body: { uploadKey: "projects/_staging/uuid.zip" }
+ * The uploadKey must come from POST /api/projects/upload-url
  *
  * Steps:
  *   1. Auth + canManage check
- *   2. Delete all objects under projects/{id}/source/
- *   3. Unzip + upload new files
- *   4. Update project metadata (fileCount, totalSize)
- *   5. Log audit event (project-files-replace)
+ *   2. Validate uploadKey is a staging key (defense-in-depth)
+ *   3. Delete all objects under projects/{id}/source/
+ *   4. Stream-unzip staged ZIP from R2 → upload files to source/
+ *   5. Delete staging ZIP
+ *   6. Update project metadata (fileCount, totalSize)
+ *   7. Log audit event (project-files-replace)
  */
+type PutPayload = {
+  uploadKey?: unknown;
+};
+
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   const profile = await getCurrentUserProfile();
   if (!profile) {
@@ -38,22 +47,17 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
+  const body = (await req.json().catch(() => ({}))) as PutPayload;
+  const uploadKey = typeof body.uploadKey === "string" ? body.uploadKey : "";
+
+  if (!isValidStagingKey(uploadKey)) {
     return NextResponse.json(
-      { error: "Invalid multipart body" },
+      { error: "Invalid uploadKey — must be from /api/projects/upload-url" },
       { status: 400 },
     );
   }
 
-  const zipFile = formData.get("zip");
-  if (!(zipFile instanceof File)) {
-    return NextResponse.json({ error: "Missing 'zip' file" }, { status: 400 });
-  }
-
-  // Snapshot previous counts before delete (for audit)
+  // Snapshot previous counts before delete
   const prevFileCount = access.project.fileCount;
   const prevTotalSize = access.project.totalSize;
 
@@ -69,18 +73,12 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  // 2. Upload new zip
+  // 2. Process the staged upload
   let uploadResult;
   try {
-    const webStream = zipFile.stream();
-    const nodeStream = Readable.fromWeb(
-      webStream as unknown as Parameters<typeof Readable.fromWeb>[0],
-    );
-    uploadResult = await uploadZipToProject(id, nodeStream);
+    uploadResult = await processStagedUpload(id, uploadKey);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Upload failed";
-    // Note: previous files already deleted; project is now in inconsistent state.
-    // Set fileCount=0 so UI reflects empty state.
     await updateProject(id, { fileCount: 0, totalSize: 0 }).catch(() => {});
     return NextResponse.json(
       { error: `Upload failed after deleting old files: ${msg}` },

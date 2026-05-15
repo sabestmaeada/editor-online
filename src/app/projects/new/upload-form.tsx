@@ -2,16 +2,14 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-
-type Status =
-  | { state: "idle" }
-  | { state: "uploading"; pct: number | null }
-  | { state: "error"; message: string }
-  | { state: "success" };
+import {
+  uploadFileToR2,
+  type UploadStatus,
+} from "@/lib/upload-via-presigned";
 
 export function ProjectUploadForm() {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>({ state: "idle" });
+  const [status, setStatus] = useState<UploadStatus>({ stage: "idle" });
   const [zipFile, setZipFile] = useState<File | null>(null);
 
   function handleZipChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -23,11 +21,11 @@ export function ProjectUploadForm() {
     e.preventDefault();
     const form = e.currentTarget;
     if (!zipFile) {
-      setStatus({ state: "error", message: "กรุณาเลือกไฟล์ ZIP" });
+      setStatus({ stage: "error", message: "กรุณาเลือกไฟล์ ZIP" });
       return;
     }
     if (!/\.zip$/i.test(zipFile.name)) {
-      setStatus({ state: "error", message: "ไฟล์ต้องเป็น .zip" });
+      setStatus({ stage: "error", message: "ไฟล์ต้องเป็น .zip" });
       return;
     }
 
@@ -43,27 +41,43 @@ export function ProjectUploadForm() {
       edition: fd.get("edition"),
     };
 
-    const apiData = new FormData();
-    apiData.set("metadata", JSON.stringify(metadata));
-    apiData.set("zip", zipFile);
-
-    setStatus({ state: "uploading", pct: null });
-
     try {
-      // XHR for progress events (fetch doesn't expose upload progress)
-      const result = await uploadWithProgress("/api/projects", apiData, (pct) =>
-        setStatus({ state: "uploading", pct }),
-      );
-      const project = result.project as { id?: string };
-      if (!project?.id) throw new Error("Server returned no project id");
-      setStatus({ state: "success" });
-      router.push(`/projects/${project.id}`);
+      // Step 1+2: presigned URL → direct PUT to R2
+      const { uploadKey } = await uploadFileToR2({
+        file: zipFile,
+        purpose: "create",
+        onStatus: setStatus,
+      });
+
+      // Step 3: tell server to process
+      setStatus({ stage: "processing" });
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata, uploadKey }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        project?: { id?: string };
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      if (!data.project?.id) throw new Error("Server returned no project id");
+
+      setStatus({ stage: "done" });
+      router.push(`/projects/${data.project.id}`);
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed";
-      setStatus({ state: "error", message: msg });
+      setStatus({ stage: "error", message: msg });
     }
   }
+
+  const isBusy =
+    status.stage === "init" ||
+    status.stage === "uploading" ||
+    status.stage === "processing";
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-6">
@@ -110,7 +124,8 @@ export function ProjectUploadForm() {
           accept=".zip,application/zip,application/x-zip-compressed"
           onChange={handleZipChange}
           required
-          className="mt-2 block w-full cursor-pointer rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:file:bg-zinc-800 dark:hover:bg-zinc-800"
+          disabled={isBusy}
+          className="mt-2 block w-full cursor-pointer rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:file:bg-zinc-800 dark:hover:bg-zinc-800"
         />
         {zipFile && (
           <p className="mt-2 text-xs text-zinc-500">
@@ -121,38 +136,52 @@ export function ProjectUploadForm() {
       </div>
 
       {/* Status messages */}
-      {status.state === "error" && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {status.message}
-        </div>
-      )}
-
-      {status.state === "uploading" && (
-        <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          กำลังอัปโหลด...{" "}
-          {status.pct !== null ? `${status.pct.toFixed(0)}%` : "(ไม่ทราบ %)"}
-          {status.pct !== null && (
-            <div className="mt-2 h-1.5 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800">
-              <div
-                className="h-full bg-zinc-900 transition-all dark:bg-zinc-100"
-                style={{ width: `${status.pct}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
+      <StatusBanner status={status} />
 
       {/* Submit */}
       <div className="flex items-center justify-end gap-2">
         <button
           type="submit"
-          disabled={status.state === "uploading"}
+          disabled={isBusy}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
-          {status.state === "uploading" ? "Uploading..." : "Create & Upload"}
+          {isBusy ? "Working..." : "Create & Upload"}
         </button>
       </div>
     </form>
+  );
+}
+
+function StatusBanner({ status }: { status: UploadStatus }) {
+  if (status.stage === "idle" || status.stage === "done") return null;
+  if (status.stage === "error") {
+    return (
+      <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+        {status.message}
+      </div>
+    );
+  }
+  const label =
+    status.stage === "init"
+      ? "กำลังขอ upload URL..."
+      : status.stage === "uploading"
+        ? `กำลังอัปโหลด... ${
+            status.pct !== null ? `${status.pct.toFixed(0)}%` : "(starting)"
+          }`
+        : "กำลังประมวลผลบน server (unzip + save)...";
+  const pct = status.stage === "uploading" ? status.pct : null;
+  return (
+    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+      {label}
+      {pct !== null && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800">
+          <div
+            className="h-full bg-zinc-900 transition-all dark:bg-zinc-100"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -196,37 +225,4 @@ function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function uploadWithProgress(
-  url: string,
-  body: FormData,
-  onProgress: (pct: number | null) => void,
-): Promise<{ project: unknown; upload: unknown }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress((e.loaded / e.total) * 100);
-    };
-    xhr.onload = () => {
-      let data: unknown = null;
-      try {
-        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-      } catch {
-        /* ignore */
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(data as { project: unknown; upload: unknown });
-      } else {
-        const msg =
-          (data && typeof data === "object" && "error" in data
-            ? String((data as { error: unknown }).error)
-            : null) ?? `HTTP ${xhr.status}`;
-        reject(new Error(msg));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Network error"));
-    xhr.send(body);
-  });
 }
