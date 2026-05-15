@@ -115,6 +115,13 @@ function rebuildColorStyleSheet() {
     const safe = String(uid).replace(/["\\]/g, '\\$&');
     css += `ins[data-uid="${safe}"], del[data-uid="${safe}"] { color: ${color}; }\n`;
   }
+  // Visual lock: cursor hint on tracked changes that don't belong to current user.
+  // Actual edit-blocking happens in handleBeforeInput; this is just a UX cue.
+  if (currentUser && currentUser.uid) {
+    const myUid = String(currentUser.uid).replace(/["\\]/g, '\\$&');
+    css += `ins[data-uid]:not([data-uid="${myUid}"]),\n`;
+    css += `del[data-uid]:not([data-uid="${myUid}"]) { cursor: not-allowed; }\n`;
+  }
   styleEl.textContent = css;
 }
 
@@ -302,8 +309,52 @@ function attachTrackingListeners(doc) {
   doc.body.addEventListener('beforeinput', handleBeforeInput);
 }
 
+// Walk up from `node` looking for an ins/del element owned by another user.
+// Returns the element (so caller can read its data-name), or null.
+function findOtherUserTC(node, currentUid) {
+  if (!node) return null;
+  let el = node.nodeType === 1 ? node : node.parentNode;
+  while (el && el.nodeType === 1) {
+    const tag = el.tagName;
+    if (tag === 'BODY' || tag === 'HTML') return null;
+    if ((tag === 'INS' || tag === 'DEL') && el.hasAttribute('data-uid')) {
+      const uid = el.getAttribute('data-uid');
+      if (uid && uid !== currentUid) return el;
+    }
+    el = el.parentNode;
+  }
+  return null;
+}
+
+// Check both endpoints of a range — if either lives inside another user's
+// tracked change, return that element. Returns null when edit is safe.
+function rangeTouchesOtherUserTC(range, currentUid) {
+  if (!range) return null;
+  return (
+    findOtherUserTC(range.startContainer, currentUid)
+    || findOtherUserTC(range.endContainer, currentUid)
+  );
+}
+
 function handleBeforeInput(e) {
-  if (!trackingEnabled || !currentUser) return;
+  if (!currentUser) return;
+
+  // ──────────────────────────────────────────────────────────
+  // Lock: block edits inside another user's tracked change.
+  // Applies regardless of trackingEnabled — protects existing
+  // TC from accidental edits even when current user has TC off.
+  // ──────────────────────────────────────────────────────────
+  const range = getLiveRangeFromEvent(e, getDoc());
+  const otherTC = rangeTouchesOtherUserTC(range, currentUser.uid);
+  if (otherTC) {
+    e.preventDefault();
+    const otherName = otherTC.getAttribute('data-name') || 'ผู้ใช้อื่น';
+    const kind = otherTC.tagName === 'DEL' ? 'การลบ' : 'การแก้ไข';
+    showToast(`🔒 ${kind}ของ ${otherName} — ใช้ ✓/✕ บน popover เพื่อยอมรับหรือปฏิเสธ`);
+    return;
+  }
+
+  if (!trackingEnabled) return;
 
   if (e.inputType === 'insertText') {
     handleTrackedInsert(e);

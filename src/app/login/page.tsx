@@ -129,6 +129,8 @@ function LoginForm() {
           </button>
         </form>
 
+        {/* Google login — hidden until ready. To re-enable, uncomment block below. */}
+        {/*
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
           <span className="text-xs uppercase tracking-wide text-zinc-500">
@@ -145,6 +147,7 @@ function LoginForm() {
         >
           {busy === "google" ? "Signing in..." : "Continue with Google"}
         </button>
+        */}
       </div>
     </main>
   );
