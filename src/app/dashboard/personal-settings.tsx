@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TRACK_COLORS } from "@/lib/colors";
+import { ChangePasswordForm } from "./change-password-form";
 
 type Props = {
   initialColor: string;
@@ -108,6 +109,11 @@ export function PersonalSettings({
             />
           </dl>
         </div>
+      </div>
+
+      {/* Change password (email/password users only — auto-hidden otherwise) */}
+      <div className="mt-4">
+        <ChangePasswordForm />
       </div>
 
       {/* Privacy note */}

@@ -20,10 +20,18 @@ export function proxy(req: NextRequest) {
   }
 
   if (pathname === "/login" && hasSession) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
+    // If the user was bounced here from a protected page (with ?next=), their
+    // session cookie is likely STALE — Firebase revoked the session (e.g. after
+    // password change). Don't auto-redirect back to /dashboard or it loops
+    // forever. Let the login page handle it; a successful login will replace
+    // the stale cookie with a fresh one.
+    const hasNext = req.nextUrl.searchParams.has("next");
+    if (!hasNext) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return NextResponse.next();
