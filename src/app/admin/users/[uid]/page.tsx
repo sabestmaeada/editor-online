@@ -22,6 +22,20 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   "role-change":
     "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+  "project-create":
+    "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+  "project-update":
+    "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  "project-delete":
+    "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  "project-download":
+    "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+  "member-invite":
+    "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+  "member-remove":
+    "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  "member-role-change":
+    "bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950 dark:text-fuchsia-300",
 };
 
 export default async function AdminUserDetailPage({

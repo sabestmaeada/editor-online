@@ -14,6 +14,7 @@ import {
   type AuthEvent,
   type AuthEventType,
   type AuthProvider,
+  type ProjectMemberRole,
   type UserRole,
 } from "@/lib/types";
 
@@ -25,11 +26,20 @@ export type LogAuthEventInput = {
   provider: AuthProvider;
   success: boolean;
   errorCode?: string | null;
+  // Role-change
   oldRole?: UserRole;
   newRole?: UserRole;
   changedBy?: string;
+  // Email-change
   oldEmail?: string;
   newEmail?: string;
+  // Project events
+  projectId?: string;
+  projectTitle?: string;
+  targetUid?: string;
+  targetEmail?: string;
+  oldProjectRole?: ProjectMemberRole;
+  newProjectRole?: ProjectMemberRole;
 };
 
 export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
@@ -59,6 +69,20 @@ export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
     ...(input.changedBy !== undefined ? { changedBy: input.changedBy } : {}),
     ...(input.oldEmail !== undefined ? { oldEmail: input.oldEmail } : {}),
     ...(input.newEmail !== undefined ? { newEmail: input.newEmail } : {}),
+    ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    ...(input.projectTitle !== undefined
+      ? { projectTitle: input.projectTitle }
+      : {}),
+    ...(input.targetUid !== undefined ? { targetUid: input.targetUid } : {}),
+    ...(input.targetEmail !== undefined
+      ? { targetEmail: input.targetEmail }
+      : {}),
+    ...(input.oldProjectRole !== undefined
+      ? { oldProjectRole: input.oldProjectRole }
+      : {}),
+    ...(input.newProjectRole !== undefined
+      ? { newProjectRole: input.newProjectRole }
+      : {}),
     timestamp: now,
     expiresAt,
   };

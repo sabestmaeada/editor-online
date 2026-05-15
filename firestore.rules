@@ -20,27 +20,50 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data);
     }
 
+    // ── Users ────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
 
-      // self update — เปลี่ยนได้แค่ trackColor, displayName, photoURL
+      // self update — limited fields only
       allow update: if isOwner(uid)
         && diff().affectedKeys()
           .hasOnly(['trackColor', 'displayName', 'photoURL', 'updatedAt']);
 
-      // admin update — เปลี่ยน role ได้ (และ field อื่นทุกตัวยกเว้น uid/email/createdAt)
+      // admin update — can also change role
       allow update: if isAdmin()
         && diff().affectedKeys()
           .hasOnly(['role', 'trackColor', 'displayName', 'photoURL', 'updatedAt']);
 
-      // create/delete: server-only (admin SDK bypass rules)
       allow create, delete: if false;
     }
 
+    // ── Auth events (audit log) ──────────────────────────
     match /authEvents/{eventId} {
-      // อ่านได้เฉพาะ admin (ทั้งหมด); user ทั่วไปอ่านของตัวเองไม่ได้ตามที่ตั้งไว้
       allow read: if isAdmin();
-      // เขียน/ลบ: server-only ผ่าน admin SDK
+      allow create, update, delete: if false;
+    }
+
+    // ── Projects ─────────────────────────────────────────
+    // Defense-in-depth: rules only allow admin or owner direct access.
+    // Members read via server (which checks projectMembers).
+    // All writes go through server (admin SDK bypasses).
+    match /projects/{projectId} {
+      allow read: if isAdmin()
+        || (resource.data.ownerUid == request.auth.uid);
+      allow create, update, delete: if false; // server-only
+    }
+
+    // ── Project members ──────────────────────────────────
+    // User can read their own membership (to see "my projects").
+    // Owner can read all members of their project.
+    // Writes only via server.
+    match /projectMembers/{memberId} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid
+        || isAdmin()
+        || (exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
+            && get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.ownerUid == request.auth.uid)
+      );
       allow create, update, delete: if false;
     }
   }

@@ -36,6 +36,7 @@ export function Nav({ profile }: Props) {
         {/* Main menu */}
         <div className="flex items-center gap-1">
           <NavLink href="/dashboard">Dashboard</NavLink>
+          <NavLink href="/projects">Projects</NavLink>
           <NavLink href="/editor">Editor</NavLink>
         </div>
 

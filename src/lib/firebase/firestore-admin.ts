@@ -6,3 +6,5 @@ export const db: Firestore = getFirestore(adminApp);
 
 export const USERS_COLLECTION = "users";
 export const AUTH_EVENTS_COLLECTION = "authEvents";
+export const PROJECTS_COLLECTION = "projects";
+export const PROJECT_MEMBERS_COLLECTION = "projectMembers";
