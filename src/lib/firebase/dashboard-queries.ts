@@ -36,6 +36,7 @@ export type AdminStats = {
   totalUsers: number;
   totalProjects: number;
   eventsToday: number;
+  pendingUsers: number;
 };
 
 function startOfTodayUTC(): Timestamp {
@@ -47,12 +48,17 @@ function startOfTodayUTC(): Timestamp {
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  const [usersSnap, projectsSnap, eventsSnap] = await Promise.all([
+  const [usersSnap, projectsSnap, eventsSnap, pendingSnap] = await Promise.all([
     db.collection(USERS_COLLECTION).count().get(),
     db.collection(PROJECTS_COLLECTION).count().get(),
     db
       .collection(AUTH_EVENTS_COLLECTION)
       .where("timestamp", ">=", startOfTodayUTC())
+      .count()
+      .get(),
+    db
+      .collection(USERS_COLLECTION)
+      .where("status", "==", "pending")
       .count()
       .get(),
   ]);
@@ -61,6 +67,7 @@ export async function getAdminStats(): Promise<AdminStats> {
     totalUsers: usersSnap.data().count,
     totalProjects: projectsSnap.data().count,
     eventsToday: eventsSnap.data().count,
+    pendingUsers: pendingSnap.data().count,
   };
 }
 

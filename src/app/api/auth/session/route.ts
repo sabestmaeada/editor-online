@@ -58,13 +58,39 @@ export async function POST(req: NextRequest) {
   const rawIp = getClientIp(req.headers);
   const truncatedIp = truncateIp(rawIp);
 
-  await upsertUserProfile({
+  const { profile } = await upsertUserProfile({
     uid: decoded.uid,
     email,
     displayName,
     photoURL,
     lastLoginIp: truncatedIp,
   });
+
+  // Gate: only "active" users get a session cookie. Pending / rejected /
+  // disabled accounts CAN authenticate at Firebase but cannot use the app.
+  // The client should sign out from Firebase on receiving this error.
+  if (profile.status !== "active") {
+    await logAuthEvent({
+      headers: req.headers,
+      uid: decoded.uid,
+      email,
+      eventType: "failed-login",
+      provider,
+      success: false,
+      errorCode: `status-${profile.status}`,
+    }).catch(() => {});
+
+    const message =
+      profile.status === "pending"
+        ? "บัญชีของคุณรออนุมัติจาก admin"
+        : profile.status === "rejected"
+          ? "บัญชีของคุณถูกปฏิเสธ — กรุณาติดต่อ admin"
+          : "บัญชีของคุณถูกระงับการใช้งาน";
+    return NextResponse.json(
+      { error: message, status: profile.status },
+      { status: 403 },
+    );
+  }
 
   const expiresIn = SESSION_COOKIE_MAX_AGE_SEC * 1000;
   let sessionCookie: string;

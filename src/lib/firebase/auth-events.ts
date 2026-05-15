@@ -40,6 +40,10 @@ export type LogAuthEventInput = {
   targetEmail?: string;
   oldProjectRole?: ProjectMemberRole;
   newProjectRole?: ProjectMemberRole;
+  // Account lifecycle extras
+  inviteToken?: string;
+  assignedRole?: UserRole;
+  rejectReason?: string;
 };
 
 export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
@@ -82,6 +86,15 @@ export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
       : {}),
     ...(input.newProjectRole !== undefined
       ? { newProjectRole: input.newProjectRole }
+      : {}),
+    ...(input.inviteToken !== undefined
+      ? { inviteToken: input.inviteToken }
+      : {}),
+    ...(input.assignedRole !== undefined
+      ? { assignedRole: input.assignedRole }
+      : {}),
+    ...(input.rejectReason !== undefined
+      ? { rejectReason: input.rejectReason }
       : {}),
     timestamp: now,
     expiresAt,

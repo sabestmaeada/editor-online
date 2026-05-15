@@ -29,12 +29,21 @@ service cloud.firestore {
         && diff().affectedKeys()
           .hasOnly(['trackColor', 'displayName', 'photoURL', 'updatedAt']);
 
-      // admin update — can also change role
+      // admin update — can also change role + status
       allow update: if isAdmin()
         && diff().affectedKeys()
-          .hasOnly(['role', 'trackColor', 'displayName', 'photoURL', 'updatedAt']);
+          .hasOnly(['role', 'status', 'trackColor', 'displayName', 'photoURL', 'updatedAt']);
 
+      // create/delete only via server (admin SDK)
       allow create, delete: if false;
+    }
+
+    // ── Invites (admin → new user) ───────────────────────
+    // All read/write via server (admin SDK bypasses these rules).
+    // Public /register endpoint reads via server with token verification.
+    match /invites/{token} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // ── Auth events (audit log) ──────────────────────────

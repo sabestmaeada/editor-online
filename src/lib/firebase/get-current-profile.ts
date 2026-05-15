@@ -35,5 +35,10 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
     profile = result.profile;
   }
 
+  // Treat non-active users as "no session" for the purposes of API routes
+  // that gate on `getCurrentUserProfile()`. This means pending / rejected /
+  // disabled users get a 401 from any handler that calls this helper.
+  if (profile.status !== "active") return null;
+
   return profile;
 }

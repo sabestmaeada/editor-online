@@ -14,6 +14,22 @@ export type UserRole = (typeof USER_ROLES)[number];
 
 export const DEFAULT_USER_ROLE: UserRole = "viewer";
 
+// ─── Account lifecycle status ───────────────────────────────
+// "pending"  — registered via invite, รออนุมัติจาก admin
+// "active"   — ใช้งานปกติ
+// "rejected" — admin ปฏิเสธ (เก็บไว้เป็น audit trail, ลบถาวรได้)
+// "disabled" — ระงับภายหลัง (reserved for future)
+export const USER_STATUSES = [
+  "pending",
+  "active",
+  "rejected",
+  "disabled",
+] as const;
+
+export type UserStatus = (typeof USER_STATUSES)[number];
+
+export const DEFAULT_USER_STATUS: UserStatus = "active";
+
 export type UserProfile = {
   uid: string;
   email: string;
@@ -21,10 +37,37 @@ export type UserProfile = {
   photoURL: string | null;
   trackColor: string;
   role: UserRole;
+  status: UserStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastLoginAt: Timestamp | null;
   lastLoginIp: string | null;
+};
+
+// ─── Invites (admin → new user) ─────────────────────────────
+export const INVITE_STATUSES = [
+  "active",   // ยังใช้ได้
+  "used",     // user register แล้ว
+  "expired",  // เลย expiresAt
+  "revoked",  // admin ยกเลิก
+] as const;
+
+export type InviteStatus = (typeof INVITE_STATUSES)[number];
+
+export const INVITE_TTL_DAYS = 7;
+
+export type Invite = {
+  token: string;
+  email: string;
+  createdBy: string;
+  createdByEmail: string;
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
+  status: InviteStatus;
+  usedAt?: Timestamp | null;
+  usedByUid?: string | null;
+  revokedAt?: Timestamp | null;
+  revokedBy?: string | null;
 };
 
 // ─── Auth events (audit log) ────────────────────────────────
@@ -39,6 +82,13 @@ export const ALL_AUTH_EVENT_TYPES = [
   "password-reset",
   "email-change",
   "role-change",
+  // Account lifecycle (admin-managed)
+  "user-invite",
+  "user-invite-revoke",
+  "user-register",
+  "user-approve",
+  "user-reject",
+  "user-delete",
   // Project
   "project-create",
   "project-metadata-update",
@@ -80,6 +130,10 @@ export type AuthEvent = {
   targetEmail?: string;
   oldProjectRole?: ProjectMemberRole;
   newProjectRole?: ProjectMemberRole;
+  // Account lifecycle extras
+  inviteToken?: string;   // shortened/truncated for log readability
+  assignedRole?: UserRole; // role admin chose on approve
+  rejectReason?: string;   // optional reason on reject
   timestamp: Timestamp;
   expiresAt: Timestamp;
 };
@@ -91,6 +145,13 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "password-reset": 730,
   "email-change": 730,
   "role-change": 730,
+  // Account lifecycle — sensitive, keep 2 years
+  "user-invite": 730,
+  "user-invite-revoke": 730,
+  "user-register": 730,
+  "user-approve": 730,
+  "user-reject": 730,
+  "user-delete": 730,
   "project-create": 730,
   "project-metadata-update": 730,
   "project-delete": 730,

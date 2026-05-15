@@ -35,5 +35,15 @@ export async function requireUserProfile(
     profile = result.profile;
   }
 
+  // Gate: only "active" users may proceed. Non-active sessions are
+  // forcibly logged out — we clear the cookie and bounce to /login with a
+  // user-friendly error code. Pending users normally never get a session
+  // cookie (the session API blocks them) but this is defense-in-depth
+  // for accounts that became non-active *after* getting a cookie.
+  if (profile.status !== "active") {
+    store.delete(SESSION_COOKIE_NAME);
+    redirect(`/login?error=status-${profile.status}`);
+  }
+
   return profile;
 }

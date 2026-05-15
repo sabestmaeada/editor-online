@@ -49,6 +49,30 @@ export function AdminStats({
         </Link>
       </div>
 
+      {/* Pending approvals — shown only when there ARE pending users.
+          Big amber callout so admin sees it the moment they land. */}
+      {stats.pendingUsers > 0 && (
+        <Link
+          href="/admin/users?status=pending"
+          className="mb-3 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-4 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:hover:bg-amber-900/60"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-full bg-amber-200 text-lg dark:bg-amber-800">
+              🆕
+            </span>
+            <div>
+              <div className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                รออนุมัติ {stats.pendingUsers} user
+              </div>
+              <div className="text-xs text-amber-700 dark:text-amber-400">
+                คลิกเพื่อตรวจสอบและอนุมัติ
+              </div>
+            </div>
+          </div>
+          <span className="text-sm text-amber-700 dark:text-amber-400">→</span>
+        </Link>
+      )}
+
       {/* Stat cards */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Link

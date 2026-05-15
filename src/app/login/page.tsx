@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
+  signOut,
   type User,
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase/client";
@@ -30,6 +31,12 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "/dashboard";
 
+  // Pre-login banners — derived from URL params set by /register success,
+  // proxy redirects with stale sessions, or require-profile redirects when
+  // a user's status changes mid-session.
+  const justRegistered = searchParams.get("registered") === "1";
+  const statusError = searchParams.get("error"); // e.g. status-pending
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +49,20 @@ function LoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
     });
-    if (!res.ok) throw new Error("Failed to create session");
+    if (res.ok) return;
+
+    // Server rejected our cookie creation — most often because the user's
+    // status is not "active". Sign the user out of Firebase so the next
+    // attempt doesn't reuse the same in-memory user object.
+    let serverMessage = `HTTP ${res.status}`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data.error) serverMessage = data.error;
+    } catch {
+      // ignore
+    }
+    await signOut(auth).catch(() => {});
+    throw new Error(serverMessage);
   }
 
   async function handleEmailLogin(e: FormEvent) {
@@ -76,6 +96,17 @@ function LoginForm() {
     }
   }
 
+  const statusErrorMessage = (() => {
+    if (!statusError) return null;
+    if (statusError === "status-pending")
+      return "บัญชีของคุณรออนุมัติจาก admin";
+    if (statusError === "status-rejected")
+      return "บัญชีของคุณถูกปฏิเสธ — กรุณาติดต่อ admin";
+    if (statusError === "status-disabled")
+      return "บัญชีของคุณถูกระงับการใช้งาน";
+    return null;
+  })();
+
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-16">
       <div className="w-full max-w-sm space-y-6">
@@ -85,6 +116,22 @@ function LoginForm() {
             Access your online editor account.
           </p>
         </header>
+
+        {justRegistered && (
+          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            ✓ ลงทะเบียนสำเร็จ — รอ admin อนุมัติก่อนเข้าใช้งาน
+            <br />
+            <span className="text-xs">
+              คุณจะ login ได้หลังได้รับการอนุมัติ
+            </span>
+          </div>
+        )}
+
+        {statusErrorMessage && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            ⚠ {statusErrorMessage}
+          </div>
+        )}
 
         <form onSubmit={handleEmailLogin} className="space-y-4">
           <div className="space-y-1.5">
