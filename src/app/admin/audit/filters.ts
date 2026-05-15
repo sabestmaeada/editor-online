@@ -1,18 +1,9 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
-import type { AuthEventType } from "@/lib/types";
-
-const ALL_EVENT_TYPES: AuthEventType[] = [
-  "login",
-  "logout",
-  "failed-login",
-  "password-reset",
-  "email-change",
-  "role-change",
-];
+import { ALL_AUTH_EVENT_TYPES, type AuthEventType } from "@/lib/types";
 
 export function isValidEventType(value: string): value is AuthEventType {
-  return (ALL_EVENT_TYPES as string[]).includes(value);
+  return (ALL_AUTH_EVENT_TYPES as readonly string[]).includes(value);
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

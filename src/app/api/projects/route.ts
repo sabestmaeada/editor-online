@@ -3,24 +3,15 @@ import { Readable } from "node:stream";
 import { getCurrentUserProfile } from "@/lib/firebase/get-current-profile";
 import {
   createProject,
-  listProjectsOwnedBy,
   updateProject,
   deleteProjectDoc,
-  getProject,
 } from "@/lib/firebase/projects";
-import {
-  addProjectMember,
-  listProjectsForMember,
-} from "@/lib/firebase/project-members";
+import { addProjectMember } from "@/lib/firebase/project-members";
+import { listProjectsForUser } from "@/lib/firebase/list-my-projects";
 import { uploadZipToProject } from "@/lib/r2/upload";
 import { deleteProjectFiles } from "@/lib/r2/download";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
-import type {
-  Project,
-  ProjectMemberRole,
-  ProjectWithMembership,
-  UserRole,
-} from "@/lib/types";
+import type { ProjectMemberRole, UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // seconds — for ZIP upload
@@ -37,30 +28,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [owned, memberships] = await Promise.all([
-    listProjectsOwnedBy(profile.uid),
-    listProjectsForMember(profile.uid),
-  ]);
-
-  // Build map: projectId -> Project (own or invited)
-  const seen = new Set<string>();
-  const result: ProjectWithMembership[] = [];
-
-  for (const p of owned) {
-    seen.add(p.id);
-    result.push({ ...p, myRole: "owner" });
-  }
-
-  for (const m of memberships) {
-    if (seen.has(m.projectId)) continue;
-    const proj = await getProject(m.projectId);
-    if (!proj) continue;
-    result.push({ ...proj, myRole: m.role });
-    seen.add(m.projectId);
-  }
-
-  result.sort((a, b) => b.updatedAt.toMillis() - a.updatedAt.toMillis());
-  return NextResponse.json({ projects: result });
+  const projects = await listProjectsForUser(profile);
+  return NextResponse.json({ projects });
 }
 
 // ────────────────────────────────────────────────────────────
@@ -156,7 +125,7 @@ export async function POST(req: NextRequest) {
     edition: asStr(payload.edition),
   });
 
-  const ownerMembershipRole: ProjectMemberRole = "owner";
+  const ownerMembershipRole: ProjectMemberRole = "project_owner";
   await addProjectMember({
     project,
     user: profile,

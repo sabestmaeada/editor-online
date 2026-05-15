@@ -37,7 +37,7 @@ export async function resolveProjectAccess(
 
   const memberRole = membership?.role;
   const canEdit =
-    isAdmin || isOwner || memberRole === "editor";
+    isAdmin || isOwner || memberRole === "project_editor";
   const canManage = isAdmin || isOwner;
   const canDownload = isAdmin || isOwner || membership !== null;
 

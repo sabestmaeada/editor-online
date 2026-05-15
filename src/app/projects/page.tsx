@@ -3,7 +3,7 @@ import { requireUserProfile } from "@/lib/firebase/require-profile";
 import { listProjectsForUser } from "@/lib/firebase/list-my-projects";
 import { Nav } from "@/components/nav";
 import { formatRelative } from "@/lib/format";
-import type { ProjectStatus } from "@/lib/types";
+import { formatProjectRole, type ProjectStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -110,15 +110,19 @@ export default async function ProjectsPage() {
                   <div className="mt-auto pt-4 text-xs text-zinc-500">
                     <div className="flex items-center justify-between">
                       <span>
-                        {p.myRole === "owner" ? (
+                        {p.myRole === "project_owner" ? (
                           <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                            owner
+                            Owner
+                          </span>
+                        ) : p.myRole === null ? (
+                          <span className="font-medium text-purple-700 dark:text-purple-300">
+                            Admin access
                           </span>
                         ) : (
                           <span>
                             invited as{" "}
                             <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                              {p.myRole}
+                              {formatProjectRole(p.myRole)}
                             </span>
                           </span>
                         )}

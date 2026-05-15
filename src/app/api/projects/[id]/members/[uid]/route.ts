@@ -56,7 +56,7 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     headers: req.headers,
     uid: profile.uid,
     email: profile.email,
-    eventType: "member-remove",
+    eventType: "project-member-remove",
     provider: "system",
     success: true,
     projectId: id,
@@ -71,7 +71,7 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
 // ────────────────────────────────────────────────────────────
 // PATCH /api/projects/[id]/members/[uid] — change role
-// Body: { role: "editor"|"proofreader"|"viewer" }
+// Body: { role: "project_editor"|"project_proofreader"|"project_viewer" }
 // ────────────────────────────────────────────────────────────
 type PatchPayload = { role?: unknown };
 
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       headers: req.headers,
       uid: profile.uid,
       email: profile.email,
-      eventType: "member-role-change",
+      eventType: "project-member-role-change",
       provider: "system",
       success: true,
       projectId: id,

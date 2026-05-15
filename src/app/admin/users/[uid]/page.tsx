@@ -30,11 +30,11 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   "project-download":
     "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
-  "member-invite":
+  "project-member-invite":
     "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  "member-remove":
+  "project-member-remove":
     "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  "member-role-change":
+  "project-member-role-change":
     "bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950 dark:text-fuchsia-300",
 };
 

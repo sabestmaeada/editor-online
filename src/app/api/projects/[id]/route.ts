@@ -52,7 +52,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       canManage: access.canManage,
       canEdit: access.canEdit,
       canDownload: access.canDownload,
-      myRole: access.membership?.role ?? (access.isOwner ? "owner" : null),
+      myRole:
+        access.membership?.role ?? (access.isOwner ? "project_owner" : null),
     },
   });
 }

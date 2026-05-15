@@ -30,21 +30,27 @@ export type UserProfile = {
 // ─── Auth events (audit log) ────────────────────────────────
 export type AuthProvider = "password" | "google" | "system";
 
-export type AuthEventType =
-  | "login"
-  | "logout"
-  | "failed-login"
-  | "password-reset"
-  | "email-change"
-  | "role-change"
-  // Project events
-  | "project-create"
-  | "project-update"
-  | "project-delete"
-  | "project-download"
-  | "member-invite"
-  | "member-remove"
-  | "member-role-change";
+export const ALL_AUTH_EVENT_TYPES = [
+  // Auth
+  "login",
+  "logout",
+  "failed-login",
+  // User account
+  "password-reset",
+  "email-change",
+  "role-change",
+  // Project
+  "project-create",
+  "project-update",
+  "project-delete",
+  "project-download",
+  // Project member
+  "project-member-invite",
+  "project-member-remove",
+  "project-member-role-change",
+] as const;
+
+export type AuthEventType = (typeof ALL_AUTH_EVENT_TYPES)[number];
 
 export type AuthEvent = {
   uid: string;
@@ -88,9 +94,9 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "project-update": 730,
   "project-delete": 730,
   "project-download": 90,
-  "member-invite": 730,
-  "member-remove": 730,
-  "member-role-change": 730,
+  "project-member-invite": 730,
+  "project-member-remove": 730,
+  "project-member-role-change": 730,
 };
 
 // ─── Projects ──────────────────────────────────────────────
@@ -105,19 +111,30 @@ export const PROJECT_STATUSES = [
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 export const PROJECT_MEMBER_ROLES = [
-  "owner",
-  "editor",
-  "proofreader",
-  "viewer",
+  "project_owner",
+  "project_editor",
+  "project_proofreader",
+  "project_viewer",
 ] as const;
 
 export type ProjectMemberRole = (typeof PROJECT_MEMBER_ROLES)[number];
 
 export const INVITABLE_PROJECT_ROLES: ProjectMemberRole[] = [
-  "editor",
-  "proofreader",
-  "viewer",
+  "project_editor",
+  "project_proofreader",
+  "project_viewer",
 ];
+
+export const PROJECT_ROLE_LABELS: Record<ProjectMemberRole, string> = {
+  project_owner: "Owner",
+  project_editor: "Editor",
+  project_proofreader: "Proofreader",
+  project_viewer: "Viewer",
+};
+
+export function formatProjectRole(role: ProjectMemberRole): string {
+  return PROJECT_ROLE_LABELS[role] ?? role;
+}
 
 export type Project = {
   id: string;
@@ -152,7 +169,8 @@ export type ProjectMember = {
   lastAccessedAt: Timestamp | null;
 };
 
-/** Project + role (for member views) */
+/** Project + role (for member views). `myRole` is null when access is via
+ *  admin (system role) without explicit project membership. */
 export type ProjectWithMembership = Project & {
-  myRole: ProjectMemberRole;
+  myRole: ProjectMemberRole | null;
 };

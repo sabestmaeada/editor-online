@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 // ────────────────────────────────────────────────────────────
 // POST /api/projects/[id]/members — invite by email
-// Body: { email: string, role: "editor"|"proofreader"|"viewer" }
+// Body: { email: string, role: "project_editor"|"project_proofreader"|"project_viewer" }
 // ────────────────────────────────────────────────────────────
 type InvitePayload = {
   email?: unknown;
@@ -69,7 +69,10 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
   if (!isInvitableRole(role)) {
     return NextResponse.json(
-      { error: "Invalid role (must be editor/proofreader/viewer)" },
+      {
+        error:
+          "Invalid role (must be project_editor / project_proofreader / project_viewer)",
+      },
       { status: 400 },
     );
   }
@@ -109,7 +112,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     headers: req.headers,
     uid: profile.uid,
     email: profile.email,
-    eventType: "member-invite",
+    eventType: "project-member-invite",
     provider: "system",
     success: true,
     projectId: id,

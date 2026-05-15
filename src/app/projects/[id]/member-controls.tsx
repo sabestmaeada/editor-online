@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   INVITABLE_PROJECT_ROLES,
+  formatProjectRole,
   type ProjectMemberRole,
 } from "@/lib/types";
 
@@ -11,7 +12,7 @@ import {
 export function InviteMemberForm({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<ProjectMemberRole>("proofreader");
+  const [role, setRole] = useState<ProjectMemberRole>("project_proofreader");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -76,7 +77,7 @@ export function InviteMemberForm({ projectId }: { projectId: string }) {
         >
           {INVITABLE_PROJECT_ROLES.map((r) => (
             <option key={r} value={r}>
-              {r}
+              {formatProjectRole(r)}
             </option>
           ))}
         </select>
@@ -176,7 +177,7 @@ export function MemberRow({
 
       {isOwner ? (
         <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900">
-          owner
+          Owner
         </span>
       ) : canManage ? (
         <>
@@ -187,9 +188,11 @@ export function MemberRow({
             aria-label={`Role of ${email}`}
             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
           >
-            <option value="editor">editor</option>
-            <option value="proofreader">proofreader</option>
-            <option value="viewer">viewer</option>
+            {INVITABLE_PROJECT_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {formatProjectRole(r)}
+              </option>
+            ))}
           </select>
           <button
             type="button"
@@ -202,7 +205,7 @@ export function MemberRow({
         </>
       ) : (
         <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-          {role}
+          {formatProjectRole(role)}
         </span>
       )}
 
