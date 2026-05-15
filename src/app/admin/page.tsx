@@ -33,13 +33,17 @@ export default async function AdminPage() {
             </p>
           </Link>
 
-          <div className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
-            <h2 className="text-base font-semibold">📊 Global Audit Log</h2>
+          <Link
+            href="/admin/audit"
+            className="group rounded-lg border border-zinc-200 p-5 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
+          >
+            <h2 className="text-base font-semibold group-hover:underline">
+              📊 Global Audit Log
+            </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              ดู events ทั้งระบบในที่เดียว (timeline)
+              Timeline ของ auth events ทั้งระบบ (กรองตาม event type ได้)
             </p>
-            <p className="mt-3 text-xs text-zinc-400">Coming soon</p>
-          </div>
+          </Link>
         </section>
       </main>
     </>
