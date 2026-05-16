@@ -79,10 +79,14 @@ export function ChangePasswordForm() {
         // 2. Update password
         await updatePassword(user, newPw);
 
-        // 3. Audit log (best-effort)
-        fetch("/api/auth/password-changed", { method: "POST" }).catch(
-          () => {},
-        );
+        // 3. Audit log — await so the request completes before the user
+        // navigates away. Still best-effort: a failure here doesn't roll
+        // back the password change (which already succeeded on Firebase).
+        try {
+          await fetch("/api/auth/password-changed", { method: "POST" });
+        } catch {
+          // network error → swallow; password change still succeeded
+        }
 
         setStatus({ kind: "success" });
         setCurrentPw("");

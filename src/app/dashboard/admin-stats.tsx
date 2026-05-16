@@ -5,6 +5,9 @@ import type {
 import { formatRelative } from "@/lib/format";
 import type { AuthEvent, AuthEventType } from "@/lib/types";
 
+// Partial map — events not listed here fall back to the default gray
+// badge inside `badgeClassFor`. Add an entry only when the event is
+// "interesting" enough to call out on the admin dashboard.
 const EVENT_BADGE: Partial<Record<AuthEventType, string>> = {
   login:
     "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -13,6 +16,22 @@ const EVENT_BADGE: Partial<Record<AuthEventType, string>> = {
     "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   "role-change":
     "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+  // Account lifecycle — admin will want to spot these at a glance
+  "user-register":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "user-approve":
+    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  "user-reject":
+    "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  "user-delete":
+    "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
+  // Password actions
+  "password-self-change":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-issued":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-used":
+    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   "project-create":
     "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
   "project-delete":

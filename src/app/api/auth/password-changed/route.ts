@@ -29,7 +29,22 @@ export async function POST(req: NextRequest) {
 
   let decoded;
   try {
-    decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
+    // IMPORTANT: pass `checkRevoked=false` here.
+    //
+    // The client calls this endpoint IMMEDIATELY AFTER Firebase Auth's
+    // `updatePassword()` succeeds. As a side-effect, Firebase auto-revokes
+    // all of the user's existing refresh tokens — INCLUDING the one our
+    // session cookie was minted from. With `checkRevoked=true`, Firebase
+    // Admin would reject the cookie ("auth/session-cookie-revoked") and
+    // we'd lose the audit log entry for the very action that revoked it.
+    //
+    // We accept this trade-off because:
+    //  - we're not authorizing any action, only logging who did it
+    //  - the JWT signature + expiry are still verified
+    //  - the cookie was alive at request time (user just used it)
+    //  - the next request from the same browser will be redirected to
+    //    /login anyway (require-profile re-checks revocation properly)
+    decoded = await adminAuth.verifySessionCookie(sessionCookie, false);
   } catch {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
