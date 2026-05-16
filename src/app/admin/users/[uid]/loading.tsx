@@ -24,9 +24,14 @@ export default function AdminUserDetailLoading() {
           </div>
         </header>
 
-        {/* Profile facts */}
+        {/* Admin actions (reset-link button row) */}
+        <section className="mt-4 flex flex-wrap items-start gap-3">
+          <Skeleton className="h-8 w-36" />
+        </section>
+
+        {/* Profile facts — 5 cards now (UID / Role / Status / Joined / Last login) */}
         <section className="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <div
               key={i}
               className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800"
