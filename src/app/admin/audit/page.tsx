@@ -23,6 +23,8 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
   "failed-login":
     "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   "password-reset":
+    "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400", // legacy
+  "password-self-change":
     "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   "password-reset-link-issued":
     "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",

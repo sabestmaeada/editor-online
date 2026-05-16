@@ -101,7 +101,13 @@ export const ALL_AUTH_EVENT_TYPES = [
   "logout",
   "failed-login",
   // User account
+  // NOTE: "password-reset" is legacy — kept so existing audit log entries
+  // still resolve to a known event type. New code should use either
+  // "password-self-change" (user changes their own password from /dashboard)
+  // or "password-reset-link-issued" / "password-reset-link-used"
+  // (admin-initiated flow). Do not emit "password-reset" for new events.
   "password-reset",
+  "password-self-change",
   "password-reset-link-issued",
   "password-reset-link-used",
   "email-change",
@@ -167,6 +173,7 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   logout: 90,
   "failed-login": 180,
   "password-reset": 730,
+  "password-self-change": 730,
   "password-reset-link-issued": 730,
   "password-reset-link-used": 730,
   "email-change": 730,

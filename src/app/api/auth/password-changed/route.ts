@@ -13,6 +13,11 @@ export const dynamic = "force-dynamic";
  * This endpoint only logs an audit event — the actual password change happens
  * client-side via Firebase Auth SDK (reauthenticate + updatePassword).
  *
+ * Emits `password-self-change` — distinct from `password-reset-link-issued`
+ * (admin issues link) and `password-reset-link-used` (user consumes link).
+ * Older audit entries may still have `password-reset`; that name is now
+ * deprecated and reserved for legacy data.
+ *
  * Best-effort: if logging fails, returns ok anyway — UI shouldn't block on this.
  */
 export async function POST(req: NextRequest) {
@@ -33,7 +38,7 @@ export async function POST(req: NextRequest) {
     headers: req.headers,
     uid: decoded.uid,
     email: decoded.email ?? "unknown",
-    eventType: "password-reset",
+    eventType: "password-self-change",
     provider: "password",
     success: true,
   }).catch(() => {});
