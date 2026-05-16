@@ -9,3 +9,4 @@ export const AUTH_EVENTS_COLLECTION = "authEvents";
 export const PROJECTS_COLLECTION = "projects";
 export const PROJECT_MEMBERS_COLLECTION = "projectMembers";
 export const INVITES_COLLECTION = "invites";
+export const PASSWORD_RESETS_COLLECTION = "passwordResets";

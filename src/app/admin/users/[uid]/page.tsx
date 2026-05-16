@@ -6,6 +6,7 @@ import { listAuthEventsForUser } from "@/lib/firebase/admin-events";
 import { Nav } from "@/components/nav";
 import { formatTimestamp, formatRelative } from "@/lib/format";
 import { RoleSelector } from "../role-selector";
+import { ResetLinkButton } from "./reset-link-button";
 import type { AuthEventType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,10 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   "password-reset":
     "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-issued":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-used":
+    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   "email-change":
     "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   "role-change":
@@ -112,10 +117,24 @@ export default async function AdminUserDetailPage({
           </div>
         </header>
 
+        {/* Admin actions — reset link is the main one for now. Goes under
+            the header so it's visually grouped with role/identity controls. */}
+        {!isSelf && (
+          <section className="mt-4 flex flex-wrap items-start gap-3">
+            <ResetLinkButton
+              uid={target.uid}
+              displayName={target.displayName}
+              email={target.email}
+              disabled={target.status !== "active"}
+            />
+          </section>
+        )}
+
         {/* Profile facts */}
         <section className="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
           <Fact label="UID" value={<code className="text-xs">{target.uid}</code>} />
           <Fact label="Role" value={target.role} />
+          <Fact label="Status" value={target.status} />
           <Fact label="Joined" value={formatTimestamp(target.createdAt)} />
           <Fact
             label="Last login"

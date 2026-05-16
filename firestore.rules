@@ -46,6 +46,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // ── Password reset tokens (admin → existing user) ────
+    // Same model as invites: admin reads, all writes via server.
+    // Public /reset-password endpoint reads via server with token check.
+    match /passwordResets/{token} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // ── Auth events (audit log) ──────────────────────────
     match /authEvents/{eventId} {
       allow read: if isAdmin();

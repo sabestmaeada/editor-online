@@ -70,6 +70,28 @@ export type Invite = {
   revokedBy?: string | null;
 };
 
+// ─── Password resets (admin → existing user) ────────────────
+// Shorter TTL than invites because resets are more sensitive.
+// Same lifecycle states as invites.
+export type PasswordResetStatus = InviteStatus;
+
+export const PASSWORD_RESET_TTL_HOURS = 24;
+
+export type PasswordReset = {
+  token: string;
+  uid: string;
+  email: string;
+  issuedBy: string;
+  issuedByEmail: string;
+  issuedAt: Timestamp;
+  expiresAt: Timestamp;
+  status: PasswordResetStatus;
+  usedAt?: Timestamp | null;
+  revokedAt?: Timestamp | null;
+  // "system" when auto-revoked by issuing a new token for the same uid
+  revokedBy?: string | null;
+};
+
 // ─── Auth events (audit log) ────────────────────────────────
 export type AuthProvider = "password" | "google" | "system";
 
@@ -80,6 +102,8 @@ export const ALL_AUTH_EVENT_TYPES = [
   "failed-login",
   // User account
   "password-reset",
+  "password-reset-link-issued",
+  "password-reset-link-used",
   "email-change",
   "role-change",
   // Account lifecycle (admin-managed)
@@ -143,6 +167,8 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   logout: 90,
   "failed-login": 180,
   "password-reset": 730,
+  "password-reset-link-issued": 730,
+  "password-reset-link-used": 730,
   "email-change": 730,
   "role-change": 730,
   // Account lifecycle — sensitive, keep 2 years

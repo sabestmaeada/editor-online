@@ -32,9 +32,10 @@ function LoginForm() {
   const nextPath = searchParams.get("next") ?? "/dashboard";
 
   // Pre-login banners — derived from URL params set by /register success,
-  // proxy redirects with stale sessions, or require-profile redirects when
-  // a user's status changes mid-session.
+  // /reset-password success, proxy redirects with stale sessions, or
+  // require-profile redirects when a user's status changes mid-session.
   const justRegistered = searchParams.get("registered") === "1";
+  const justReset = searchParams.get("reset") === "1";
   const statusError = searchParams.get("error"); // e.g. status-pending
 
   const [email, setEmail] = useState("");
@@ -127,6 +128,12 @@ function LoginForm() {
           </div>
         )}
 
+        {justReset && (
+          <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            ✓ ตั้งรหัสผ่านใหม่สำเร็จ — เข้าสู่ระบบด้วยรหัสใหม่ได้เลย
+          </div>
+        )}
+
         {statusErrorMessage && (
           <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
             ⚠ {statusErrorMessage}
@@ -175,6 +182,11 @@ function LoginForm() {
             {busy === "email" ? "Signing in..." : "Sign in with email"}
           </button>
         </form>
+
+        {/* Hint — admin issues reset links manually (no self-service). */}
+        <p className="text-center text-xs text-zinc-500">
+          ลืมรหัสผ่าน? ติดต่อ admin เพื่อขอลิงก์ตั้งรหัสผ่านใหม่
+        </p>
 
         {/* Google login — hidden until ready. To re-enable, uncomment block below. */}
         {/*

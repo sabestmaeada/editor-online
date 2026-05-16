@@ -24,6 +24,10 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   "password-reset":
     "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-issued":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "password-reset-link-used":
+    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   "email-change":
     "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   "role-change":
