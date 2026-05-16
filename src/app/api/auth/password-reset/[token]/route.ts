@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPasswordReset } from "@/lib/firebase/password-resets";
 import { getUserProfile } from "@/lib/firebase/users";
+import { getClientIp, truncateIp } from "@/lib/audit/ip";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +26,16 @@ type RouteContext = { params: Promise<{ token: string }> };
  * unauthenticated lookups (would be very noisy + token-guessing vector).
  * Rate-limit later if it becomes a problem.
  */
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export async function GET(req: NextRequest, ctx: RouteContext) {
+  const ip = truncateIp(getClientIp(req.headers));
+  const rl = checkRateLimit(
+    `reset-verify:${ip}`,
+    RATE_LIMITS.tokenVerify.limit,
+    RATE_LIMITS.tokenVerify.windowMs,
+  );
+  const limited = rateLimitResponse(rl);
+  if (limited) return limited;
+
   const { token } = await ctx.params;
 
   const reset = await getPasswordReset(token, { persistExpiry: true });

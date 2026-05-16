@@ -8,6 +8,12 @@ import {
 } from "@/lib/firebase/invites";
 import { createPendingProfile } from "@/lib/firebase/users";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import { getClientIp, truncateIp } from "@/lib/audit/ip";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +38,16 @@ export const dynamic = "force-dynamic";
  * Firebase Auth user we just created to keep the state consistent.
  */
 export async function POST(req: NextRequest) {
+  // Rate limit before parsing body — protect against spam attempts.
+  const ip = truncateIp(getClientIp(req.headers));
+  const rl = checkRateLimit(
+    `auth-register:${ip}`,
+    RATE_LIMITS.authRegister.limit,
+    RATE_LIMITS.authRegister.windowMs,
+  );
+  const limited = rateLimitResponse(rl);
+  if (limited) return limited;
+
   type Payload = {
     token?: unknown;
     displayName?: unknown;

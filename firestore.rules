@@ -20,19 +20,75 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data);
     }
 
+    // ── User profile field validators ────────────────────
+    // Each validator follows the same pattern:
+    //   "field is either NOT being changed, OR the new value is valid"
+    //
+    // Without these checks, a user with a stolen Firebase ID token could
+    // write directly via the Firestore client SDK (bypassing our server
+    // API) and stuff arbitrary bytes into displayName / trackColor / etc.
+    // Our server-side validation in /api/users/me/* would be irrelevant.
+
+    function isDisplayNameValid() {
+      return !diff().affectedKeys().hasAny(['displayName'])
+        || (request.resource.data.displayName is string
+            && request.resource.data.displayName.size() >= 2
+            && request.resource.data.displayName.size() <= 60);
+    }
+
+    function isTrackColorValid() {
+      return !diff().affectedKeys().hasAny(['trackColor'])
+        || (request.resource.data.trackColor is string
+            && request.resource.data.trackColor.matches('^#[0-9a-fA-F]{6}$'));
+    }
+
+    function isPhotoURLValid() {
+      return !diff().affectedKeys().hasAny(['photoURL'])
+        || request.resource.data.photoURL == null
+        || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 2048);
+    }
+
+    function isUpdatedAtValid() {
+      return !diff().affectedKeys().hasAny(['updatedAt'])
+        || request.resource.data.updatedAt is timestamp;
+    }
+
+    function isRoleValid() {
+      return !diff().affectedKeys().hasAny(['role'])
+        || (request.resource.data.role in
+            ['admin', 'editor', 'writer', 'reviewer', 'proofreader', 'viewer']);
+    }
+
+    function isStatusValid() {
+      return !diff().affectedKeys().hasAny(['status'])
+        || (request.resource.data.status in
+            ['pending', 'active', 'rejected', 'disabled']);
+    }
+
     // ── Users ────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
 
-      // self update — limited fields only
+      // self update — limited fields + values validated
       allow update: if isOwner(uid)
         && diff().affectedKeys()
-          .hasOnly(['trackColor', 'displayName', 'photoURL', 'updatedAt']);
+          .hasOnly(['trackColor', 'displayName', 'photoURL', 'updatedAt'])
+        && isDisplayNameValid()
+        && isTrackColorValid()
+        && isPhotoURLValid()
+        && isUpdatedAtValid();
 
-      // admin update — can also change role + status
+      // admin update — can also change role + status; values validated
       allow update: if isAdmin()
         && diff().affectedKeys()
-          .hasOnly(['role', 'status', 'trackColor', 'displayName', 'photoURL', 'updatedAt']);
+          .hasOnly(['role', 'status', 'trackColor', 'displayName', 'photoURL', 'updatedAt'])
+        && isDisplayNameValid()
+        && isTrackColorValid()
+        && isPhotoURLValid()
+        && isUpdatedAtValid()
+        && isRoleValid()
+        && isStatusValid();
 
       // create/delete only via server (admin SDK)
       allow create, delete: if false;

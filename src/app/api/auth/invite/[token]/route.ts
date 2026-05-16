@@ -1,5 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getInvite } from "@/lib/firebase/invites";
+import { getClientIp, truncateIp } from "@/lib/audit/ip";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,10 +20,18 @@ type RouteContext = { params: Promise<{ token: string }> };
  *
  * Returns 404 for non-existent / used / expired / revoked tokens.
  * Does NOT log audit events for unauthenticated lookups (would be noisy
- * and is a guessing-attack vector). Rate limiting is the right tool here;
- * left as a v2 todo.
+ * and is a guessing-attack vector). Rate limiting blocks scanning attempts.
  */
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export async function GET(req: NextRequest, ctx: RouteContext) {
+  const ip = truncateIp(getClientIp(req.headers));
+  const rl = checkRateLimit(
+    `invite-verify:${ip}`,
+    RATE_LIMITS.tokenVerify.limit,
+    RATE_LIMITS.tokenVerify.windowMs,
+  );
+  const limited = rateLimitResponse(rl);
+  if (limited) return limited;
+
   const { token } = await ctx.params;
 
   const invite = await getInvite(token, { persistExpiry: true });

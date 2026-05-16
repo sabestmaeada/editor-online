@@ -8,6 +8,12 @@ import {
 } from "@/lib/firebase/password-resets";
 import { getUserProfile } from "@/lib/firebase/users";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import { getClientIp, truncateIp } from "@/lib/audit/ip";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +40,17 @@ export const dynamic = "force-dynamic";
  * password" flows.
  */
 export async function POST(req: NextRequest) {
+  // Rate limit at the door — protects against token-guessing combined with
+  // password setting (the "if you guess a token you own the account" attack).
+  const ip = truncateIp(getClientIp(req.headers));
+  const rl = checkRateLimit(
+    `reset-consume:${ip}`,
+    RATE_LIMITS.passwordReset.limit,
+    RATE_LIMITS.passwordReset.windowMs,
+  );
+  const limited = rateLimitResponse(rl);
+  if (limited) return limited;
+
   const body = (await req.json().catch(() => ({}))) as {
     token?: unknown;
     password?: unknown;

@@ -8,6 +8,11 @@ import {
 import { upsertUserProfile } from "@/lib/firebase/users";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { getClientIp, truncateIp } from "@/lib/audit/ip";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 import type { AuthProvider } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -19,6 +24,18 @@ function mapProvider(signInProvider: string | undefined): AuthProvider {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit BEFORE token verification — gates brute-force at the door.
+  // Keyed by truncated IP so a NATted office doesn't all share one bucket
+  // (truncate /24 still groups attackers behind one ISP, which is fine).
+  const ip = truncateIp(getClientIp(req.headers));
+  const rl = checkRateLimit(
+    `auth-session:${ip}`,
+    RATE_LIMITS.authSession.limit,
+    RATE_LIMITS.authSession.windowMs,
+  );
+  const limited = rateLimitResponse(rl);
+  if (limited) return limited;
+
   const { idToken } = (await req.json().catch(() => ({}))) as {
     idToken?: string;
   };
