@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { TRACK_COLORS } from "@/lib/colors";
 import { ChangePasswordForm } from "./change-password-form";
 
 type Props = {
+  initialDisplayName: string;
   initialColor: string;
   email: string;
   uid: string;
@@ -15,7 +16,14 @@ type Props = {
   lastLoginIp: string | null;
 };
 
+type NameStatus =
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved" }
+  | { kind: "error"; message: string };
+
 export function PersonalSettings({
+  initialDisplayName,
   initialColor,
   email,
   uid,
@@ -25,17 +33,25 @@ export function PersonalSettings({
   lastLoginIp,
 }: Props) {
   const router = useRouter();
+
+  // Display name state — controlled input; "savedName" tracks the last
+  // value successfully persisted so we can show "Save" only when dirty.
+  const [name, setName] = useState(initialDisplayName);
+  const [savedName, setSavedName] = useState(initialDisplayName);
+  const [nameStatus, setNameStatus] = useState<NameStatus>({ kind: "idle" });
+
+  // Color state — independent transition since it auto-saves on click.
   const [color, setColor] = useState(initialColor);
   const [savedColor, setSavedColor] = useState(initialColor);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [colorError, setColorError] = useState<string | null>(null);
+  const [isColorPending, startColorTransition] = useTransition();
 
   function handleColorChange(next: string) {
     if (next === color || next === savedColor) return;
     setColor(next);
-    setError(null);
+    setColorError(null);
 
-    startTransition(async () => {
+    startColorTransition(async () => {
       const res = await fetch("/api/users/me/color", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -43,7 +59,7 @@ export function PersonalSettings({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error ?? `HTTP ${res.status}`);
+        setColorError(data.error ?? `HTTP ${res.status}`);
         setColor(savedColor);
         return;
       }
@@ -52,13 +68,124 @@ export function PersonalSettings({
     });
   }
 
+  async function handleNameSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (trimmed === savedName) return;
+    if (trimmed.length < 2 || trimmed.length > 60) {
+      setNameStatus({
+        kind: "error",
+        message: "ชื่อต้องยาว 2-60 ตัวอักษร",
+      });
+      return;
+    }
+    setNameStatus({ kind: "saving" });
+    try {
+      const res = await fetch("/api/users/me/display-name", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: trimmed }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        displayName?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      const persisted = data.displayName ?? trimmed;
+      setSavedName(persisted);
+      setName(persisted);
+      setNameStatus({ kind: "saved" });
+      router.refresh();
+      // Reset the "saved" badge after a beat so subsequent edits feel fresh.
+      setTimeout(() => {
+        setNameStatus((s) => (s.kind === "saved" ? { kind: "idle" } : s));
+      }, 2500);
+    } catch (err) {
+      setNameStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "บันทึกไม่สำเร็จ",
+      });
+    }
+  }
+
+  function handleNameReset() {
+    setName(savedName);
+    setNameStatus({ kind: "idle" });
+  }
+
+  const nameDirty = name.trim() !== savedName;
+  const nameBusy = nameStatus.kind === "saving";
+
   return (
     <section className="mt-10">
       <h2 className="mb-3 text-lg font-semibold tracking-tight">
         Personal settings
       </h2>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Display name editor — full width because the form layout reads
+          better with a wider input + side-by-side buttons. */}
+      <form
+        onSubmit={handleNameSubmit}
+        className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+      >
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-medium">ชื่อที่แสดง</h3>
+          <span className="text-xs text-zinc-500">
+            ปรากฏใน Nav, member list, audit log
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-stretch gap-2">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (
+                nameStatus.kind === "error" ||
+                nameStatus.kind === "saved"
+              ) {
+                setNameStatus({ kind: "idle" });
+              }
+            }}
+            disabled={nameBusy}
+            minLength={2}
+            maxLength={60}
+            aria-label="Display name"
+            className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100"
+          />
+          <button
+            type="submit"
+            disabled={nameBusy || !nameDirty}
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            {nameBusy ? "กำลังบันทึก..." : "บันทึก"}
+          </button>
+          {nameDirty && !nameBusy && (
+            <button
+              type="button"
+              onClick={handleNameReset}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              ยกเลิก
+            </button>
+          )}
+        </div>
+        {nameStatus.kind === "saved" && (
+          <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">
+            ✓ บันทึกแล้ว
+          </p>
+        )}
+        {nameStatus.kind === "error" && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+            {nameStatus.message}
+          </p>
+        )}
+      </form>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         {/* Color picker */}
         <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <div className="flex items-baseline justify-between">
@@ -73,7 +200,7 @@ export function PersonalSettings({
                 key={c}
                 type="button"
                 onClick={() => handleColorChange(c)}
-                disabled={isPending}
+                disabled={isColorPending}
                 aria-label={`Choose color ${c}`}
                 aria-pressed={c === color}
                 className={`size-7 rounded-full transition-all disabled:opacity-50 ${
@@ -85,12 +212,12 @@ export function PersonalSettings({
               />
             ))}
           </div>
-          {isPending && (
+          {isColorPending && (
             <p className="mt-2 text-xs text-zinc-500">Saving...</p>
           )}
-          {error && (
+          {colorError && (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">
-              {error}
+              {colorError}
             </p>
           )}
         </div>

@@ -124,6 +124,7 @@ export default async function DashboardPage() {
 
         {/* Section 5: Personal settings */}
         <PersonalSettings
+          initialDisplayName={profile.displayName}
           initialColor={profile.trackColor}
           email={profile.email}
           uid={profile.uid}

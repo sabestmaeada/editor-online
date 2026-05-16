@@ -63,9 +63,26 @@ export default function DashboardLoading() {
         {/* Section 5: Personal settings */}
         <section className="mt-10 space-y-4">
           <Skeleton className="h-5 w-40" />
+          {/* Display name editor */}
           <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
             <Skeleton className="h-3 w-24" />
-            <Skeleton className="mt-2 h-9 w-48" />
+            <div className="mt-3 flex gap-2">
+              <Skeleton className="h-9 flex-1" />
+              <Skeleton className="h-9 w-20" />
+            </div>
+          </div>
+          {/* Color + Account info 2-col */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-7 w-56" />
+            </div>
+            <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-3 w-full" />
+              <Skeleton className="mt-2 h-3 w-3/4" />
+              <Skeleton className="mt-2 h-3 w-2/3" />
+            </div>
           </div>
         </section>
       </main>
