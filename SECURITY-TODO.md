@@ -55,10 +55,20 @@ deploy public หรือมีผู้ใช้หลายสิบคน
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
 - `X-DNS-Prefetch-Control: on`
 
-**CSP allowlist:**
-- Firebase: `https://*.googleapis.com`, `https://*.firebaseapp.com`,
-  `identitytoolkit`, `securetoken`, `firestore`
-- R2: `https://*.r2.cloudflarestorage.com` (presigned uploads from browser)
+**CSP allowlist (current):**
+- Firebase (connect-src + frame-src): `https://*.googleapis.com`,
+  `https://*.firebaseapp.com`, `identitytoolkit`, `securetoken`, `firestore`
+- R2 (connect-src): `https://*.r2.cloudflarestorage.com` (presigned uploads
+  from browser)
+- **Google Fonts** (added 2026-05-19):
+  - `style-src`: `https://fonts.googleapis.com` (CSS @font-face declarations)
+  - `font-src`: `https://fonts.gstatic.com` (actual .woff2 files)
+  - Used by both editor.html shell and book HTML loaded in the iframe
+- **External images** (`img-src`, added 2026-05-19): `https:` (any HTTPS
+  origin) — Book Editor allows authors to embed images from Google Drive
+  proxy (`lh*.googleusercontent.com`), Imgur, etc. via `<img src="https://...">`.
+  Blocks `http:` to prevent mixed-content. `Referrer-Policy:
+  strict-origin-when-cross-origin` limits referer leakage.
 - `'self'` everywhere else
 
 **Trade-offs ที่ยังเหลือ (รู้ไว้):**
@@ -66,11 +76,17 @@ deploy public หรือมีผู้ใช้หลายสิบคน
   Next.js hydration + Book Editor inline handlers + Firebase Web SDK)
 - `style-src` ยังมี `'unsafe-inline'` (track color inline style + Next.js
   critical CSS)
+- `img-src https:` กว้างกว่า allowlist เฉพาะ origin — trade-off เพื่อให้
+  author ใส่รูปจากเว็บไหนก็ได้โดยไม่ต้องกลับมาแก้ CSP ทุกครั้ง
 - **Upgrade path:** ย้าย headers จาก next.config ไปไว้ใน middleware (proxy.ts)
   เพื่อใช้ per-request nonce ตามแบบ strict-CSP — งานใหญ่กว่า
 
 **Custom domain users:** ถ้าใช้ R2 custom domain (ไม่ใช่ default
 `*.r2.cloudflarestorage.com`) → เพิ่ม origin ใน `R2_ORIGINS` array ใน next.config.ts
+
+**Self-hosted fonts:** ถ้าวันหลังเปลี่ยนไปใช้ font provider อื่น (เช่น
+Bunny Fonts) หรือ self-host ผ่าน next/font → แก้ค่า `GOOGLE_FONTS_*_ORIGIN`
+constants ใน next.config.ts
 
 ---
 

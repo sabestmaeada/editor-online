@@ -28,6 +28,15 @@ const FIREBASE_ORIGINS = [
 // Custom domain users: append the custom origin here.
 const R2_ORIGINS = ["https://*.r2.cloudflarestorage.com"];
 
+// Google Fonts — Book Editor's own shell (editor.html) and book HTML files
+// loaded inside the iframe both link to Google webfonts (IBM Plex Sans Thai,
+// Sarabun, JetBrains Mono, Prompt, ...). The chain has TWO origins:
+//   - fonts.googleapis.com → serves the CSS (@font-face declarations)
+//   - fonts.gstatic.com    → serves the actual .woff2 files
+// Both must be allowed or fonts fall back to system defaults.
+const GOOGLE_FONTS_CSS_ORIGIN = "https://fonts.googleapis.com";
+const GOOGLE_FONTS_FILE_ORIGIN = "https://fonts.gstatic.com";
+
 const CSP_DIRECTIVES: Record<string, string[]> = {
   "default-src": ["'self'"],
 
@@ -41,14 +50,22 @@ const CSP_DIRECTIVES: Record<string, string[]> = {
 
   // 'unsafe-inline' — track-color circles use `style={{ background }}`,
   //   Next.js inlines critical CSS too. Tailwind v4 itself doesn't need it.
-  "style-src": ["'self'", "'unsafe-inline'"],
+  // fonts.googleapis.com — Book Editor + book HTML use Google webfonts;
+  //   the <link rel="stylesheet"> request goes here.
+  "style-src": ["'self'", "'unsafe-inline'", GOOGLE_FONTS_CSS_ORIGIN],
 
   // data: — Next.js may inline tiny images as data URIs
   // blob: — file inputs / FormData previews
-  "img-src": ["'self'", "data:", "blob:"],
+  // https: — Book Editor allows authors to embed external images
+  //   (Google Drive proxy lh*.googleusercontent.com, Imgur, etc.) as
+  //   <img src="https://..."> in book HTML. Block http: to prevent
+  //   mixed-content. Referrer-Policy above limits referer leakage.
+  "img-src": ["'self'", "data:", "blob:", "https:"],
 
-  // 'self' for Geist webfonts bundled by next/font, data: for icon fonts
-  "font-src": ["'self'", "data:"],
+  // 'self' for Geist webfonts bundled by next/font, data: for icon fonts.
+  // fonts.gstatic.com — the actual .woff2 files referenced by the Google
+  //   Fonts CSS allowed in style-src above.
+  "font-src": ["'self'", "data:", GOOGLE_FONTS_FILE_ORIGIN],
 
   // Outbound XHR / fetch / WebSocket destinations
   "connect-src": ["'self'", ...FIREBASE_ORIGINS, ...R2_ORIGINS],
