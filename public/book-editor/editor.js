@@ -1724,9 +1724,13 @@ function insertHR() {
 
 function insertNoteBox() {
   focusEditor();
+  // Plain "Note" label — the emoji 📌 was previously inserted here, but it
+  // ends up in the saved HTML and causes color-profile / glyph fallback
+  // issues when the book is converted to PDF for offset/grayscale printing.
+  // Visual styling for the label should live in the book's own CSS.
   const html = `
 <div class="note">
-  <div class="note-label">📌 Note</div>
+  <div class="note-label">Note</div>
   <p>เขียนหมายเหตุที่นี่</p>
 </div>
 <p><br></p>`;
@@ -1737,12 +1741,21 @@ function insertNoteBox() {
 // END MARK
 // ==============================================
 
+// Default end-of-chapter ornament. Inline SVG instead of the Unicode
+// dingbat (✤) so the print pipeline gets a clean vector glyph that is
+// independent of font availability, color emoji rendering, or color
+// profile embedding. `currentColor` lets the book's CSS theme the mark.
+const DEFAULT_ENDMARK_SVG =
+  '<svg viewBox="0 0 24 24" width="0.9em" height="0.9em" fill="currentColor" role="presentation" aria-hidden="true"><path d="M12 3 L14 10 L21 12 L14 14 L12 21 L10 14 L3 12 L10 10 Z"/></svg>';
+
 function showEndMarkModal() {
   const sel = getWin().getSelection();
   if (sel.rangeCount) {
     savedSelection = sel.getRangeAt(0).cloneRange();
   }
-  document.getElementById('endMarkText').value = '— ✤ —';
+  // Empty input = "use default SVG ornament". User can type custom text
+  // (e.g. "— THE END —") and it will be inserted as text instead.
+  document.getElementById('endMarkText').value = '';
   document.getElementById('endMarkTop').value = '80';
   document.getElementById('endMarkBottom').value = '20';
   updateEndMarkPreview();
@@ -1754,12 +1767,20 @@ function closeEndMarkModal() {
 }
 
 function updateEndMarkPreview() {
-  const text = document.getElementById('endMarkText').value || '— ✤ —';
-  document.getElementById('endMarkPreview').textContent = text;
+  const text = document.getElementById('endMarkText').value;
+  const preview = document.getElementById('endMarkPreview');
+  if (text.trim() === '') {
+    // Use innerHTML — we trust DEFAULT_ENDMARK_SVG as we control it.
+    preview.innerHTML = DEFAULT_ENDMARK_SVG;
+  } else {
+    // textContent is XSS-safe + ensures non-text-rendering chars don't
+    // sneak in via the preview.
+    preview.textContent = text;
+  }
 }
 
 function insertEndMark() {
-  const text = document.getElementById('endMarkText').value || '— ✤ —';
+  const text = document.getElementById('endMarkText').value;
   const top = document.getElementById('endMarkTop').value || '80';
   const bottom = document.getElementById('endMarkBottom').value || '20';
 
@@ -1772,7 +1793,11 @@ function insertEndMark() {
 
   const topNum = parseInt(top, 10) || 0;
   const bottomNum = parseInt(bottom, 10) || 0;
-  const html = `<div class="end-mark" style="text-align:center;font-size:20px;color:#C8C5BB;margin-top:${topNum}px;margin-bottom:${bottomNum}px;" contenteditable="false">${escapeHtml(text)}</div><p><br></p>`;
+  // Empty text → use the default SVG ornament (print-safe).
+  // Non-empty text → render the user's text (will still be sanitized by
+  // stripEmojis() at save time).
+  const inner = text.trim() === '' ? DEFAULT_ENDMARK_SVG : escapeHtml(text);
+  const html = `<div class="end-mark" style="text-align:center;font-size:20px;color:#C8C5BB;margin-top:${topNum}px;margin-bottom:${bottomNum}px;" contenteditable="false">${inner}</div><p><br></p>`;
   getDoc().execCommand('insertHTML', false, html);
 
   closeEndMarkModal();
@@ -2497,6 +2522,127 @@ function handleEditorKeys(e) {
 // SAVE PROJECT
 // ==============================================
 
+// ── Print-safe text sanitization ────────────────────────────
+//
+// Books authored here often end up as PDFs sent to commercial printers.
+// Color-emoji glyphs cause real problems in that pipeline:
+//   - Emoji fonts use bitmap / SVG-in-OpenType tables that don't always
+//     embed cleanly in PDFs (Prince/WeasyPrint may fall back to tofu).
+//   - Color glyphs carry hard-coded sRGB color which conflicts with the
+//     ICC profile being embedded for offset (CMYK) or B/W workflows.
+//
+// `EMOJI_RE` matches codepoints that render as color by default. The
+// "Misc Symbols" (U+2600-26FF) and "Dingbats" (U+2700-27BF) blocks are
+// NOT in here — they contain typographic characters like ✓ ✗ ✤ ★ that
+// the user may legitimately want. We force those to render text-style
+// via the U+FE0E variation selector below instead of removing them.
+//
+// U+FE0F (EMOJI VARIATION SELECTOR) is stripped — it forces emoji-style
+// rendering of borderline characters, which is the opposite of what we
+// want for print. U+FE0E (TEXT VARIATION SELECTOR) is kept.
+//
+// Notably absent: U+200D (ZWJ). It's used as both an emoji joiner and a
+// legitimate Thai/Indic shaping control. Stripping it could break Thai
+// text rendering; we accept the trade-off that any orphan ZWJ left over
+// after stripping surrounding emojis is harmless.
+const VS_TEXT = String.fromCharCode(0xfe0e);  // U+FE0E TEXT VARIATION SELECTOR
+const VS_EMOJI = String.fromCharCode(0xfe0f); // U+FE0F EMOJI VARIATION SELECTOR
+
+// High-plane emoji codepoints — these are unambiguously color emoji and
+// always get stripped. U+FE0F is included so we strip any lingering
+// "force-emoji" variation selectors too.
+const EMOJI_RE =
+  /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{1F000}-\u{1F0FF}\u{FE0F}]/gu;
+
+// Per-codepoint replacements for codepoints that DO have legitimate
+// typography use but render as color emoji by default in modern fonts.
+// We replace with a B/W-safe equivalent (preferring classical Unicode
+// chars that have no color emoji variant), or with inline SVG for
+// ornaments, or with empty string for purely decorative emojis.
+//
+// Map entries should be UPDATED, not stripped — these chars are real
+// content the user wrote; we just normalize them to a print-safe form.
+const SAFE_REPLACEMENTS = {
+  // Stars — ⭐ has emoji presentation; ★ U+2605 is the classical B/W star
+  // that all text fonts ship and has no color emoji variant.
+  '⭐': '★',                // ⭐ → ★
+  '⭑': '☆',                // White Medium Small Star → ☆
+  // Check marks — ✓ U+2713 is the classical text-style check.
+  '✅': '✓' + VS_TEXT,      // ✅ → ✓ (forced text-style)
+  '❌': '✗' + VS_TEXT,      // ❌ → ✗
+  '❎': '✗' + VS_TEXT,      // ❎ → ✗
+  // Warning — keep the codepoint but force text-style. Most book fonts
+  // have a B/W glyph for U+26A0; if the user's font doesn't, they'll see
+  // a tofu and can swap the char manually.
+  '⚠': '⚠' + VS_TEXT,      // ⚠ → ⚠︎
+  // Lightning bolt — same approach.
+  '⚡': '⚡' + VS_TEXT,      // ⚡ → ⚡︎
+  // Endmark — replace with the inline SVG ornament. Old files that
+  // contain literal ✤ from before the SVG endmark feature get auto-
+  // migrated this way without any visual change in the printed book.
+  // DEFAULT_ENDMARK_SVG is defined earlier in this file.
+  // Purely decorative — strip outright. User can re-add as text/SVG if
+  // they actually need the visual.
+  '⌨': '',  // ⌨
+  '⏰': '',  // ⏰
+  '⏱': '',  // ⏱
+  '⏲': '',  // ⏲
+  '⏳': '',  // ⏳
+  '✨': '',  // ✨
+};
+
+// Misc Technical (U+2300-23FF) — contains keyboard/clock/etc. emoji
+// Misc Symbols (U+2600-26FF) — has ✤'s neighbors ⚠ ⚡ etc.
+// Dingbats (U+2700-27BF) — has ✓ ✗ ✤
+// Misc Symbols & Arrows (U+2B00-2BFF) — has ⭐ ★ ☆
+//
+// Anything in these ranges that *isn't* in SAFE_REPLACEMENTS gets a
+// U+FE0E variation selector appended — best effort to force text-style
+// rendering on systems whose default font has a color glyph.
+const TYPOGRAPHIC_SYMBOLS_RE =
+  /([\u{2300}-\u{23FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B00}-\u{2BFF}])(?![\u{FE0E}\u{FE0F}])/gu;
+
+// What we surface in the pre-save warning. Includes the high-plane
+// emojis AND the borderline codepoints — so the user knows what's about
+// to be transformed even when the transform is "replace" not "strip".
+const FIND_EMOJI_RE =
+  /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{1F000}-\u{1F0FF}\u{2300}-\u{23FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu;
+
+function applySafeReplacements(html) {
+  // Inject the endmark SVG mapping at call time — DEFAULT_ENDMARK_SVG is
+  // defined earlier in this file but referencing it in the static map
+  // literal at the top would order-of-eval risk. Cheap to spread here.
+  const replacements = {
+    ...SAFE_REPLACEMENTS,
+    '✤': DEFAULT_ENDMARK_SVG, // ✤ → SVG ornament (matches new endmarks)
+  };
+  let out = html;
+  for (const [ch, rep] of Object.entries(replacements)) {
+    // `String.split(ch).join(rep)` is the no-regex idiomatic way to do
+    // a global literal replace — faster than building a per-char regex
+    // and cleaner than escaping special chars in ch (none of ours are
+    // regex metachars but future entries might be).
+    if (out.indexOf(ch) !== -1) out = out.split(ch).join(rep);
+  }
+  return out;
+}
+
+function stripEmojis(html) {
+  // Order: replacements → strip remaining high-plane emoji
+  return applySafeReplacements(html).replace(EMOJI_RE, '');
+}
+
+function forceTextStyle(html) {
+  return html.replace(TYPOGRAPHIC_SYMBOLS_RE, '$1' + VS_TEXT);
+}
+
+function findEmojisIn(html) {
+  const matches = html.match(FIND_EMOJI_RE);
+  if (!matches) return [];
+  // Variation selectors alone aren't meaningful — don't show them.
+  return matches.filter((c) => c !== VS_EMOJI && c !== VS_TEXT);
+}
+
 function buildFullHtml(content) {
   let lang = 'th';
   try {
@@ -2504,10 +2650,16 @@ function buildFullHtml(content) {
     if (iframeRoot && iframeRoot.getAttribute('lang')) lang = iframeRoot.getAttribute('lang');
   } catch (e) { /* iframe not ready */ }
 
+  // Sanitize <head> too — emoji in <title>, <meta name="description">,
+  // etc. would otherwise survive in the saved file and cause the same
+  // Apple-Color-Emoji font fallback during PDF conversion. We use the
+  // same passes as for body content for consistency.
+  const safeHead = forceTextStyle(stripEmojis(originalHeadHtml));
+
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(lang)}">
 <head>
-${originalHeadHtml}</head>
+${safeHead}</head>
 <body>
 ${content}
 </body>
@@ -2527,7 +2679,34 @@ function buildSaveContent() {
   let content = cloneBody.innerHTML;
   content = content.replace(/<b\b[^>]*>/gi, '<strong>').replace(/<\/b>/gi, '</strong>');
   content = content.replace(/​/g, ''); // strip zero-width space ที่อาจตกค้างจากการพิมพ์ใน track mode
+
+  // Print-safety pass — order matters:
+  //   1. strip emoji codepoints (catches anything the user pasted in)
+  //   2. force text-style on remaining typographic symbols
+  // Pre-save warning (saveProject/saveProjectAs) gives the user a heads-up
+  // before this destructive transform runs.
+  content = stripEmojis(content);
+  content = forceTextStyle(content);
+
   return buildFullHtml(content);
+}
+
+// Pre-save check — if the user has emojis in the document, warn them
+// once so they understand the saved HTML won't match the editor view.
+// Returns true if the user confirms (or there's nothing to warn about).
+function confirmPrintSafeSave() {
+  const docBody = getDoc().body;
+  if (!docBody) return true;
+  const emojis = findEmojisIn(docBody.innerHTML);
+  if (emojis.length === 0) return true;
+  const sample = [...new Set(emojis)].slice(0, 12).join(' ');
+  const more = emojis.length > 12 ? ` (+ ${emojis.length - 12} อื่น)` : '';
+  return window.confirm(
+    `พบ emoji ${emojis.length} จุดในเอกสาร: ${sample}${more}\n\n` +
+      'จะถูกลบในไฟล์ที่บันทึก เพื่อให้ output เหมาะกับงาน print\n' +
+      '(หน้าจอแก้ไขจะไม่กระทบ)\n\n' +
+      'ดำเนินการต่อ?',
+  );
 }
 
 async function saveProject() {
@@ -2540,6 +2719,8 @@ async function saveProject() {
     showToast('ไม่ได้รับสิทธิ์เขียนไฟล์ HTML — กดอนุญาตเมื่อเบราว์เซอร์ถาม');
     return;
   }
+
+  if (!confirmPrintSafeSave()) return;
 
   const fullHtml = buildSaveContent();
 
@@ -2561,6 +2742,8 @@ async function saveProjectAs() {
     showToast('ยังไม่มีเนื้อหาให้บันทึก');
     return;
   }
+
+  if (!confirmPrintSafeSave()) return;
 
   let newHandle;
   try {
