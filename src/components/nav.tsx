@@ -2,13 +2,23 @@ import Link from "next/link";
 import type { UserProfile } from "@/lib/types";
 import { LogoutButton } from "./logout-button";
 import { NavLink } from "./nav-link";
+import { NavDropdown, type NavDropdownItem } from "./nav-dropdown";
 
 type Props = {
   profile: UserProfile;
 };
 
+// Tools is gated server-side via requireRole on each /tools/* page; this
+// just hides the dropdown for roles that wouldn't be allowed in anyway.
+const TOOLS_ROLES = new Set(["admin", "editor"]);
+
+const TOOLS_ITEMS: NavDropdownItem[] = [
+  { href: "/tools/credits", label: "Create Credit Page" },
+];
+
 export function Nav({ profile }: Props) {
   const isAdmin = profile.role === "admin";
+  const canSeeTools = TOOLS_ROLES.has(profile.role);
 
   return (
     <nav className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -38,6 +48,9 @@ export function Nav({ profile }: Props) {
           <NavLink href="/dashboard">Dashboard</NavLink>
           <NavLink href="/projects">Projects</NavLink>
           <NavLink href="/editor">Editor</NavLink>
+          {canSeeTools && (
+            <NavDropdown label="Tools" items={TOOLS_ITEMS} />
+          )}
         </div>
 
         {/* Admin menu */}
