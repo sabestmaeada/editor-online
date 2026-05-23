@@ -2424,8 +2424,18 @@ function handleTableResizeEnd() {
 // dingbat (✤) so the print pipeline gets a clean vector glyph that is
 // independent of font availability, color emoji rendering, or color
 // profile embedding. `currentColor` lets the book's CSS theme the mark.
+//
+// `vertical-align: middle` matters: without it the SVG defaults to
+// vertical-align:baseline, which puts the SVG box bottom on the text
+// baseline. The star path is centered in its 24×24 viewBox (so the
+// visible center sits at y=12 = 0.45em above baseline), while em-dash
+// glyphs in most fonts render at ~0.25em above baseline (x-height/2).
+// That's a ~0.2em vertical mismatch visible as "— ⭐ —" with the star
+// floating high. `middle` aligns the SVG's vertical center with the
+// parent's (baseline + x-height/2), which is exactly where em-dashes
+// sit — closing the gap.
 const DEFAULT_ENDMARK_SVG =
-  '<svg viewBox="0 0 24 24" width="0.9em" height="0.9em" fill="currentColor" role="presentation" aria-hidden="true"><path d="M12 3 L14 10 L21 12 L14 14 L12 21 L10 14 L3 12 L10 10 Z"/></svg>';
+  '<svg viewBox="0 0 24 24" width="0.9em" height="0.9em" fill="currentColor" style="vertical-align: middle;" role="presentation" aria-hidden="true"><path d="M12 3 L14 10 L21 12 L14 14 L12 21 L10 14 L3 12 L10 10 Z"/></svg>';
 
 function showEndMarkModal() {
   const sel = getWin().getSelection();
@@ -2448,13 +2458,17 @@ function closeEndMarkModal() {
 function updateEndMarkPreview() {
   const text = document.getElementById('endMarkText').value;
   const preview = document.getElementById('endMarkPreview');
+  // Wrap the symbol (default SVG or user text) with em-dashes ("—") on
+  // both sides to mirror the "line — symbol — line" pattern that the
+  // book HTML already uses across existing chapter ends. The em-dash
+  // is plain U+2014; it passes through the print pipeline untouched.
   if (text.trim() === '') {
     // Use innerHTML — we trust DEFAULT_ENDMARK_SVG as we control it.
-    preview.innerHTML = DEFAULT_ENDMARK_SVG;
+    preview.innerHTML = `— ${DEFAULT_ENDMARK_SVG} —`;
   } else {
     // textContent is XSS-safe + ensures non-text-rendering chars don't
     // sneak in via the preview.
-    preview.textContent = text;
+    preview.textContent = `— ${text} —`;
   }
 }
 
@@ -2475,7 +2489,12 @@ function insertEndMark() {
   // Empty text → use the default SVG ornament (print-safe).
   // Non-empty text → render the user's text (will still be sanitized by
   // stripEmojis() at save time).
-  const inner = text.trim() === '' ? DEFAULT_ENDMARK_SVG : escapeHtml(text);
+  // Wrap with em-dashes on both sides — this is the "line — symbol — line"
+  // pattern already in use across existing chapter ends in the book.
+  // Em-dash (U+2014) is a regular typographic character; no sanitizer
+  // in the save pipeline strips it.
+  const content = text.trim() === '' ? DEFAULT_ENDMARK_SVG : escapeHtml(text);
+  const inner = `— ${content} —`;
   const html = `<div class="end-mark" style="text-align:center;font-size:20px;color:#C8C5BB;margin-top:${topNum}px;margin-bottom:${bottomNum}px;" contenteditable="false">${inner}</div><p><br></p>`;
   getDoc().execCommand('insertHTML', false, html);
 
@@ -3085,8 +3104,21 @@ function bindHoverInsert(doc) {
   doc.body.addEventListener('mousemove', (e) => {
     if (isQuickMenuOpen) return;
 
-    const block = e.target.closest('p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol');
-    
+    let block = e.target.closest(
+      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table'
+    );
+
+    // Tables: closest() usually matches <table> before <.table-wrap>
+    // because it's closer to the cursor. We prefer the wrap for the
+    // "+" anchor so the visual position lines up with the wrap's
+    // border-radius / overflow box (the visible "table" boundary).
+    // The quickAction container-escape logic also handles this, but
+    // mirroring it here keeps the "+" position consistent with where
+    // the new block will actually land.
+    if (block && block.tagName === 'TABLE') {
+      block = block.closest('.table-wrap') || block;
+    }
+
     if (block) {
       clearTimeout(quickMenuHideTimeout);
       hoveredBlock = block;
@@ -3111,6 +3143,19 @@ function bindHoverInsert(doc) {
 
   btn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
   menu.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+
+  // Esc inside the iframe → close quick menu. Iframe keydowns don't
+  // bubble to the parent document, so a parent-level Esc handler can't
+  // see them. Mirror the same close logic here. The parent-level Esc
+  // handler (further down in this file) covers the case when focus is
+  // on a parent-document button (menu items, toolbar, etc.).
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (isQuickMenuOpen) {
+      closeQuickMenu();
+      e.stopPropagation();
+    }
+  });
 
   function scheduleHide() {
     clearTimeout(quickMenuHideTimeout);
@@ -3140,7 +3185,7 @@ function toggleQuickMenu() {
       sel.removeAllRanges();
       sel.addRange(range);
       focusEditor();
-      savedSelection = range; 
+      savedSelection = range;
     }
     
     btn.classList.add('active');
@@ -3150,17 +3195,129 @@ function toggleQuickMenu() {
   }
 }
 
+// HTML payloads for quick-insert actions. Kept here (rather than reusing
+// insertNoteBox / insertCodeBlock) because the container-escape branch
+// below needs to parse them as DOM nodes and insert via parentNode.insertBefore,
+// not via execCommand.
+const QUICK_INSERT_HTML = {
+  p:    '<p><br></p>',
+  h2:   '<h2><br></h2>',
+  h3:   '<h3><br></h3>',
+  h4:   '<h4><br></h4>',
+  note: '<div class="note">\n  <div class="note-label">Note</div>\n  <p>เขียนหมายเหตุที่นี่</p>\n</div>',
+  code: '<div class="code-block">\n  <div class="code-header">\n    <span class="code-lang-badge">code</span>\n    <span class="code-linecount">1 บรรทัด</span>\n  </div>\n  <pre><code><span class="line">// เขียนโค้ดที่นี่</span></code></pre>\n</div>',
+};
+
+// Selectors for "container" elements that the quick-insert "+" should
+// escape from. When the user hovers a paragraph INSIDE a note box and
+// clicks +, they want the new block before the WHOLE note — not nested
+// inside the note (which is what setStart(p, 0) + insertHTML produces
+// because the browser keeps the caret inside the contenteditable's
+// nearest enclosing block).
+const QUICK_INSERT_CONTAINER_SELECTOR =
+  '.note, .code-block, blockquote, figure, ul, ol, .table-wrap, table';
+
 function quickAction(action) {
-  // ควบคุมคำสั่งที่มาจากเมนู Quick Insert
-  if (action === 'image') showImageModal();
-  else if (action === 'p') {
-    focusEditor();
-    getDoc().execCommand('insertHTML', false, '<p><br></p>'); // แทรกย่อหน้าใหม่
+  // Container escape path.
+  //
+  // If the hovered block lives inside a container (or IS a container),
+  // we bypass execCommand entirely and use DOM insertBefore against the
+  // outermost container. execCommand's insertHTML, even with the caret
+  // anchored "before" the container via setStartBefore, sometimes ends
+  // up nesting content inside the container — Chrome normalizes the
+  // caret to the nearest valid contenteditable position, which often
+  // means "inside the container at offset 0". DOM insertBefore has no
+  // such ambiguity: it places the new node as a sibling of the anchor,
+  // before it, full stop.
+  let container = null;
+  if (hoveredBlock) {
+    container =
+      hoveredBlock.closest(QUICK_INSERT_CONTAINER_SELECTOR)
+      || (hoveredBlock.matches && hoveredBlock.matches(QUICK_INSERT_CONTAINER_SELECTOR)
+            ? hoveredBlock
+            : null);
+    // Tables: hover usually hits the inner table (closest finds it
+    // first), but we want to anchor on the outer .table-wrap so the
+    // wrap's overflow/break-inside layout stays intact.
+    if (container && container.tagName === 'TABLE') {
+      container = container.closest('.table-wrap') || container;
+    }
   }
-  else if (action === 'note') insertNoteBox();
-  else if (action === 'endmark') showEndMarkModal();
-  else if (action === 'code') insertCodeBlock();
-  
+
+  if (container && action !== 'image' && QUICK_INSERT_HTML[action]) {
+    insertHtmlBeforeNode(container, QUICK_INSERT_HTML[action]);
+  } else {
+    // No container → original beta-0.50 behavior. setStart(hoveredBlock, 0)
+    // was already set in toggleQuickMenu; here we just let execCommand
+    // take it from there. For plain <p>/<h*> at top level the browser
+    // auto-splits and the new block ends up BEFORE the hovered block,
+    // which matches user expectations.
+    if (action === 'image') showImageModal();
+    else if (action === 'p') {
+      focusEditor();
+      getDoc().execCommand('insertHTML', false, '<p><br></p>'); // แทรกย่อหน้าใหม่
+    }
+    else if (action === 'h2') {
+      focusEditor();
+      getDoc().execCommand('insertHTML', false, '<h2><br></h2>');
+    }
+    else if (action === 'h3') {
+      focusEditor();
+      getDoc().execCommand('insertHTML', false, '<h3><br></h3>');
+    }
+    else if (action === 'h4') {
+      focusEditor();
+      getDoc().execCommand('insertHTML', false, '<h4><br></h4>');
+    }
+    else if (action === 'note') insertNoteBox();
+    else if (action === 'code') insertCodeBlock();
+  }
+
+  document.getElementById('quickInsertMenu').classList.remove('show');
+  document.getElementById('quickInsertBtn').classList.remove('active');
+  isQuickMenuOpen = false;
+}
+
+// DOM-based insert: builds nodes from `html` and places them as siblings
+// of `anchor`, immediately before it. After insertion the caret lands
+// inside the first new element so the user can type right away.
+//
+// Used only by the quick-insert "+" container-escape path. The book's
+// regular editing flow uses execCommand for change-history reasons
+// (built-in undo stack), but the escape path needs surgical placement
+// that execCommand can't reliably give.
+function insertHtmlBeforeNode(anchor, html) {
+  if (!anchor || !anchor.parentNode) return;
+  const doc = getDoc();
+  const tmp = doc.createElement('div');
+  tmp.innerHTML = html;
+  const firstNew = tmp.firstElementChild;
+  if (!firstNew) return;
+
+  // Move all parsed top-level nodes (preserves whitespace text nodes
+  // between siblings if the HTML had any — though our payloads are
+  // single-element).
+  while (tmp.firstChild) {
+    anchor.parentNode.insertBefore(tmp.firstChild, anchor);
+  }
+
+  // Place caret at the start of the first inserted element so typing
+  // appends content into it immediately.
+  const sel = getWin().getSelection();
+  const range = doc.createRange();
+  range.selectNodeContents(firstNew);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  focusEditor();
+  setDirty(true);
+}
+
+// Helper — close the quick insert menu + reset its trigger state.
+// Single source of truth for the close sequence so the parent-doc Esc
+// handler, the iframe-doc Esc handler, and any future call sites stay
+// in sync without duplicating the 3-line block.
+function closeQuickMenu() {
   document.getElementById('quickInsertMenu').classList.remove('show');
   document.getElementById('quickInsertBtn').classList.remove('active');
   isQuickMenuOpen = false;
@@ -3195,9 +3352,19 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Esc closes table popovers (matches the modal-Esc UX pattern).
+// Esc closes hover-anchored popovers — quick insert menu first, then
+// table grid picker, then table context menu. Order matters: we close
+// the topmost / most-recently-opened thing on a single press, so the
+// user can chain Esc presses to back out through layers (matches the
+// modal-Esc UX pattern).
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+
+  if (isQuickMenuOpen) {
+    closeQuickMenu();
+    e.stopPropagation();
+    return;
+  }
   const picker = document.getElementById('tableGridPicker');
   if (picker && picker.classList.contains('show')) {
     hideTableGridPicker();
