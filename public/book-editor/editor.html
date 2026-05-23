@@ -132,6 +132,9 @@
       <button class="tb-btn" data-tip="เส้นคั่น (HR)" onclick="insertHR()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>
       </button>
+      <button class="tb-btn" data-tip="แทรกตาราง" id="tableBtn" onclick="showTableGridPicker(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      </button>
 
       <div class="tb-sep"></div>
 
@@ -370,6 +373,26 @@
       <button class="btn btn-primary" onclick="saveAndClose()">บันทึกแล้วปิด</button>
     </div>
   </div>
+</div>
+
+<!-- Table Grid Picker (popover) — show grid of cells, hover to choose size, click to insert -->
+<div id="tableGridPicker" class="table-grid-picker" role="dialog" aria-label="เลือกขนาดตาราง">
+  <div class="table-grid-picker-inner">
+    <div class="table-grid-picker-grid" id="tableGridCells" role="grid" aria-label="กริดเลือกขนาดตาราง"></div>
+    <div class="table-grid-picker-label" id="tableGridLabel">ลากเมาส์เพื่อเลือกขนาด</div>
+  </div>
+</div>
+
+<!-- Table Context Menu — appears on right-click inside a table cell -->
+<div id="tableContextMenu" class="table-context-menu" role="menu" aria-label="ตัวเลือกตาราง">
+  <div class="table-context-menu-item" onclick="tableAction('rowAbove')">⬆ เพิ่มแถวด้านบน</div>
+  <div class="table-context-menu-item" onclick="tableAction('rowBelow')">⬇ เพิ่มแถวด้านล่าง</div>
+  <div class="table-context-menu-item" onclick="tableAction('colLeft')">⬅ เพิ่มคอลัมน์ด้านซ้าย</div>
+  <div class="table-context-menu-item" onclick="tableAction('colRight')">➡ เพิ่มคอลัมน์ด้านขวา</div>
+  <div class="table-context-menu-sep"></div>
+  <div class="table-context-menu-item danger" onclick="tableAction('delRow')">🗑 ลบแถวนี้</div>
+  <div class="table-context-menu-item danger" onclick="tableAction('delCol')">🗑 ลบคอลัมน์นี้</div>
+  <div class="table-context-menu-item danger" onclick="tableAction('delTable')">🗑 ลบทั้งตาราง</div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>

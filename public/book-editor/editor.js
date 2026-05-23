@@ -1554,6 +1554,16 @@ ins[data-user]:hover, del[data-user]:hover {
   outline-offset: 1px;
 }
 /* tooltip แสดงชื่อผู้ใช้ — render ด้วย JS ใน parent document (ดู bindTrackHoverTooltip) */
+
+/* Table cell currently targeted by the context menu.
+   JS adds this class on showTableContextMenu, removes it on hide. The
+   !important wins against tr:hover td so the highlight stays visible
+   even when the user happens to be hovering elsewhere in the row. */
+td.table-cell-targeted, th.table-cell-targeted {
+  outline: 2px solid rgba(26,107,82,0.7) !important;
+  outline-offset: -2px;
+  background-color: rgba(26,107,82,0.08) !important;
+}
 </style>
 </head>
 <body>
@@ -1570,6 +1580,9 @@ ${bodyContent}
     bindAnchorClicks(doc);
     buildSidebar(doc);
     bindHoverInsert(doc);
+    bindTableContextMenu(doc);
+    bindTableResize(doc);
+    bindTableKeyboard(doc);
     attachTrackingListeners(doc);
     bindTrackChangesClicks(doc);
     bindTrackHoverTooltip(doc);
@@ -1735,6 +1748,668 @@ function insertNoteBox() {
 </div>
 <p><br></p>`;
   getDoc().execCommand('insertHTML', false, html);
+}
+
+// ==============================================
+// TABLE — INSERT + EDIT (Phase 1)
+// ==============================================
+//
+// Architecture overview
+// ─────────────────────
+// • Insert: a Google-Docs-style grid picker drops a <div.table-wrap><table>
+//   <colgroup><col×N><thead><tr><th×N><tbody><tr><td×N>×(R-1) </…>
+//   into the iframe. The wrapper matches existing book CSS so newly
+//   inserted tables look identical to ones authored by hand.
+// • Edit: right-click anywhere inside a table opens a context menu with
+//   add/del row/col + delete-table. Structural ops bypass the existing
+//   Track Changes engine (which tracks character-level <ins>/<del> only);
+//   when tracking is ON we confirm() the user before letting them through.
+// • Cell content edits go through the existing tracking pipeline because
+//   TR / TD / TH are already in TRACK_BLOCK_TAGS.
+
+const TABLE_GRID_ROWS = 8;
+const TABLE_GRID_COLS = 10;
+let tableContextTarget = null; // <td>/<th> the context menu is acting on
+
+// Build the picker cells once; reuse forever.
+function buildTableGridCells() {
+  const grid = document.getElementById('tableGridCells');
+  if (!grid || grid.childElementCount > 0) return;
+  grid.style.gridTemplateColumns = `repeat(${TABLE_GRID_COLS}, 18px)`;
+  for (let r = 1; r <= TABLE_GRID_ROWS; r++) {
+    for (let c = 1; c <= TABLE_GRID_COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'table-grid-picker-cell';
+      cell.dataset.row = String(r);
+      cell.dataset.col = String(c);
+      cell.setAttribute('role', 'gridcell');
+      cell.setAttribute('aria-label', `${r} แถว × ${c} คอลัมน์`);
+      cell.addEventListener('mouseenter', () => highlightTableGrid(r, c));
+      cell.addEventListener('click', () => {
+        hideTableGridPicker();
+        insertTable(r, c);
+      });
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function highlightTableGrid(rows, cols) {
+  const grid = document.getElementById('tableGridCells');
+  if (!grid) return;
+  grid.querySelectorAll('.table-grid-picker-cell').forEach(el => {
+    const r = Number(el.dataset.row);
+    const c = Number(el.dataset.col);
+    el.classList.toggle('hot', r <= rows && c <= cols);
+  });
+  const label = document.getElementById('tableGridLabel');
+  if (label) label.textContent = `${rows} แถว × ${cols} คอลัมน์`;
+}
+
+function showTableGridPicker(evt) {
+  buildTableGridCells();
+  const picker = document.getElementById('tableGridPicker');
+  if (!picker) return;
+
+  // Position below the trigger button. Uses fixed positioning so we don't
+  // care about scroll containers (toolbar can be inside a scrollable shell).
+  const btn = evt && evt.currentTarget
+    ? evt.currentTarget
+    : document.getElementById('tableBtn');
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    picker.style.top = `${rect.bottom + 6}px`;
+    picker.style.left = `${rect.left}px`;
+  } else {
+    picker.style.top = `${(evt && evt.clientY) || 100}px`;
+    picker.style.left = `${(evt && evt.clientX) || 100}px`;
+  }
+
+  picker.classList.add('show');
+  // Reset highlight + label
+  document.getElementById('tableGridCells')
+    .querySelectorAll('.hot').forEach(el => el.classList.remove('hot'));
+  document.getElementById('tableGridLabel').textContent = 'ลากเมาส์เพื่อเลือกขนาด';
+
+  // Stop the document-level click handler below from immediately closing us
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+function hideTableGridPicker() {
+  const picker = document.getElementById('tableGridPicker');
+  if (picker) picker.classList.remove('show');
+}
+
+// Build the HTML payload for a `rows × cols` table.
+// Empty cells get a <br> so contenteditable can place a caret inside.
+function buildTableHtml(rows, cols) {
+  const colTags = Array(cols).fill('<col>').join('');
+  const headerCells = Array.from({ length: cols }, (_, i) =>
+    `<th>หัวข้อ ${i + 1}</th>`).join('');
+  const bodyRows = Array.from({ length: Math.max(rows - 1, 1) }, () =>
+    `      <tr>${Array(cols).fill('<td><br></td>').join('')}</tr>`).join('\n');
+  // Trailing <p><br></p> mirrors insertHR/insertNoteBox so the caret has
+  // somewhere to land after the table (otherwise contenteditable strands
+  // the user inside the last cell).
+  return `
+<div class="table-wrap">
+  <table>
+    <colgroup>${colTags}</colgroup>
+    <thead>
+      <tr>${headerCells}</tr>
+    </thead>
+    <tbody>
+${bodyRows}
+    </tbody>
+  </table>
+</div>
+<p><br></p>`;
+}
+
+function insertTable(rows, cols) {
+  focusEditor();
+  // Insert via execCommand for free undo support (the existing Track
+  // Changes snapshot stack also auto-captures because of this path).
+  getDoc().execCommand('insertHTML', false, buildTableHtml(rows, cols));
+  setDirty(true);
+}
+
+// ── Context menu ────────────────────────────────────────────
+//
+// We bind once per iframe document load. The handler fires for any
+// right-click but we only intercept (preventDefault + show menu) when
+// the target is inside a <table> — outside, browser native menu still works.
+
+function bindTableContextMenu(doc) {
+  if (!doc || !doc.body || doc.body._tableCtxBound) return;
+  doc.body._tableCtxBound = true;
+
+  // Right-click → show menu (or close if click is outside a table)
+  doc.body.addEventListener('contextmenu', (e) => {
+    const cell = (e.target && e.target.closest)
+      ? e.target.closest('td, th')
+      : null;
+    if (!cell || !cell.closest('table')) {
+      // Right-click outside a table → close our menu (if open) and let
+      // the browser show its native menu. Without this, the menu stays
+      // hanging when the user moves to elsewhere on the page.
+      if (isTableContextMenuOpen()) hideTableContextMenu();
+      return;
+    }
+
+    e.preventDefault();
+    // Switching target: clear highlight on the previously-targeted cell
+    // (relevant when user right-clicks a 2nd cell while the menu is
+    // already open on a 1st cell — we want only one highlight at a time)
+    if (tableContextTarget && tableContextTarget !== cell) {
+      tableContextTarget.classList.remove('table-cell-targeted');
+    }
+    tableContextTarget = cell;
+    cell.classList.add('table-cell-targeted');
+
+    // Position relative to the iframe — the menu lives in the parent
+    // document but events come from the iframe, so add iframe offset.
+    const frame = document.getElementById('editFrame');
+    const frameRect = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+    showTableContextMenu(
+      e.clientX + frameRect.left,
+      e.clientY + frameRect.top,
+    );
+  });
+
+  // ── Dismiss handlers (iframe-scoped) ──────────────────────
+  // Iframe events DON'T bubble to the parent document, so the
+  // parent-level dismiss handlers (click-outside, Esc) never hear about
+  // iframe interactions. We mirror them here. Use named handlers
+  // (instead of arrow functions) to make the intent explicit at the
+  // event-listener call sites.
+
+  // Left-click anywhere inside the iframe → close menu. Safe because
+  // the menu itself lives in the parent doc, so an iframe click can
+  // never be "inside the menu".
+  doc.addEventListener('click', () => {
+    if (isTableContextMenuOpen()) hideTableContextMenu();
+  });
+
+  // Esc inside the iframe → close menu. `stopPropagation` keeps the key
+  // from also triggering the parent's modal-close handler if both are
+  // somehow open (shouldn't happen in practice but defensive).
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (isTableContextMenuOpen()) {
+      hideTableContextMenu();
+      e.stopPropagation();
+    }
+  });
+
+  // Scroll the book content → close menu (otherwise the menu floats
+  // detached from the cell it was opened on). Capture phase because
+  // scroll events don't bubble.
+  doc.addEventListener('scroll', () => {
+    if (isTableContextMenuOpen()) hideTableContextMenu();
+  }, true);
+}
+
+function isTableContextMenuOpen() {
+  const menu = document.getElementById('tableContextMenu');
+  return !!(menu && menu.classList.contains('show'));
+}
+
+function showTableContextMenu(x, y) {
+  const menu = document.getElementById('tableContextMenu');
+  if (!menu) return;
+  // Soft-clamp so the menu doesn't render past the viewport edge
+  const PAD = 8;
+  const maxX = window.innerWidth - menu.offsetWidth - PAD;
+  const maxY = window.innerHeight - menu.offsetHeight - PAD;
+  menu.style.left = `${Math.min(x, Math.max(PAD, maxX))}px`;
+  menu.style.top = `${Math.min(y, Math.max(PAD, maxY))}px`;
+  menu.classList.add('show');
+}
+
+function hideTableContextMenu() {
+  const menu = document.getElementById('tableContextMenu');
+  if (menu) menu.classList.remove('show');
+  // Clear highlight class — `classList.remove` on a detached element
+  // (e.g. after delete-row removed the cell) is a safe no-op.
+  if (tableContextTarget) {
+    tableContextTarget.classList.remove('table-cell-targeted');
+  }
+  tableContextTarget = null;
+}
+
+// Dispatch table actions. Guarded by a confirm() when Track Changes is ON
+// because structural ops (add/del row/col) bypass the tracking engine in
+// Phase 1 — see TABLE module header for the rationale.
+function tableAction(kind) {
+  if (!tableContextTarget) { hideTableContextMenu(); return; }
+  const cell = tableContextTarget;
+
+  if (trackingEnabled && !confirmStructuralTableChange(kind)) {
+    hideTableContextMenu();
+    return;
+  }
+
+  switch (kind) {
+    case 'rowAbove':  addTableRow(cell, 'above');  break;
+    case 'rowBelow':  addTableRow(cell, 'below');  break;
+    case 'colLeft':   addTableCol(cell, 'left');   break;
+    case 'colRight':  addTableCol(cell, 'right');  break;
+    case 'delRow':    deleteTableRow(cell);        break;
+    case 'delCol':    deleteTableCol(cell);        break;
+    case 'delTable':  deleteWholeTable(cell);      break;
+  }
+  hideTableContextMenu();
+  setDirty(true);
+}
+
+function confirmStructuralTableChange(kind) {
+  // Special-case resize because it's a width tweak, not insert/delete —
+  // different verb keeps the message accurate so the user doesn't read
+  // "การลบ" / "การเพิ่ม" when they're actually just resizing.
+  let action;
+  if (kind === 'resize') {
+    action = 'ปรับขนาดคอลัมน์';
+  } else {
+    const verb = (kind === 'delRow' || kind === 'delCol' || kind === 'delTable')
+      ? 'ลบ' : 'เพิ่ม';
+    const what = (kind === 'rowAbove' || kind === 'rowBelow' || kind === 'delRow')
+      ? 'แถว'
+      : (kind === 'colLeft' || kind === 'colRight' || kind === 'delCol')
+        ? 'คอลัมน์'
+        : 'ตาราง';
+    action = verb + what;
+  }
+  return window.confirm(
+    `Track Changes เปิดอยู่ — การ${action}จะไม่ถูกบันทึกเป็น tracked change\n` +
+    `(จะทำทันที ผู้รีวิวจะไม่เห็น diff ของส่วนนี้)\n\nทำต่อ?`
+  );
+}
+
+// ── Structural ops ──────────────────────────────────────────
+// Each works from the cell the user right-clicked on. We resolve cell →
+// row → table from there; no need to track a separate "current table"
+// selection state.
+
+function getCellTable(cell) {
+  return cell ? cell.closest('table') : null;
+}
+function getCellRow(cell) {
+  return cell ? cell.closest('tr') : null;
+}
+function getCellColIndex(cell) {
+  const row = getCellRow(cell);
+  if (!row) return -1;
+  return Array.prototype.indexOf.call(row.children, cell);
+}
+
+function addTableRow(cell, where) {
+  const row = getCellRow(cell);
+  const table = getCellTable(cell);
+  if (!row || !table) return;
+  const cols = row.children.length;
+  const doc = getDoc();
+  const newRow = doc.createElement('tr');
+  // New rows always live in <tbody> visually, but we mirror the row's tag
+  // kind so adding above a header row keeps the new row a header too.
+  const isHeader = row.parentElement && row.parentElement.tagName === 'THEAD';
+  for (let i = 0; i < cols; i++) {
+    const cellEl = doc.createElement(isHeader ? 'th' : 'td');
+    cellEl.innerHTML = '<br>';
+    newRow.appendChild(cellEl);
+  }
+  if (where === 'above') row.parentElement.insertBefore(newRow, row);
+  else row.parentElement.insertBefore(newRow, row.nextSibling);
+}
+
+function addTableCol(cell, where) {
+  const table = getCellTable(cell);
+  const colIdx = getCellColIndex(cell);
+  if (!table || colIdx < 0) return;
+  const doc = getDoc();
+
+  // Add a <col> placeholder in colgroup (if present) so widths stay aligned
+  const colgroup = table.querySelector('colgroup');
+  if (colgroup) {
+    const newCol = doc.createElement('col');
+    const refCol = colgroup.children[colIdx];
+    if (where === 'left') colgroup.insertBefore(newCol, refCol);
+    else colgroup.insertBefore(newCol, refCol ? refCol.nextSibling : null);
+  }
+
+  // Add a cell at the right index of every row (both thead + tbody).
+  table.querySelectorAll('tr').forEach(tr => {
+    const refCell = tr.children[colIdx];
+    if (!refCell) return;
+    const tag = refCell.tagName === 'TH' ? 'th' : 'td';
+    const newCell = doc.createElement(tag);
+    newCell.innerHTML = tag === 'th' ? 'หัวข้อใหม่' : '<br>';
+    if (where === 'left') tr.insertBefore(newCell, refCell);
+    else tr.insertBefore(newCell, refCell.nextSibling);
+  });
+}
+
+function deleteTableRow(cell) {
+  const row = getCellRow(cell);
+  const table = getCellTable(cell);
+  if (!row || !table) return;
+  // Last data row → don't leave an empty <tbody>; remove the whole table
+  // instead. Avoids "ghost table" with just a header that confuses authors.
+  const allRows = table.querySelectorAll('tr');
+  if (allRows.length <= 1) {
+    deleteWholeTable(cell);
+    return;
+  }
+  row.remove();
+}
+
+function deleteTableCol(cell) {
+  const table = getCellTable(cell);
+  const colIdx = getCellColIndex(cell);
+  if (!table || colIdx < 0) return;
+  const colCount = (table.rows[0] || { children: [] }).children.length;
+  if (colCount <= 1) {
+    // Last column → remove the whole table (see deleteTableRow rationale).
+    deleteWholeTable(cell);
+    return;
+  }
+  const colgroup = table.querySelector('colgroup');
+  if (colgroup && colgroup.children[colIdx]) {
+    colgroup.children[colIdx].remove();
+  }
+  table.querySelectorAll('tr').forEach(tr => {
+    if (tr.children[colIdx]) tr.children[colIdx].remove();
+  });
+}
+
+function deleteWholeTable(cell) {
+  const table = getCellTable(cell);
+  if (!table) return;
+  const wrap = table.closest('.table-wrap') || table;
+  wrap.remove();
+}
+
+// ── Keyboard nav (Tab between cells, auto-add row on last) ──
+//
+// Tab from any cell → move caret to the next cell in document order.
+// Tab from the last cell of the last row → append a new row to <tbody>
+// and place caret in its first cell.
+// Shift+Tab is the reverse.
+//
+// "Document order" walks: sibling td/th → next row → next section
+// (thead → tbody → tfoot). New rows always go into <tbody> so we
+// never accidentally extend the header.
+
+function bindTableKeyboard(doc) {
+  if (!doc || !doc.body || doc.body._tableKbBound) return;
+  doc.body._tableKbBound = true;
+
+  doc.body.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const cell = getCellFromSelection(doc);
+    if (!cell) return; // not in a table — let default Tab behavior happen
+    const table = cell.closest('table');
+    if (!table) return;
+
+    e.preventDefault();
+    if (e.shiftKey) moveCaretToPrevCell(cell, doc);
+    else            moveCaretToNextCell(cell, table, doc);
+  });
+}
+
+// Resolve the <td>/<th> that contains the current caret/selection.
+function getCellFromSelection(doc) {
+  const sel = doc.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.getRangeAt(0).startContainer;
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  return el ? el.closest('td, th') : null;
+}
+
+// Walk forward through document order: next sibling → first cell of
+// next row → first cell of first row in next section. Returns the
+// found cell, or null if `cell` is the very last in the table.
+function findNextCellInTable(cell) {
+  if (cell.nextElementSibling) return cell.nextElementSibling;
+  const row = cell.parentElement;
+  if (row.nextElementSibling) return row.nextElementSibling.children[0] || null;
+  // Cross into next section (thead → tbody → tfoot)
+  let section = row.parentElement.nextElementSibling;
+  while (section) {
+    if (section.children.length > 0) {
+      return section.children[0].children[0] || null;
+    }
+    section = section.nextElementSibling;
+  }
+  return null;
+}
+
+// Reverse of findNextCellInTable.
+function findPrevCellInTable(cell) {
+  if (cell.previousElementSibling) return cell.previousElementSibling;
+  const row = cell.parentElement;
+  if (row.previousElementSibling) {
+    const r = row.previousElementSibling;
+    return r.children[r.children.length - 1] || null;
+  }
+  let section = row.parentElement.previousElementSibling;
+  while (section) {
+    if (section.children.length > 0) {
+      const lastRow = section.children[section.children.length - 1];
+      return lastRow.children[lastRow.children.length - 1] || null;
+    }
+    section = section.previousElementSibling;
+  }
+  return null;
+}
+
+function moveCaretToNextCell(cell, table, doc) {
+  const next = findNextCellInTable(cell);
+  if (next) { placeCaretInCell(next, doc); return; }
+
+  // Last cell of last row — append a new <tr> to <tbody> (or to <table>
+  // if there's no tbody section). Honors Track Changes confirm guard
+  // because adding a row is a structural change.
+  if (trackingEnabled && !confirmStructuralTableChange('rowBelow')) return;
+
+  const colCount = (table.rows[0] || { children: [] }).children.length;
+  const tbody = table.querySelector('tbody') || table;
+  const newRow = doc.createElement('tr');
+  for (let i = 0; i < colCount; i++) {
+    const td = doc.createElement('td');
+    td.innerHTML = '<br>';
+    newRow.appendChild(td);
+  }
+  tbody.appendChild(newRow);
+  placeCaretInCell(newRow.children[0], doc);
+  setDirty(true);
+}
+
+function moveCaretToPrevCell(cell, doc) {
+  const prev = findPrevCellInTable(cell);
+  if (prev) placeCaretInCell(prev, doc);
+  // If no previous cell, do nothing — Shift+Tab at the first cell of
+  // the table is a no-op (rather than escaping focus to a previous
+  // form element, which would be jarring inside a contenteditable).
+}
+
+// Place the caret inside `cell`. For empty cells (only <br>) we collapse
+// to the start so typing inserts text. For non-empty cells we select the
+// entire content (Google-Docs / Word convention) so typing replaces it.
+function placeCaretInCell(cell, doc) {
+  if (!cell) return;
+  const sel = doc.getSelection();
+  const range = doc.createRange();
+  range.selectNodeContents(cell);
+
+  const onlyBr = cell.childNodes.length === 1
+    && cell.firstChild
+    && cell.firstChild.nodeName === 'BR';
+  if (onlyBr) range.collapse(true);
+
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// ── Column resize (drag border) ─────────────────────────────
+//
+// Hover near a column border → cursor becomes col-resize.
+// Mousedown + drag → resize the left/right columns adjacent to that
+// border (zero-sum: width transferred from one to the other).
+//
+// We use Pointer Events with setPointerCapture so the drag survives
+// pointer leaving the iframe area — and Pointer Events give us touch
+// resize on iPads / tablets as a bonus.
+//
+// Widths are written to <col style="width: N%"> in the colgroup;
+// the table also gets `table-layout: fixed` so <col> widths become
+// authoritative (without it, browsers treat them as hints only).
+
+const TABLE_RESIZE_HOT_ZONE_PX = 6;
+const TABLE_RESIZE_MIN_COL_PCT = 5;
+let tableResizeState = null; // null or { table, colIdx, leftCol, rightCol, leftStartPct, rightStartPct, startX, totalWidth, captureEl, pointerId }
+
+// Detect whether the mouse is in the resize hot-zone of any column border.
+// We check both edges of the cell under the cursor: the right edge maps to
+// "border between this column and the next", the left edge maps to
+// "border between this column and the previous".
+function getTableResizeHit(e) {
+  if (!e.target || !e.target.closest) return null;
+  const cell = e.target.closest('th, td');
+  if (!cell) return null;
+  const table = cell.closest('table');
+  if (!table) return null;
+  const row = cell.parentElement;
+  const colIdx = Array.prototype.indexOf.call(row.children, cell);
+  const colCount = row.children.length;
+  const rect = cell.getBoundingClientRect();
+
+  const distFromRight = rect.right - e.clientX;
+  if (distFromRight >= 0 && distFromRight <= TABLE_RESIZE_HOT_ZONE_PX
+      && colIdx < colCount - 1) {
+    return { table, colIdx };
+  }
+  const distFromLeft = e.clientX - rect.left;
+  if (distFromLeft >= 0 && distFromLeft <= TABLE_RESIZE_HOT_ZONE_PX
+      && colIdx > 0) {
+    return { table, colIdx: colIdx - 1 };
+  }
+  return null;
+}
+
+// Make sure colgroup has one <col> per visible column. Tables inserted
+// by this editor always do, but tables authored by hand might be missing
+// some — we top up the colgroup so we have a target for the width style.
+function ensureColgroupComplete(table) {
+  const doc = table.ownerDocument;
+  let colgroup = table.querySelector('colgroup');
+  if (!colgroup) {
+    colgroup = doc.createElement('colgroup');
+    table.insertBefore(colgroup, table.firstChild);
+  }
+  const colCount = (table.rows[0] || { children: [] }).children.length;
+  while (colgroup.children.length < colCount) {
+    colgroup.appendChild(doc.createElement('col'));
+  }
+}
+
+function bindTableResize(doc) {
+  if (!doc || !doc.body || doc.body._tableResizeBound) return;
+  doc.body._tableResizeBound = true;
+
+  // Hover-cursor on the iframe body. Suppressed during active drag so
+  // we don't overwrite the col-resize cursor mid-drag.
+  doc.body.addEventListener('mousemove', (e) => {
+    if (tableResizeState) return;
+    doc.body.style.cursor = getTableResizeHit(e) ? 'col-resize' : '';
+  });
+
+  doc.body.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // left button only
+    const hit = getTableResizeHit(e);
+    if (!hit) return;
+
+    // Track Changes guard (one confirm per drag, not per pixel)
+    if (trackingEnabled && !confirmStructuralTableChange('resize')) return;
+
+    e.preventDefault();
+
+    const { table, colIdx } = hit;
+    ensureColgroupComplete(table);
+
+    const cols = table.querySelectorAll('colgroup > col');
+    const leftCol = cols[colIdx];
+    const rightCol = cols[colIdx + 1];
+    if (!leftCol || !rightCol) return;
+
+    // Read current rendered widths in px → convert to %.
+    // We always seed both adjacent cols (even if they didn't have a
+    // width attribute before) so the math is symmetric.
+    const totalWidth = table.offsetWidth || 1;
+    const headerRow = table.rows[0];
+    const leftRect = headerRow.children[colIdx].getBoundingClientRect();
+    const rightRect = headerRow.children[colIdx + 1].getBoundingClientRect();
+    const leftStartPct = (leftRect.width / totalWidth) * 100;
+    const rightStartPct = (rightRect.width / totalWidth) * 100;
+
+    leftCol.style.width = leftStartPct.toFixed(2) + '%';
+    rightCol.style.width = rightStartPct.toFixed(2) + '%';
+    // Flip to fixed layout so col widths become authoritative.
+    if (!table.style.tableLayout) table.style.tableLayout = 'fixed';
+
+    // Capture so move/up events keep flowing even if pointer leaves iframe
+    e.target.setPointerCapture(e.pointerId);
+
+    tableResizeState = {
+      table, colIdx, leftCol, rightCol,
+      leftStartPct, rightStartPct,
+      startX: e.clientX,
+      totalWidth,
+      captureEl: e.target,
+      pointerId: e.pointerId,
+    };
+
+    e.target.addEventListener('pointermove', handleTableResizeMove);
+    e.target.addEventListener('pointerup', handleTableResizeEnd);
+    e.target.addEventListener('pointercancel', handleTableResizeEnd);
+  });
+}
+
+function handleTableResizeMove(e) {
+  const s = tableResizeState;
+  if (!s) return;
+  const dx = e.clientX - s.startX;
+  const dxPct = (dx / s.totalWidth) * 100;
+  let newLeft = s.leftStartPct + dxPct;
+  let newRight = s.rightStartPct - dxPct;
+
+  // Clamp: neither column may shrink below MIN_COL_PCT.
+  // We preserve the total (leftStartPct + rightStartPct) when clamping
+  // to keep the resize zero-sum.
+  const totalPair = s.leftStartPct + s.rightStartPct;
+  if (newLeft < TABLE_RESIZE_MIN_COL_PCT) {
+    newLeft = TABLE_RESIZE_MIN_COL_PCT;
+    newRight = totalPair - newLeft;
+  } else if (newRight < TABLE_RESIZE_MIN_COL_PCT) {
+    newRight = TABLE_RESIZE_MIN_COL_PCT;
+    newLeft = totalPair - newRight;
+  }
+  s.leftCol.style.width = newLeft.toFixed(2) + '%';
+  s.rightCol.style.width = newRight.toFixed(2) + '%';
+}
+
+function handleTableResizeEnd() {
+  const s = tableResizeState;
+  if (!s) return;
+  tableResizeState = null;
+  try { s.captureEl.releasePointerCapture(s.pointerId); } catch { /* already released */ }
+  s.captureEl.removeEventListener('pointermove', handleTableResizeMove);
+  s.captureEl.removeEventListener('pointerup', handleTableResizeEnd);
+  s.captureEl.removeEventListener('pointercancel', handleTableResizeEnd);
+  // Reset hover cursor
+  const body = s.table.ownerDocument && s.table.ownerDocument.body;
+  if (body) body.style.cursor = '';
+  setDirty(true);
 }
 
 // ==============================================
@@ -2494,6 +3169,41 @@ document.addEventListener('click', (e) => {
     menu.classList.remove('show');
     btn.classList.remove('active');
     isQuickMenuOpen = false;
+  }
+
+  // Close table grid picker on outside click. The picker's own trigger
+  // calls stopPropagation() so opening it doesn't immediately close it.
+  const picker = document.getElementById('tableGridPicker');
+  const tableBtn = document.getElementById('tableBtn');
+  if (picker && picker.classList.contains('show')
+      && !picker.contains(e.target)
+      && (!tableBtn || !tableBtn.contains(e.target))) {
+    hideTableGridPicker();
+  }
+
+  // Close table context menu on outside click (any click that's not
+  // inside the menu itself closes it — including a click that triggered
+  // a different right-click somewhere else).
+  const ctxMenu = document.getElementById('tableContextMenu');
+  if (ctxMenu && ctxMenu.classList.contains('show')
+      && !ctxMenu.contains(e.target)) {
+    hideTableContextMenu();
+  }
+});
+
+// Esc closes table popovers (matches the modal-Esc UX pattern).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const picker = document.getElementById('tableGridPicker');
+  if (picker && picker.classList.contains('show')) {
+    hideTableGridPicker();
+    e.stopPropagation();
+    return;
+  }
+  const ctxMenu = document.getElementById('tableContextMenu');
+  if (ctxMenu && ctxMenu.classList.contains('show')) {
+    hideTableContextMenu();
+    e.stopPropagation();
   }
 });
 

@@ -832,6 +832,99 @@ body {
 }
 
 /* ==============================================
+   TABLE — GRID PICKER (popover ใต้ปุ่ม "แทรกตาราง")
+   ==============================================
+   ใช้ position:fixed เพราะ position-by-JS จาก getBoundingClientRect ของ
+   ปุ่ม trigger — pattern เดียวกับ .track-popover */
+.table-grid-picker {
+  position: fixed;
+  display: none;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  padding: 10px;
+  z-index: 1000;
+}
+.table-grid-picker.show { display: block; }
+
+.table-grid-picker-grid {
+  display: grid;
+  /* columns/rows ตั้งใน JS ตอน buildTableGridCells (ป้องกัน hard-code) */
+  gap: 2px;
+  padding: 4px;
+  background: var(--shell-bg);
+  border-radius: 4px;
+}
+
+.table-grid-picker-cell {
+  width: 18px;
+  height: 18px;
+  background: var(--shell-toolbar-bg);
+  border: 1px solid var(--shell-border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s;
+}
+.table-grid-picker-cell.hot {
+  background: var(--shell-accent);
+  border-color: var(--shell-accent-hover);
+}
+
+.table-grid-picker-label {
+  margin-top: 8px;
+  text-align: center;
+  font-family: var(--hd);
+  font-size: 12px;
+  color: var(--shell-text-dim);
+  user-select: none;
+  /* กันความสูง label ขยับตามจำนวนตัวอักษร */
+  min-height: 16px;
+  line-height: 16px;
+}
+
+/* ==============================================
+   TABLE — CONTEXT MENU (right-click)
+   ============================================== */
+.table-context-menu {
+  position: fixed;
+  display: none;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  padding: 4px;
+  min-width: 200px;
+  z-index: 1000;
+}
+.table-context-menu.show { display: block; }
+
+.table-context-menu-item {
+  padding: 7px 12px;
+  font-family: var(--hd);
+  font-size: 13px;
+  color: var(--shell-text);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+}
+.table-context-menu-item:hover {
+  background: var(--shell-accent-lt);
+  color: var(--shell-accent);
+}
+.table-context-menu-item.danger:hover {
+  background: rgba(229, 83, 83, 0.12);
+  color: var(--shell-danger);
+}
+
+.table-context-menu-sep {
+  height: 1px;
+  background: var(--shell-border);
+  margin: 4px 0;
+}
+
+/* ==============================================
    RESPONSIVE
    ============================================== */
 @media (max-width: 768px) {
