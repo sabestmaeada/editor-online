@@ -139,5 +139,18 @@ service cloud.firestore {
       );
       allow create, update, delete: if false;
     }
+
+    // ── Outlines (Phase 1 AI content generation) ─────────
+    // Sub-collection under each project — Q1=A means exactly one
+    // outline doc per project (id="current"). Sub-collection (vs a
+    // field on the project doc) keeps it easy to add history /
+    // multiple outlines later without a migration.
+    //
+    // All client reads + writes go through /api/projects/[id]/outline/*
+    // which uses the admin SDK (and enforces member access). Clients
+    // don't talk to Firestore directly for outlines.
+    match /projects/{projectId}/outline/{outlineId} {
+      allow read, write: if false;
+    }
   }
 }

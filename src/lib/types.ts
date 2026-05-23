@@ -129,6 +129,15 @@ export const ALL_AUTH_EVENT_TYPES = [
   "project-member-invite",
   "project-member-remove",
   "project-member-role-change",
+  // Outline / content generation (Phase 1 + Phase 2)
+  "outline-generate-start",
+  "outline-generate-success",
+  "outline-generate-failed",
+  "outline-edit",
+  "outline-finalize",
+  "content-generate-start",
+  "content-generate-success",
+  "content-generate-failed",
 ] as const;
 
 export type AuthEventType = (typeof ALL_AUTH_EVENT_TYPES)[number];
@@ -193,6 +202,16 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "project-member-invite": 730,
   "project-member-remove": 730,
   "project-member-role-change": 730,
+  // Outline / content generation — keep 2y for cost / accountability
+  // (LLM tokens cost money; we want a long paper trail of who triggered what)
+  "outline-generate-start": 730,
+  "outline-generate-success": 730,
+  "outline-generate-failed": 730,
+  "outline-edit": 90,
+  "outline-finalize": 730,
+  "content-generate-start": 730,
+  "content-generate-success": 730,
+  "content-generate-failed": 730,
 };
 
 // ─── Projects ──────────────────────────────────────────────
@@ -273,4 +292,78 @@ export type ProjectMember = {
  *  admin (system role) without explicit project membership. */
 export type ProjectWithMembership = Project & {
   myRole: ProjectMemberRole | null;
+};
+
+// ─── Outline (Phase 1 of AI content generation) ─────────────
+// One outline per project (Q1=A). Stored as a single doc at
+// `projects/{projectId}/outline/current` so we never have to think
+// about which outline a project "currently uses" — there's only one.
+
+export const OUTLINE_NODE_TYPES = ["chapter", "h2", "h3", "h4", "p"] as const;
+export type OutlineNodeType = (typeof OUTLINE_NODE_TYPES)[number];
+
+export type OutlineNode = {
+  /** Local UUID, generated client-side. Stable across reorders + saves
+   *  so the dnd-kit tree can use it as a React key + drag identifier. */
+  id: string;
+  type: OutlineNodeType;
+  text: string;
+  children: OutlineNode[];
+};
+
+export const OUTLINE_STATUSES = [
+  "generating", // request sent to n8n, waiting for response
+  "ready",      // outline returned, user editing
+  "failed",     // n8n error or invalid response
+  "finalized",  // user clicked "generate content" — locked from edits
+] as const;
+export type OutlineStatus = (typeof OUTLINE_STATUSES)[number];
+
+/** Form data that the user fills in to seed outline generation.
+ *  Field names are intentionally English (decoupled from the n8n
+ *  workflow's Thai field labels — the API layer does the mapping). */
+export type OutlineFormInput = {
+  bookTitle: string;
+  chapterCount: number;
+  pageCount: number;
+  bookPurpose: string;
+  bookHighlights: string;
+  targetAudience: string;
+};
+
+export type Outline = {
+  projectId: string;
+  createdBy: string;     // uid
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+
+  status: OutlineStatus;
+
+  /** Snapshot of the form the user submitted to trigger generation.
+   *  Persisted alongside the outline so a reviewer can see what context
+   *  the LLM was given. */
+  formInput: OutlineFormInput;
+
+  /** The actual outline tree. Empty array while status=generating. */
+  nodes: OutlineNode[];
+
+  /** Metadata returned by n8n — optional, depends on what the workflow
+   *  bothers to include. Useful for cost / abuse tracking. */
+  n8nMeta?: {
+    requestId?: string;
+    durationMs?: number;
+    model?: string;
+    tokensUsed?: number;
+  };
+
+  /** Set when user kicks off Phase 2 (content generation). */
+  contentJob?: {
+    jobId: string;
+    startedAt: Timestamp;
+    finishedAt?: Timestamp;
+    status: "pending" | "done" | "failed";
+    /** R2 key of generated HTML — only set when status="done". */
+    outputFileKey?: string;
+    error?: string;
+  };
 };
