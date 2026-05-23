@@ -2004,24 +2004,17 @@ function tableAction(kind) {
 }
 
 function confirmStructuralTableChange(kind) {
-  // Special-case resize because it's a width tweak, not insert/delete —
-  // different verb keeps the message accurate so the user doesn't read
-  // "การลบ" / "การเพิ่ม" when they're actually just resizing.
-  let action;
-  if (kind === 'resize') {
-    action = 'ปรับขนาดคอลัมน์';
-  } else {
-    const verb = (kind === 'delRow' || kind === 'delCol' || kind === 'delTable')
-      ? 'ลบ' : 'เพิ่ม';
-    const what = (kind === 'rowAbove' || kind === 'rowBelow' || kind === 'delRow')
-      ? 'แถว'
-      : (kind === 'colLeft' || kind === 'colRight' || kind === 'delCol')
-        ? 'คอลัมน์'
-        : 'ตาราง';
-    action = verb + what;
-  }
+  // Called only for add / delete row|col|table — resize is exempt
+  // (see bindTableResize for rationale).
+  const verb = (kind === 'delRow' || kind === 'delCol' || kind === 'delTable')
+    ? 'ลบ' : 'เพิ่ม';
+  const what = (kind === 'rowAbove' || kind === 'rowBelow' || kind === 'delRow')
+    ? 'แถว'
+    : (kind === 'colLeft' || kind === 'colRight' || kind === 'delCol')
+      ? 'คอลัมน์'
+      : 'ตาราง';
   return window.confirm(
-    `Track Changes เปิดอยู่ — การ${action}จะไม่ถูกบันทึกเป็น tracked change\n` +
+    `Track Changes เปิดอยู่ — การ${verb}${what}จะไม่ถูกบันทึกเป็น tracked change\n` +
     `(จะทำทันที ผู้รีวิวจะไม่เห็น diff ของส่วนนี้)\n\nทำต่อ?`
   );
 }
@@ -2329,8 +2322,19 @@ function bindTableResize(doc) {
     const hit = getTableResizeHit(e);
     if (!hit) return;
 
-    // Track Changes guard (one confirm per drag, not per pixel)
-    if (trackingEnabled && !confirmStructuralTableChange('resize')) return;
+    // Intentionally NO Track Changes confirm here.
+    //
+    // Two reasons:
+    // 1. UX:  window.confirm() inside pointerdown blocks the event loop
+    //    and breaks pointer capture — even if the user clicks OK, the
+    //    drag fails to register movements because the browser has ended
+    //    the pointer session during the modal.
+    // 2. Semantics:  resize is a layout-only change. The book's actual
+    //    content is unchanged, so a reviewer sees the same words either
+    //    way. Add / delete row / col still confirm because those destroy
+    //    or insert real content.
+    //
+    // See SECURITY-TODO / chat 2026-05-23 for the discussion.
 
     e.preventDefault();
 
