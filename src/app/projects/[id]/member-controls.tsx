@@ -232,7 +232,13 @@ export function DeleteProjectButton({
 
   function handleDelete() {
     const confirmText = window.prompt(
-      `ลบโปรเจกต์ "${projectTitle}" ถาวร? ไฟล์ทั้งหมดใน R2 จะถูกลบ.\nพิมพ์ "DELETE" เพื่อยืนยัน:`,
+      `ลบโปรเจกต์ "${projectTitle}" ถาวร?\n\n` +
+        `ทุกอย่างจะถูกลบ:\n` +
+        `- ไฟล์ต้นฉบับใน R2\n` +
+        `- เนื้อหาที่สร้างจาก AI (HTML + งานทั้งหมด)\n` +
+        `- สมาชิกของโปรเจกต์\n` +
+        `- เค้าโครง\n\n` +
+        `พิมพ์ "DELETE" เพื่อยืนยัน:`,
     );
     if (confirmText !== "DELETE") return;
 

@@ -116,6 +116,39 @@ export async function setContentJobStatus(
   });
 }
 
+/** Delete a single ContentJob doc. R2 cleanup is the caller's
+ *  responsibility (project-level deleteProjectFiles already covers
+ *  all chapter HTML under projects/{id}/content/, but manual job
+ *  delete needs to call the per-job prefix cleanup itself). */
+export async function deleteContentJob(jobId: string): Promise<void> {
+  await db.collection(CONTENT_JOBS_COLLECTION).doc(jobId).delete();
+}
+
+/** Delete every ContentJob doc for a given project. Used by the
+ *  project-delete cascade. R2 objects under `projects/{id}/content/`
+ *  are wiped by `deleteProjectFiles(projectId)` since it removes the
+ *  whole `projects/{id}/` prefix — we don't repeat that work here. */
+export async function deleteContentJobsByProject(
+  projectId: string,
+): Promise<number> {
+  const snap = await db
+    .collection(CONTENT_JOBS_COLLECTION)
+    .where("projectId", "==", projectId)
+    .get();
+  if (snap.empty) return 0;
+
+  // Firestore batch limit is 500 ops; split if we ever go over.
+  const docs = snap.docs;
+  let deleted = 0;
+  for (let i = 0; i < docs.length; i += 500) {
+    const batch = db.batch();
+    for (const d of docs.slice(i, i + 500)) batch.delete(d.ref);
+    await batch.commit();
+    deleted += Math.min(500, docs.length - i);
+  }
+  return deleted;
+}
+
 export type UpdateChapterInput = {
   jobId: string;
   chapterIndex: number;

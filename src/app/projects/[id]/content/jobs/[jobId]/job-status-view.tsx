@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
   ContentJobStatus,
@@ -49,11 +50,41 @@ const TERMINAL: ContentJobStatus[] = ["done", "partial", "failed"];
  * terminal state to avoid hammering the API.
  */
 export function JobStatusView({ projectId, initialSnapshot }: Props) {
+  const router = useRouter();
   const [job, setJob] = useState<JobSnapshot>(initialSnapshot);
   const [polling, setPolling] = useState(
     !TERMINAL.includes(initialSnapshot.status),
   );
   const [previewing, setPreviewing] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<
+    "idle" | "confirming" | "submitting" | { error: string }
+  >("idle");
+
+  async function handleDelete() {
+    setDeleting("submitting");
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/content/jobs/${job.id}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setDeleting({
+          error:
+            (body as { error?: string }).error ||
+            `เกิดข้อผิดพลาด (HTTP ${res.status})`,
+        });
+        return;
+      }
+      // Redirect back to project page — job no longer exists.
+      router.push(`/projects/${projectId}`);
+      router.refresh();
+    } catch (err) {
+      setDeleting({
+        error: err instanceof Error ? err.message : "เครือข่ายมีปัญหา",
+      });
+    }
+  }
 
   // Stable ref so the polling effect doesn't re-create the interval
   // on every render.
@@ -210,15 +241,38 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
         >
           ← กลับไปหน้า outline
         </Link>
-        {(job.status === "done" || job.status === "partial") && (
-          <Link
-            href={`/projects/${projectId}/content/new`}
-            className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDeleting("confirming")}
+            disabled={
+              deleting === "submitting" || deleting === "confirming"
+            }
+            className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:bg-zinc-950 dark:text-red-400 dark:hover:bg-red-950/30"
           >
-            🔄 สร้างใหม่
-          </Link>
-        )}
+            🗑 ลบงานนี้
+          </button>
+          {(job.status === "done" || job.status === "partial") && (
+            <Link
+              href={`/projects/${projectId}/content/new`}
+              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              🔄 สร้างใหม่
+            </Link>
+          )}
+        </div>
       </section>
+
+      {(deleting === "confirming" ||
+        deleting === "submitting" ||
+        (typeof deleting === "object" && "error" in deleting)) && (
+        <ConfirmDeleteModal
+          job={job}
+          state={deleting}
+          onCancel={() => setDeleting("idle")}
+          onConfirm={handleDelete}
+        />
+      )}
 
       {previewing !== null && (
         <ChapterPreviewModal
@@ -228,6 +282,87 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
           onClose={() => setPreviewing(null)}
         />
       )}
+    </div>
+  );
+}
+
+/* ─────────────────── confirm delete modal ─────────────────── */
+
+function ConfirmDeleteModal({
+  job,
+  state,
+  onCancel,
+  onConfirm,
+}: {
+  job: JobSnapshot;
+  state:
+    | "confirming"
+    | "submitting"
+    | { error: string };
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const submitting = state === "submitting";
+  const error =
+    typeof state === "object" && "error" in state ? state.error : null;
+  const completedCount = job.chapters.filter(
+    (c) => c.status === "done",
+  ).length;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/60 p-4"
+      onClick={submitting ? undefined : onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl dark:bg-zinc-950"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+          ลบงานสร้างเนื้อหา?
+        </h2>
+        <div className="mt-3 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <p>การลบจะทำให้:</p>
+          <ul className="ml-4 list-disc space-y-1">
+            <li>
+              ลบไฟล์ HTML ทั้งหมด ({completedCount} บท) ใน Cloud storage
+            </li>
+            <li>ลบ Firestore record ของงานนี้</li>
+            <li>เค้าโครง (outline) จะไม่ถูกลบ</li>
+          </ul>
+          <p className="mt-3 font-medium text-red-700 dark:text-red-400">
+            ⚠️ ไม่สามารถย้อนกลับได้
+          </p>
+        </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300"
+          >
+            {error}
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {submitting ? "กำลังลบ…" : "ลบ"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

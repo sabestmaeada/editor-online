@@ -10,6 +10,7 @@ import {
   removeProjectMember,
 } from "@/lib/firebase/project-members";
 import { deleteProjectFiles, listProjectFiles } from "@/lib/r2/download";
+import { deleteContentJobsByProject } from "@/lib/firebase/content-jobs";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/lib/types";
 
@@ -176,7 +177,9 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // 1. Delete R2 objects (best effort)
+  // 1. Delete R2 objects (best effort) — covers source/, content/,
+  //    meta/cover, exports/ etc. since it wipes the whole projects/{id}/
+  //    prefix.
   const deletedCount = await deleteProjectFiles(id).catch(() => 0);
 
   // 2. Delete project members
@@ -187,7 +190,11 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     ),
   );
 
-  // 3. Delete project doc
+  // 3. Delete content jobs (Phase 2). R2 objects under
+  //    projects/{id}/content/ are already gone from step 1.
+  const deletedJobs = await deleteContentJobsByProject(id).catch(() => 0);
+
+  // 4. Delete project doc
   await deleteProjectDoc(id);
 
   await logAuthEvent({
@@ -201,5 +208,9 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     projectTitle: access.project.title,
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, deletedFiles: deletedCount });
+  return NextResponse.json({
+    ok: true,
+    deletedFiles: deletedCount,
+    deletedJobs,
+  });
 }
