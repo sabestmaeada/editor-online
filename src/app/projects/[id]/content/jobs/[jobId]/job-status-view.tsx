@@ -22,7 +22,10 @@ export type JobSnapshot = {
     chapter: string;
     title: string;
     status: ChapterJobStatus;
-    htmlDriveUrl: string | null;
+    /** True when HTML is available — UI shows preview/download
+     *  buttons. Backed by ChapterJobItem.htmlR2Key on the server. */
+    hasHtml: boolean;
+    htmlBytes: number | null;
     wordCount: number | null;
     imageCount: number | null;
     error: string | null;
@@ -50,6 +53,7 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
   const [polling, setPolling] = useState(
     !TERMINAL.includes(initialSnapshot.status),
   );
+  const [previewing, setPreviewing] = useState<number | null>(null);
 
   // Stable ref so the polling effect doesn't re-create the interval
   // on every render.
@@ -172,15 +176,22 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
                     {c.imageCount ?? "—"}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {c.htmlDriveUrl ? (
-                      <a
-                        href={c.htmlDriveUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
-                      >
-                        เปิด ↗
-                      </a>
+                    {c.hasHtml ? (
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewing(c.index)}
+                          className="text-xs text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                        >
+                          ดู
+                        </button>
+                        <a
+                          href={`/api/projects/${projectId}/content/jobs/${job.id}/chapters/${c.index}/html?download=1`}
+                          className="text-xs text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400"
+                        >
+                          ดาวน์โหลด
+                        </a>
+                      </div>
                     ) : (
                       <span className="text-zinc-400">—</span>
                     )}
@@ -208,6 +219,89 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
           </Link>
         )}
       </section>
+
+      {previewing !== null && (
+        <ChapterPreviewModal
+          projectId={projectId}
+          jobId={job.id}
+          chapter={job.chapters.find((c) => c.index === previewing) ?? null}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────── preview modal ─────────────────── */
+
+function ChapterPreviewModal({
+  projectId,
+  jobId,
+  chapter,
+  onClose,
+}: {
+  projectId: string;
+  jobId: string;
+  chapter: JobSnapshot["chapters"][number] | null;
+  onClose: () => void;
+}) {
+  if (!chapter) return null;
+  const htmlUrl = `/api/projects/${projectId}/content/jobs/${jobId}/chapters/${chapter.index}/html`;
+  const downloadUrl = `${htmlUrl}?download=1`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-[90vh] w-[90vw] max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl dark:bg-zinc-950"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <div>
+            <div className="text-xs text-zinc-500">
+              บทที่ {chapter.chapter}
+            </div>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+              {chapter.title}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={downloadUrl}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              ดาวน์โหลด
+            </a>
+            <a
+              href={htmlUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              เปิดในแท็บใหม่ ↗
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              aria-label="ปิด"
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+        <iframe
+          src={htmlUrl}
+          className="flex-1 w-full bg-white"
+          // Sandbox keeps generated HTML from running arbitrary scripts
+          // against parent origin. allow-same-origin lets the iframe
+          // load resources from our domain (the HTML route).
+          sandbox="allow-same-origin"
+          title={`บทที่ ${chapter.chapter}: ${chapter.title}`}
+        />
+      </div>
     </div>
   );
 }
@@ -298,8 +392,12 @@ function serialiseFromApi(raw: unknown): JobSnapshot | null {
           status: (typeof cc.status === "string"
             ? cc.status
             : "pending") as ChapterJobStatus,
-          htmlDriveUrl:
-            typeof cc.htmlDriveUrl === "string" ? cc.htmlDriveUrl : null,
+          // API returns ChapterJobItem directly — has htmlR2Key,
+          // not hasHtml. Coerce to boolean here so UI just checks
+          // a flag without exposing the R2 key path.
+          hasHtml:
+            typeof cc.htmlR2Key === "string" && cc.htmlR2Key.length > 0,
+          htmlBytes: typeof cc.htmlBytes === "number" ? cc.htmlBytes : null,
           wordCount: typeof cc.wordCount === "number" ? cc.wordCount : null,
           imageCount:
             typeof cc.imageCount === "number" ? cc.imageCount : null,

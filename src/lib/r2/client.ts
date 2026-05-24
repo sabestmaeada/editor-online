@@ -49,3 +49,16 @@ export function projectMetaPrefix(projectId: string): string {
 export function projectCoverKey(projectId: string, ext: string): string {
   return `${projectMetaPrefix(projectId)}cover.${ext}`;
 }
+
+/** R2 prefix for generated content (Phase 2 — content jobs).
+ *  Layout: projects/{projectId}/content/{jobId}/chapter-{NN}.html
+ *  Storing under the project prefix lets us reuse project-level
+ *  cleanup logic (e.g. when a project is deleted). */
+export function contentChapterKey(
+  projectId: string,
+  jobId: string,
+  chapterIndex: number,
+): string {
+  const idx = String(chapterIndex).padStart(2, "0");
+  return `${projectPrefix(projectId)}content/${jobId}/chapter-${idx}.html`;
+}

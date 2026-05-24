@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   getContentJob,
   updateChapterAndCounters,
@@ -13,9 +14,14 @@ import {
   PROJECTS_COLLECTION,
 } from "@/lib/firebase/firestore-admin";
 import { RETENTION_DAYS } from "@/lib/types";
+import { r2, R2_BUCKET, contentChapterKey } from "@/lib/r2/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Vercel default body limit is 1MB for /api routes. HTML chapters can
+// exceed that with embedded images — bump to 10MB to be safe.
+export const maxDuration = 60;
 
 // ────────────────────────────────────────────────────────────
 // POST /api/content/callback
@@ -59,18 +65,53 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  // 4. Apply update transactionally
+  // 4. If status="done" + html present → upload HTML to R2 first.
+  //    Failure here flips the chapter to "failed" so the UI surfaces
+  //    something the user can retry.
+  let htmlR2Key: string | null = null;
+  let htmlBytes: number | null = null;
+  let uploadError: string | null = null;
+  if (parsed.status === "done" && parsed.html) {
+    const key = contentChapterKey(
+      existing.projectId,
+      parsed.jobId,
+      parsed.chapterIndex,
+    );
+    const bodyBytes = Buffer.from(parsed.html, "utf-8");
+    try {
+      await r2().send(
+        new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: key,
+          Body: bodyBytes,
+          ContentType: "text/html; charset=utf-8",
+          CacheControl: "private, max-age=0",
+        }),
+      );
+      htmlR2Key = key;
+      htmlBytes = bodyBytes.byteLength;
+    } catch (e) {
+      console.error("[content-callback] R2 upload failed:", e);
+      uploadError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // If R2 upload failed, override chapter status → failed.
+  const finalStatus = uploadError ? "failed" : parsed.status;
+  const finalError = uploadError ?? parsed.error;
+
+  // 5. Apply update transactionally
   let updated;
   try {
     updated = await updateChapterAndCounters({
       jobId: parsed.jobId,
       chapterIndex: parsed.chapterIndex,
-      status: parsed.status,
-      htmlDriveId: parsed.htmlDriveId,
-      htmlDriveUrl: parsed.htmlDriveUrl,
+      status: finalStatus,
+      htmlR2Key,
+      htmlBytes,
       wordCount: parsed.wordCount,
       imageCount: parsed.imageCount,
-      error: parsed.error,
+      error: finalError,
     });
   } catch (e) {
     return NextResponse.json(
@@ -84,18 +125,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  // 5. Audit — fire after Firestore commit
+  // 6. Audit — fire after Firestore commit
   await logCallbackAudit({
     uid: existing.createdBy,
     eventType:
-      parsed.status === "done"
+      finalStatus === "done"
         ? "content-chapter-done"
         : "content-chapter-failed",
     projectId: existing.projectId,
     jobId: parsed.jobId,
     chapterIndex: parsed.chapterIndex,
-    success: parsed.status === "done",
-    errorCode: parsed.status === "failed" ? "CHAPTER_FAILED" : null,
+    success: finalStatus === "done",
+    errorCode:
+      finalStatus === "failed"
+        ? uploadError
+          ? "R2_UPLOAD_FAILED"
+          : "CHAPTER_FAILED"
+        : null,
   });
 
   if (
@@ -121,8 +167,10 @@ type ParsedCallback = {
   jobId: string;
   chapterIndex: number;
   status: "done" | "failed";
-  htmlDriveId: string | null;
-  htmlDriveUrl: string | null;
+  /** Full chapter HTML — only set when status="done". May be omitted
+   *  if n8n side already uploaded to its own storage (legacy Drive
+   *  mode); in that case htmlR2Key stays null. */
+  html: string | null;
   wordCount: number | null;
   imageCount: number | null;
   error: string | null;
@@ -159,9 +207,7 @@ function parseCallbackBody(raw: unknown): ParseResult {
       jobId: r.jobId,
       chapterIndex,
       status: r.status,
-      htmlDriveId: typeof r.htmlDriveId === "string" ? r.htmlDriveId : null,
-      htmlDriveUrl:
-        typeof r.htmlDriveUrl === "string" ? r.htmlDriveUrl : null,
+      html: typeof r.html === "string" && r.html.length > 0 ? r.html : null,
       wordCount:
         typeof r.wordCount === "number" && Number.isFinite(r.wordCount)
           ? r.wordCount

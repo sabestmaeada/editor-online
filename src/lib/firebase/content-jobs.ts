@@ -48,8 +48,8 @@ export async function createContentJob(
     chapter: c.chapter,
     title: c.title,
     status: "pending",
-    htmlDriveId: null,
-    htmlDriveUrl: null,
+    htmlR2Key: null,
+    htmlBytes: null,
     wordCount: null,
     imageCount: null,
     error: null,
@@ -120,8 +120,8 @@ export type UpdateChapterInput = {
   jobId: string;
   chapterIndex: number;
   status: ChapterJobStatus;
-  htmlDriveId?: string | null;
-  htmlDriveUrl?: string | null;
+  htmlR2Key?: string | null;
+  htmlBytes?: number | null;
   wordCount?: number | null;
   imageCount?: number | null;
   error?: string | null;
@@ -170,12 +170,10 @@ export async function updateChapterAndCounters(
     const next: ChapterJobItem = {
       ...prev,
       status: input.status,
-      htmlDriveId:
-        input.htmlDriveId !== undefined ? input.htmlDriveId : prev.htmlDriveId,
-      htmlDriveUrl:
-        input.htmlDriveUrl !== undefined
-          ? input.htmlDriveUrl
-          : prev.htmlDriveUrl,
+      htmlR2Key:
+        input.htmlR2Key !== undefined ? input.htmlR2Key : prev.htmlR2Key,
+      htmlBytes:
+        input.htmlBytes !== undefined ? input.htmlBytes : prev.htmlBytes,
       wordCount:
         input.wordCount !== undefined ? input.wordCount : prev.wordCount,
       imageCount:
