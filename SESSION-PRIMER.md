@@ -1,6 +1,6 @@
 # Session Primer
 
-**Last updated:** 2026-05-24
+**Last updated:** 2026-05-24 (end of day)
 
 Paste this (or its key sections) at the start of a new chat to skip
 ramp-up time. Reading this file once gives an incoming agent enough
@@ -27,9 +27,9 @@ context to keep working without re-asking design questions.
 
 | Phase | Scope | Status |
 |---|---|---|
-| **Phase 1** | Outline generation (form → n8n → tree editor → Firestore) | ✅ **Production** |
+| **Phase 1** | Outline generation (form → n8n → tree editor → Firestore) | ✅ **Production** + tone dropdown integration |
 | **Phase 1.5** | Tone library (writing-style samples + RAG via Qdrant) | ✅ **Production** (both add + delete webhooks live) |
-| **Phase 2** | Content generation (outline → multi-chapter HTML, async callbacks) | 📐 **Spec locked**, not yet implemented |
+| **Phase 2** | Content generation (outline → multi-chapter HTML, async callbacks) | 📐 **Spec locked** in `CONTENT-GENERATION-DESIGN.md`, not yet implemented |
 
 Other features in repo (not part of recent phases):
 - Project CRUD + members + R2 file storage
@@ -47,6 +47,7 @@ Read these BEFORE starting non-trivial work:
 | `AGENTS.md` → `CLAUDE.md` | Project conventions. Says Next.js 16 has breaking changes — consult `node_modules/next/dist/docs/01-app/` before writing code |
 | `SECURITY-TODO.md` | Security audit findings + CSP / Firestore rules history. M1-M3 done; L1-L5 are low-priority follow-ups |
 | `TONE-LIBRARY-DESIGN.md` | Phase 1.5 spec — every locked decision (Q-Tone-1..7 + sub-Qs), n8n contract, Firestore schema, permission matrix, quotas |
+| `CONTENT-GENERATION-DESIGN.md` | Phase 2 spec — Q-P2-1..4 locked, n8n contract (`/create-book-content`), async callback pattern, ContentJob schema, implementation order |
 
 When in doubt about a decision, search these docs first.
 
@@ -56,7 +57,7 @@ When in doubt about a decision, search these docs first.
 |---|---|---|
 | Firebase Admin | Firestore + Auth | (from `FIREBASE_*` — already set) |
 | Cloudflare R2 | Source / cover file storage | `R2_*` (set) |
-| n8n Cloud | Outline + tone webhooks | `N8N_OUTLINE_WEBHOOK_URL`, `N8N_OUTLINE_SECRET`, `N8N_TONE_ADD_WEBHOOK_URL`, `N8N_TONE_DELETE_WEBHOOK_URL`, `N8N_TONE_SECRET` |
+| n8n Cloud | Outline + tone + content webhooks | `N8N_OUTLINE_WEBHOOK_URL`, `N8N_OUTLINE_SECRET`, `N8N_TONE_ADD_WEBHOOK_URL`, `N8N_TONE_DELETE_WEBHOOK_URL`, `N8N_TONE_SECRET`, `N8N_CONTENT_WEBHOOK_URL` *(Phase 2)*, `N8N_CONTENT_SECRET` *(Phase 2)* |
 | Qdrant Cloud | Vector store for tone samples | (n8n side has credentials — Vercel doesn't talk to Qdrant directly) |
 | Gemini | LLM (in n8n) | (n8n side) |
 
@@ -73,10 +74,18 @@ Both `/tone-add-sample` + `/tone-delete-sample` n8n workflows are live.
 by querying Qdrant `writing_styles` collection for `(ownerUid, toneId)`
 combos that don't exist in Firestore. Not urgent.
 
-### Phase 2 (`Outline.contentJob`) — not implemented
-Outline `status` can be `'finalized'` per spec but no code path sets it
-yet. When Phase 2 lands, generate-content endpoint will lock outline +
-create job + dispatch n8n + handle async callbacks.
+### Phase 2 (content generation) — spec locked, not implemented
+Full spec in `CONTENT-GENERATION-DESIGN.md`. Key points:
+- Outline `status` can be `'finalized'` per spec but **no code path sets it
+  yet** — will be set by `POST /api/projects/[id]/content/generate`
+- New top-level `contentJobs` Firestore collection (schema in spec §5)
+- New endpoints: `/content/generate`, `/content/callback`,
+  `/content/jobs/[jobId]`
+- n8n side: refactor existing `/create-book-content` workflow to:
+  - Read chapters from webhook body (not Google Sheets)
+  - Use Qdrant `writing_styles` (not legacy `jeerawuth`) with tone filter
+  - POST callback per chapter
+- Est. ~7-9 hours total work; split across 2 sessions recommended
 
 ## 6. Routes index
 
@@ -147,17 +156,14 @@ work in 1–2 turns:
 
 ## 9. Common next-steps (ranked by likely priority)
 
-1. **Test Phase 1.5 with real users for 1–2 weeks** — collect feedback
-   on LLM output quality, sample upload UX, etc.
-2. **Phase 2 implementation** — outline → multi-chapter HTML via n8n
-   loop + callback pattern. Spec locked in earlier chat (search for
-   `Q-P2-1` through `Q-P2-4` answers in TONE-LIBRARY-DESIGN.md or
-   earlier session transcripts).
-3. **Tone dropdown in outline form** — Phase 1.5 + Phase 1 integration
-   (Q-Tone-4 = (a): admin doesn't see dropdown)
-4. **Polish:** signature_phrases display, profile preview before submit,
+1. **Phase 2 implementation** — `CONTENT-GENERATION-DESIGN.md` has the
+   spec locked. Implementation order in §15 of that doc. Est. 7-9h
+   total — split across 2 sessions.
+2. **Test Phase 1.5 + tone dropdown with real users for 1–2 weeks** —
+   collect feedback on LLM output quality, dropdown UX, etc.
+3. **Polish:** signature_phrases display, profile preview before submit,
    admin "all tones" filter UX, etc.
-5. **Orphan Qdrant points cleanup** — one-off script to sweep points
+4. **Orphan Qdrant points cleanup** — one-off script to sweep points
    from the period when `deleteSample` was MOCKED. Not urgent.
 
 ## 10. Files NOT to touch without specific reason
