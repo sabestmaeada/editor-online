@@ -515,6 +515,7 @@ function performTrackedDeleteInto(range, doc, isBackward) {
   range.collapse(true);
 }
 
+
 function setLiveSelection(range) {
   const sel = getWin().getSelection();
   sel.removeAllRanges();
