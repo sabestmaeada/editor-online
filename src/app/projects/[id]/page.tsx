@@ -50,7 +50,13 @@ export default async function ProjectDetailPage({
   const [files, members, contentJobs] = await Promise.all([
     listProjectFiles(id),
     listMembersOfProject(id),
-    listContentJobsByProject(id, { limit: 5 }),
+    // Safe-default: if the composite index hasn't been deployed yet
+    // (or the query fails for any reason), we still want the project
+    // page to render. The section just hides itself when empty.
+    listContentJobsByProject(id, { limit: 5 }).catch((e) => {
+      console.warn("[project-page] listContentJobsByProject failed:", e);
+      return [];
+    }),
   ]);
 
   const { project } = access;
