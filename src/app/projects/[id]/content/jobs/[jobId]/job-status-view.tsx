@@ -35,6 +35,9 @@ export type JobSnapshot = {
 
 type Props = {
   projectId: string;
+  /** Current fileCount of the project — shown in the assemble
+   *  confirm modal so the user knows how many files will be replaced. */
+  projectFileCount: number;
   initialSnapshot: JobSnapshot;
 };
 
@@ -49,7 +52,11 @@ const TERMINAL: ContentJobStatus[] = ["done", "partial", "failed"];
  * is still in `pending` or `generating` — stops once we reach a
  * terminal state to avoid hammering the API.
  */
-export function JobStatusView({ projectId, initialSnapshot }: Props) {
+export function JobStatusView({
+  projectId,
+  projectFileCount,
+  initialSnapshot,
+}: Props) {
   const router = useRouter();
   const [job, setJob] = useState<JobSnapshot>(initialSnapshot);
   const [polling, setPolling] = useState(
@@ -60,8 +67,22 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
     "idle" | "confirming" | "submitting" | { error: string }
   >("idle");
   const [assembling, setAssembling] = useState<
-    "idle" | "submitting" | { done: number; bytes: number } | { error: string }
+    | "idle"
+    | "confirming"
+    | "submitting"
+    | { done: number; bytes: number; unchanged: boolean }
+    | { error: string }
   >("idle");
+
+  function startAssemble() {
+    // If there are existing files, warn before overwriting. Empty
+    // project (fileCount=0) → skip the confirm entirely.
+    if (projectFileCount > 0) {
+      setAssembling("confirming");
+    } else {
+      void handleAssemble();
+    }
+  }
 
   async function handleAssemble() {
     setAssembling("submitting");
@@ -73,6 +94,7 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
       const data = (await res.json().catch(() => ({}))) as {
         chapters?: number;
         totalSize?: number;
+        unchanged?: boolean;
         error?: string;
       };
       if (!res.ok) {
@@ -85,6 +107,7 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
       setAssembling({
         done: data.chapters ?? 0,
         bytes: data.totalSize ?? 0,
+        unchanged: data.unchanged === true,
       });
       // Refresh so project page picks up updated fileCount/totalSize.
       router.refresh();
@@ -291,8 +314,10 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
             job.completedChapters > 0 && (
               <button
                 type="button"
-                onClick={handleAssemble}
-                disabled={assembling === "submitting"}
+                onClick={startAssemble}
+                disabled={
+                  assembling === "submitting" || assembling === "confirming"
+                }
                 className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
                 {assembling === "submitting"
@@ -314,16 +339,34 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
       {typeof assembling === "object" && "done" in assembling && (
         <div
           role="status"
-          className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+          className={
+            assembling.unchanged
+              ? "rounded-md border border-zinc-300 bg-zinc-50 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              : "rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+          }
         >
-          ✅ รวมเป็นเล่มเรียบร้อย — {assembling.done} บท ·{" "}
-          {(assembling.bytes / 1024).toFixed(1)} KB ·{" "}
-          <Link
-            href={`/projects/${projectId}`}
-            className="font-medium underline"
-          >
-            ไปดาวน์โหลด ZIP →
-          </Link>
+          {assembling.unchanged ? (
+            <>
+              ℹ️ เนื้อหาเหมือนเดิม — ไม่มีการเปลี่ยนแปลง ·{" "}
+              <Link
+                href={`/projects/${projectId}`}
+                className="font-medium underline"
+              >
+                ดาวน์โหลดของเดิม →
+              </Link>
+            </>
+          ) : (
+            <>
+              ✅ รวมเป็นเล่มเรียบร้อย — {assembling.done} บท ·{" "}
+              {(assembling.bytes / 1024).toFixed(1)} KB ·{" "}
+              <Link
+                href={`/projects/${projectId}`}
+                className="font-medium underline"
+              >
+                ไปดาวน์โหลด ZIP →
+              </Link>
+            </>
+          )}
         </div>
       )}
       {typeof assembling === "object" && "error" in assembling && (
@@ -333,6 +376,14 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
         >
           ❌ {assembling.error}
         </div>
+      )}
+
+      {assembling === "confirming" && (
+        <ConfirmAssembleModal
+          fileCount={projectFileCount}
+          onCancel={() => setAssembling("idle")}
+          onConfirm={() => void handleAssemble()}
+        />
       )}
 
       {(deleting === "confirming" ||
@@ -434,6 +485,64 @@ function ConfirmDeleteModal({
             className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
             {submitting ? "กำลังลบ…" : "ลบ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────── confirm assemble modal ─────────────────── */
+
+function ConfirmAssembleModal({
+  fileCount,
+  onCancel,
+  onConfirm,
+}: {
+  fileCount: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl dark:bg-zinc-950"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+          รวมเป็นเล่ม?
+        </h2>
+        <div className="mt-3 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <p>
+            โปรเจกต์มีไฟล์เดิมอยู่{" "}
+            <strong className="text-zinc-900 dark:text-zinc-100">
+              {fileCount}
+            </strong>{" "}
+            ไฟล์ — จะถูกแทนที่ด้วย <code>book.html</code> + <code>style.css</code>
+          </p>
+          <ul className="ml-4 list-disc space-y-1 text-xs">
+            <li>ถ้าเนื้อหาใหม่เหมือนเดิมจะ skip ไม่เขียนทับ</li>
+            <li>ถ้าต่าง ระบบจะลบไฟล์เดิมแล้วเขียนใหม่</li>
+            <li>เนื้อหาบทใน Cloud storage ยังอยู่เหมือนเดิม</li>
+          </ul>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            ยืนยันรวม
           </button>
         </div>
       </div>

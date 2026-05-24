@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createHash } from "crypto";
 import {
   GetObjectCommand,
   PutObjectCommand,
@@ -126,15 +127,58 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       chapters: chapterHtmls,
     });
 
-  // 4. Clear existing source/ then upload book files. Filename is
-  //    `style.css` (not `book.css`) to match the template's
-  //    `<link rel="stylesheet" href="./style.css">`.
+  // 4. Hash compare with existing files (skip upload if identical).
+  //    Saves R2 write cost + lets the UI tell the user "ไม่มีการ
+  //    เปลี่ยนแปลง" so they're not confused when nothing seems to happen.
+  const htmlKey = projectSourceKey(projectId, "book.html");
+  const cssKey = projectSourceKey(projectId, "style.css");
+  const newHtmlHash = sha256(bookHtml);
+  const newCssHash = sha256(bookCss);
+  const [existingHtmlHash, existingCssHash] = await Promise.all([
+    fetchR2Hash(htmlKey),
+    fetchR2Hash(cssKey),
+  ]);
+
+  const unchanged =
+    existingHtmlHash === newHtmlHash && existingCssHash === newCssHash;
+
+  if (unchanged) {
+    // Nothing to do. Skip delete + upload + project doc update.
+    await logAuthEvent({
+      headers: req.headers,
+      uid: profile.uid,
+      email: profile.email,
+      eventType: "project-files-replace",
+      provider: "system",
+      success: true,
+      errorCode: "UNCHANGED",
+      projectId,
+      projectTitle: access.project.title,
+      jobId,
+      totalChapters: doneChapters.length,
+    }).catch(() => {});
+
+    return NextResponse.json({
+      ok: true,
+      unchanged: true,
+      fileCount: fullProject?.fileCount ?? 2,
+      totalSize: fullProject?.totalSize ?? 0,
+      chapters: doneChapters.length,
+      htmlBytes,
+      cssBytes,
+      hasCover,
+      hasPreface: !!fullProject?.preface,
+      diagnostics,
+    });
+  }
+
+  // 5. Content has changed — clear existing source/ then upload new
+  //    book files. Filename is `style.css` (not `book.css`) to match
+  //    the template's `<link rel="stylesheet" href="./style.css">`.
   await deleteProjectSourceFiles(projectId).catch((e) => {
     console.warn("[assemble] source/ cleanup failed (continuing):", e);
   });
 
-  const htmlKey = projectSourceKey(projectId, "book.html");
-  const cssKey = projectSourceKey(projectId, "style.css");
   try {
     await Promise.all([
       r2().send(
@@ -162,14 +206,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  // 5. Update project doc
+  // 6. Update project doc
   const totalBytes = htmlBytes + cssBytes;
   await updateProject(projectId, {
     fileCount: 2,
     totalSize: totalBytes,
   });
 
-  // 6. Audit (reuse project-files-replace — same semantic as ZIP replace)
+  // 7. Audit (reuse project-files-replace — same semantic as ZIP replace)
   await logAuthEvent({
     headers: req.headers,
     uid: profile.uid,
@@ -185,6 +229,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
   return NextResponse.json({
     ok: true,
+    unchanged: false,
     fileCount: 2,
     totalSize: totalBytes,
     chapters: doneChapters.length,
@@ -194,6 +239,26 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     hasPreface: !!fullProject?.preface,
     diagnostics,
   });
+}
+
+/** SHA-256 hex digest of a string. */
+function sha256(s: string): string {
+  return createHash("sha256").update(s, "utf-8").digest("hex");
+}
+
+/** Fetch an R2 object and compute its hex SHA-256 digest. Returns null
+ *  if the object doesn't exist (or any other error) — caller treats
+ *  null as "needs upload". */
+async function fetchR2Hash(key: string): Promise<string | null> {
+  try {
+    const obj = await r2().send(
+      new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }),
+    );
+    const body = (await obj.Body?.transformToString("utf-8")) ?? "";
+    return sha256(body);
+  } catch {
+    return null;
+  }
 }
 
 /** Same shape as the helper in /content/generate. Repeated here to

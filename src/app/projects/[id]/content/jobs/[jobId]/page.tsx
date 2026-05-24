@@ -30,6 +30,10 @@ export default async function JobStatusPage({
     notFound();
   }
 
+  // Snapshot the project's current fileCount so the assemble confirm
+  // modal can warn the user how many existing files will be replaced.
+  const projectFileCount = access.project.fileCount;
+
   // Snapshot for the client component — serialise timestamps to ISO so
   // they cross the server→client boundary cleanly (Firestore Timestamp
   // can't be serialised over RSC).
@@ -92,7 +96,11 @@ export default async function JobStatusPage({
           </p>
         </header>
 
-        <JobStatusView projectId={projectId} initialSnapshot={snapshot} />
+        <JobStatusView
+          projectId={projectId}
+          projectFileCount={projectFileCount}
+          initialSnapshot={snapshot}
+        />
       </main>
     </>
   );

@@ -5,7 +5,8 @@
  * cover, copyright, preface, TOC, chapter sections, content
  * typography, and print styles.
  *
- * To update: edit tmp/style.css then re-run the regen script.
+ * To update: paste new CSS into the string below (or use a Node
+ * one-liner with JSON.stringify to safely escape the file content).
  * Stored as a regular string (JSON-stringified) so backticks /
  * dollar-signs in CSS don't collide with template literals.
  */
