@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   getContentJob,
   updateChapterAndCounters,
@@ -100,8 +100,12 @@ export async function POST(req: NextRequest) {
   const finalStatus = uploadError ? "failed" : parsed.status;
   const finalError = uploadError ?? parsed.error;
 
-  // 5. Apply update transactionally
+  // 5. Apply update transactionally. If this fails (job was deleted
+  //    between our load + the transaction, or transaction rejects for
+  //    other reasons) we MUST roll back the R2 upload above — otherwise
+  //    we leak orphan blobs.
   let updated;
+  let transactionError: unknown = null;
   try {
     updated = await updateChapterAndCounters({
       jobId: parsed.jobId,
@@ -114,14 +118,36 @@ export async function POST(req: NextRequest) {
       error: finalError,
     });
   } catch (e) {
-    return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "Failed to update chapter",
-      },
-      { status: 400 },
-    );
+    transactionError = e;
   }
-  if (!updated) {
+
+  if (!updated || transactionError) {
+    // Roll back the R2 upload if we did one. Job is gone (or the
+    // transaction errored) → orphan otherwise.
+    if (htmlR2Key) {
+      try {
+        await r2().send(
+          new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: htmlR2Key }),
+        );
+      } catch (e) {
+        console.warn(
+          "[content-callback] R2 rollback failed — orphan object:",
+          htmlR2Key,
+          e,
+        );
+      }
+    }
+    if (transactionError) {
+      return NextResponse.json(
+        {
+          error:
+            transactionError instanceof Error
+              ? transactionError.message
+              : "Failed to update chapter",
+        },
+        { status: 400 },
+      );
+    }
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
