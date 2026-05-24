@@ -207,6 +207,14 @@ function formInputField(v: unknown): OutlineFormInput {
     bookHighlights: typeof r.bookHighlights === "string" ? r.bookHighlights : "",
     targetAudience:
       typeof r.targetAudience === "string" ? r.targetAudience : "",
+    // Tone library snapshot (Phase 1.5) — optional; null when user
+    // didn't pick a tone in the outline form.
+    toneId:
+      typeof r.toneId === "string" && r.toneId.length > 0 ? r.toneId : null,
+    toneName:
+      typeof r.toneName === "string" && r.toneName.length > 0
+        ? r.toneName
+        : null,
   };
 }
 
