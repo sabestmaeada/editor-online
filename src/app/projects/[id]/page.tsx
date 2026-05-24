@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUserProfile } from "@/lib/firebase/require-profile";
 import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { listMembersOfProject } from "@/lib/firebase/project-members";
+import { listContentJobsByProject } from "@/lib/firebase/content-jobs";
 import { listProjectFiles } from "@/lib/r2/download";
 import { Nav } from "@/components/nav";
 import { formatTimestamp, formatRelative } from "@/lib/format";
@@ -13,7 +14,7 @@ import {
   StatusSelector,
 } from "./member-controls";
 import { ReplaceFilesForm } from "./replace-files-form";
-import type { ProjectStatus } from "@/lib/types";
+import type { ProjectStatus, ContentJobStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -46,9 +47,10 @@ export default async function ProjectDetailPage({
   const access = await resolveProjectAccess(profile, id);
   if (!access) notFound();
 
-  const [files, members] = await Promise.all([
+  const [files, members, contentJobs] = await Promise.all([
     listProjectFiles(id),
     listMembersOfProject(id),
+    listContentJobsByProject(id, { limit: 5 }),
   ]);
 
   const { project } = access;
@@ -240,6 +242,68 @@ export default async function ProjectDetailPage({
           </div>
         </section>
 
+        {/* Content jobs (Phase 2) — only shown when ≥ 1 job */}
+        {contentJobs.length > 0 && (
+          <section className="mt-10">
+            <h2 className="text-lg font-semibold tracking-tight">
+              เนื้อหาที่สร้าง ({contentJobs.length}
+              {contentJobs.length === 5 ? "+ ล่าสุด" : ""})
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              งานสร้างเนื้อหา AI สำหรับโปรเจกต์นี้ — คลิกเพื่อดูสถานะ + เนื้อหาแต่ละบท
+            </p>
+            <div className="mt-4 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-900">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">วันที่</th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      สถานะ
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      ความคืบหน้า
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">สำนวน</th>
+                    <th className="px-3 py-2 text-right font-medium">เปิด</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contentJobs.map((job) => (
+                    <tr
+                      key={job.id}
+                      className="border-t border-zinc-200 dark:border-zinc-800"
+                    >
+                      <td className="px-3 py-2 text-zinc-500">
+                        {formatRelative(job.createdAt)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <ContentJobBadge status={job.status} />
+                      </td>
+                      <td className="px-3 py-2 text-zinc-500">
+                        {job.completedChapters} / {job.totalChapters} บท
+                        {job.failedChapters > 0
+                          ? ` · ${job.failedChapters} ล้มเหลว`
+                          : ""}
+                      </td>
+                      <td className="px-3 py-2 text-zinc-500">
+                        {job.toneName ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          href={`/projects/${project.id}/content/jobs/${job.id}`}
+                          className="text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                        >
+                          ดูบท →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* Files */}
         <section className="mt-10">
           <h2 className="text-lg font-semibold tracking-tight">
@@ -326,5 +390,38 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
         {value}
       </div>
     </div>
+  );
+}
+
+function ContentJobBadge({ status }: { status: ContentJobStatus }) {
+  const map: Record<ContentJobStatus, { label: string; cls: string }> = {
+    pending: {
+      label: "รอเริ่ม",
+      cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+    },
+    generating: {
+      label: "กำลังสร้าง",
+      cls: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+    },
+    done: {
+      label: "✅ เสร็จ",
+      cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    },
+    partial: {
+      label: "⚠️ บางส่วน",
+      cls: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    },
+    failed: {
+      label: "❌ ล้มเหลว",
+      cls: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+    },
+  };
+  const { label, cls } = map[status];
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {label}
+    </span>
   );
 }
