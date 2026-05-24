@@ -541,5 +541,122 @@ When tone is selected:
 
 ---
 
+## 18. Implementation status — 2026-05-24 (updated end of day)
+
+### ✅ Shipped (Vercel side + both n8n webhooks)
+
+| Component | File(s) | Notes |
+|---|---|---|
+| Types (`ToneStyle`, `ToneSample`, `StyleProfile`) + 7 audit events | `src/lib/types.ts` | All optional fields use `\| null`, no undefined leaks |
+| Firestore rules (server-only access) | `firestore.rules` | `match /tones/{id}` + sub-collection blocked from clients |
+| Firestore CRUD | `src/lib/firebase/tones.ts` | `createTone`, `listTonesByOwner`, `listAllTones`, `updateTone`, `transferToneOwnership`, `deleteTone`, `countTonesByOwner`, sample sub-collection helpers |
+| Permission helpers | `src/lib/firebase/tone-access.ts` | `resolveToneAccess`, `canCreateTone`, `canSeeOtherUsersTones` |
+| n8n adapter | `src/lib/n8n/tones.ts` | `addSample` + `deleteSample` both real fetch with timeout + structured errors |
+| File parsing | `src/lib/file-parse/tones.ts` | `.txt`, `.md`, `.docx` (mammoth), `.pdf` (pdf-parse with v1/v2 shape detection) |
+| API endpoints | `src/app/api/tones/**` | GET/POST list, GET/PUT/DELETE item, POST transfer, GET/POST/DELETE samples |
+| UI — list | `src/app/tones/page.tsx` | Owner-scoped; admin filter via `?user=` |
+| UI — create | `src/app/tones/new/{page,create-tone-form}.tsx` | Simple form, redirects to detail on save |
+| UI — detail | `src/app/tones/[id]/{page,tone-detail-view}.tsx` | Edit metadata, view profile, list samples, archive / delete |
+| UI — sample upload | `src/app/tones/[id]/samples/new/{page,add-sample-form}.tsx` | Paste + file modes, size validation client-side + server-side |
+| Nav integration | `src/components/nav.tsx` | "สำนวนการเขียน" in Tools dropdown |
+| Account deletion guard | `src/app/api/admin/users/[uid]/route.ts` | Blocks user-delete if `countTonesByOwner > 0` |
+| Audit log + colours | `src/app/admin/{audit,users/[uid]}/page.tsx` | 7 new event types with colour badges |
+| Firestore indexes | `firestore.indexes.json` | 3 composite indexes for `tones` collection — deployed 2026-05-24 |
+
+### ⏳ Follow-ups (non-blocking)
+
+**Orphan Qdrant points cleanup** — during the period when `deleteSample`
+was MOCKED (2026-05-24 morning), Firestore sample records were deleted
+but Qdrant points remained. Write a one-off Node script that:
+
+1. Queries Qdrant `writing_styles` scroll API for all points
+2. For each point, reads `payload.metadata.sampleId`
+3. Looks up `tones/{toneId}/samples/{sampleId}` in Firestore
+4. If sample doc doesn't exist → POST to Qdrant `/points/delete`
+
+Not urgent — orphan points don't break anything (RAG by `(ownerUid,
+toneId)` filter naturally ignores deleted-sample points if their toneId
+is gone too; only stale signal if the tone itself is alive).
+
+### 🛠 n8n workflow B — gotchas resolved during build
+
+- **DELETE method on Qdrant**: use `POST /points/delete` (not HTTP
+  DELETE) — Qdrant doesn't expose DELETE verb for points
+- **Edit Fields type for array**: `pointIds` must be **Array** type in
+  the Edit Fields node, otherwise it's stringified and breaks downstream
+- **`=` prefix inside JSON body strings**: write `"value": "{{ expr }}"`
+  NOT `"value": "={{ expr }}"` — the `=` prefix is for expression-mode
+  fields, but inside a JSON-body string it becomes a literal `=` char
+  that breaks Qdrant exact-match filters
+- **Code Extract Chunks text field**: workflow A stores chunk text at
+  `payload.content` (NOT `payload.metadata.text`). Filter+map on
+  `p.payload?.content` and filter out empty strings
+- **IF node type validation**: use `number` operation with `gt` and
+  `Number()` cast on remainingChunks to avoid string-comparison bugs
+- **Edit Fields can't hold `null` for Object type**: use a Code node to
+  return `{ ..., styleProfile: null, systemPrompt: null }` for the
+  empty-profile branch
+- **camelCase vs snake_case across nodes**: workflow A's Code nodes
+  return `style_profile` / `system_prompt` (snake) but the response
+  contract uses `styleProfile` / `systemPrompt` (camel). Edit Fields1
+  (final formatter) must read snake and emit camel
+
+### 🐛 Known gotchas resolved during implementation
+
+- **Firestore `undefined` values** — fixed by `db.settings({ ignoreUndefinedProperties: true })` in `firestore-admin.ts`
+- **Server → Client serialization of `Timestamp`** — never pass full
+  Firestore types across boundary; format to strings server-side
+- **Qdrant collection missing on first insert** — created
+  `writing_styles` manually via Qdrant UI
+- **Qdrant filter "Index required"** — created 3 payload indexes:
+  `metadata.ownerUid`, `metadata.toneId`, `metadata.sampleId` (all
+  `keyword`). Case-sensitive: `toneId` (camelCase) NOT `toneid`
+- **n8n Webhook returning empty 200** — set Respond mode to
+  `Using 'Respond to Webhook' Node` + add a Respond to Webhook node
+  at the end of the workflow
+- **n8n JSON Body field with expressions** — embed `={{ ... }}` INSIDE
+  string values of valid JSON; do NOT wrap the whole body in an
+  expression (causes "Unexpected token '='" parse error)
+- **`pointIds: []` in response** — Qdrant Vector Store node doesn't
+  return point IDs after insert. Extract them from a follow-up
+  `points/scroll` query filtered by current `sampleId`
+
+### 📊 Final shape — sample webhook response
+
+A successful `POST /api/tones/[id]/samples` returns:
+
+```json
+{
+  "sample": {
+    "id": "<firestore doc id>",
+    "textPreview": "AI Agent คือเครื่องมือสำคัญ...",
+    "textLength": 103,
+    "qdrantPointIds": ["bdb18c12-..."],
+    "source": "paste",
+    "fileName": null,
+    "uploadedBy": "<uid>",
+    "uploadedAt": "<Timestamp>"
+  },
+  "styleProfile": {
+    "tone": "casual-friendly",
+    "reader_address": "คุณ",
+    "pov": "mixed",
+    "vocabulary_level": "everyday",
+    "sentence_style": "short-punchy",
+    "uses_examples": "occasional",
+    "uses_metaphors": "rare",
+    "humor_level": "occasional-light",
+    "signature_phrases": ["ทดสอบสั้น ๆ", "ลองคิดดูครับ", "..."]
+  },
+  "systemPrompt": "คุณคือผู้แต่งหนังสือ... น้ำเสียง: casual-friendly..."
+}
+```
+
+The tone document is updated with the latest `styleProfile` +
+`systemPrompt` so subsequent reads don't need to re-fetch from n8n.
+
+---
+
 **Last updated:** 2026-05-24
-**Status:** Ready for n8n side setup, then Vercel implementation
+**Status:** ✅ Vercel side + n8n add-sample shipped to production. ⏳
+n8n delete-sample webhook pending (mock active).

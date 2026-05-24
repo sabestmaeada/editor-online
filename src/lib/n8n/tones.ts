@@ -11,10 +11,6 @@ import type { StyleProfile } from "@/lib/types";
  * Both require X-Tone-Secret header auth. Errors are normalised into
  * N8nToneError so the API layer can map them to user-facing 4xx/5xx
  * without leaking n8n internals.
- *
- * Delete is currently MOCKED (returns success without calling n8n) —
- * see the comment in deleteSample below. Swap to real fetch when the
- * /tone-delete-sample workflow is wired up in n8n.
  */
 
 const SECRET_HEADER = "X-Tone-Secret";
@@ -167,7 +163,7 @@ function isStyleProfile(v: unknown): v is StyleProfile {
   );
 }
 
-/* ────────────────── /tone-delete-sample (MOCK) ────────────────── */
+/* ────────────────── /tone-delete-sample ────────────────── */
 
 export type DeleteSampleRequest = {
   ownerUid: string;
@@ -182,41 +178,95 @@ export type DeleteSampleResult = {
   systemPrompt: string | null;
 };
 
-/**
- * MOCK implementation — does NOT call n8n yet.
- *
- * Workflow 2 (/tone-delete-sample) hasn't been built in n8n yet. The
- * spec is locked (TONE-LIBRARY-DESIGN.md §5.3) but we ship the Vercel
- * side first so the user can wire n8n side at their pace.
- *
- * Side-effects when this mock is in place:
- *   - Qdrant points are NOT actually deleted (they remain in the
- *     collection until n8n side is built and ran)
- *   - Style profile is NOT re-analysed (stays at last value)
- *   - sampleCount / totalChunks in Firestore still get decremented
- *     by the caller — so UI counts are correct
- *
- * To swap to real adapter when webhook is ready:
- *   1. Set env vars N8N_TONE_DELETE_WEBHOOK_URL + (reuse N8N_TONE_SECRET)
- *   2. Replace the body of deleteSample() with a real fetch — see
- *      addSample() for the pattern
- *   3. Remove the "MOCK" comments and this header
- *   4. (Optional) Run a one-off Qdrant cleanup for points that were
- *      "deleted" in Firestore while the mock was in place
- */
+/** Send pointIds to n8n for Qdrant deletion + re-analysis of remaining
+ *  chunks. Returns the count deleted + the recalculated style profile
+ *  (or null if the tone now has zero chunks left). */
 export async function deleteSample(
   req: DeleteSampleRequest,
 ): Promise<DeleteSampleResult> {
-  // MOCK: pretend the delete succeeded immediately. Returns deleted
-  // count = pointIds.length so the caller's UI count is consistent.
-  // styleProfile + systemPrompt stay null — the caller is expected to
-  // keep the previously cached values on the tone doc (we just don't
-  // refresh them on this mock path).
+  const url = process.env.N8N_TONE_DELETE_WEBHOOK_URL;
+  const secret = process.env.N8N_TONE_SECRET;
+  if (!url || !secret) {
+    throw new N8nToneError(
+      "MISSING_ENV",
+      "N8N_TONE_DELETE_WEBHOOK_URL or N8N_TONE_SECRET not configured",
+    );
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [SECRET_HEADER]: secret,
+      },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeoutHandle);
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new N8nToneError(
+        "TIMEOUT",
+        `n8n tone-delete-sample timed out after ${TIMEOUT_MS}ms`,
+      );
+    }
+    throw new N8nToneError(
+      "NETWORK",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+  clearTimeout(timeoutHandle);
+
+  if (!res.ok) {
+    const text = await safeText(res);
+    throw new N8nToneError(
+      "HTTP",
+      `n8n tone-delete-sample returned HTTP ${res.status}`,
+      { httpStatus: res.status, detail: text.slice(0, 500) },
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    throw new N8nToneError(
+      "INVALID_RESPONSE",
+      "n8n tone-delete-sample response is not valid JSON",
+    );
+  }
+
+  return parseDeleteSampleResponse(raw);
+}
+
+function parseDeleteSampleResponse(raw: unknown): DeleteSampleResult {
+  // n8n may wrap response in an array (depending on Respond mode).
+  const data = Array.isArray(raw) ? raw[0] : raw;
+  if (!data || typeof data !== "object") {
+    throw new N8nToneError(
+      "INVALID_RESPONSE",
+      "Expected object in tone-delete-sample response",
+    );
+  }
+  const r = data as Record<string, unknown>;
+
+  const deleted = typeof r.deleted === "number" ? r.deleted : 0;
+  const remainingChunks =
+    typeof r.remainingChunks === "number" ? r.remainingChunks : 0;
+  const styleProfile = isStyleProfile(r.styleProfile) ? r.styleProfile : null;
+  const systemPrompt =
+    typeof r.systemPrompt === "string" ? r.systemPrompt : null;
+
   return {
-    deleted: req.pointIds.length,
-    remainingChunks: 0,
-    styleProfile: null,
-    systemPrompt: null,
+    deleted,
+    remainingChunks,
+    styleProfile,
+    systemPrompt,
   };
 }
 

@@ -20,12 +20,14 @@ type RouteContext = { params: Promise<{ id: string; sampleId: string }> };
 //
 // Removes both:
 //   1. Sample record from Firestore (Firestore CRUD)
-//   2. Qdrant points referenced by the sample (n8n adapter — MOCK)
+//   2. Qdrant points referenced by the sample (n8n /tone-delete-sample)
 //
 // On the spec (Q-Tone-2 = auto-analyze), if any samples remain after
-// deletion the tone's styleProfile should be re-analysed. The mock
-// adapter doesn't currently re-analyse; once the real /tone-delete-sample
-// webhook is wired we'll get the fresh profile back here.
+// deletion the tone's styleProfile is re-analysed by n8n and we cache
+// the fresh profile + systemPrompt on the tone doc.
+//
+// n8n failures (timeout / 5xx) are logged but do NOT block Firestore
+// cleanup — orphan Qdrant points may remain and need a periodic sweep.
 // ────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const profile = await getCurrentUserProfile();
@@ -50,7 +52,7 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  // 1. Delete Qdrant points via n8n (MOCK for now)
+  // 1. Delete Qdrant points + re-analyze via n8n
   let n8nResult;
   try {
     n8nResult = await deleteSampleN8n({
@@ -76,12 +78,21 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
   // 2. Delete sample record (atomically updates tone counters)
   await deleteSampleRecord(id, sampleId);
 
-  // 3. If n8n returned a fresh profile (real adapter), cache it.
-  //    For mock — n8nResult.styleProfile is null, so this no-ops.
+  // 3. Cache the re-analyzed profile on the tone doc.
+  //    If n8nResult.remainingChunks === 0, both are null → clear cache.
+  //    If n8n call failed, both stay null → don't touch cache (keep
+  //    previously cached profile so UI doesn't lose context).
   if (n8nResult.styleProfile !== null || n8nResult.systemPrompt !== null) {
     await updateTone(id, {
       styleProfile: n8nResult.styleProfile,
       systemPrompt: n8nResult.systemPrompt,
+      lastAnalyzedAt: Timestamp.now(),
+    });
+  } else if (n8nResult.remainingChunks === 0 && n8nResult.deleted > 0) {
+    // Last sample deleted — clear the cached profile.
+    await updateTone(id, {
+      styleProfile: null,
+      systemPrompt: null,
       lastAnalyzedAt: Timestamp.now(),
     });
   }
