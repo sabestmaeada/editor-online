@@ -250,7 +250,7 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
             }
             className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:bg-zinc-950 dark:text-red-400 dark:hover:bg-red-950/30"
           >
-            🗑 ลบงานนี้
+            🗑 ลบเนื้อหา
           </button>
           {(job.status === "done" || job.status === "partial") && (
             <Link
@@ -319,16 +319,18 @@ function ConfirmDeleteModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-          ลบงานสร้างเนื้อหา?
+          ลบเนื้อหาที่สร้าง?
         </h2>
         <div className="mt-3 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
           <p>การลบจะทำให้:</p>
           <ul className="ml-4 list-disc space-y-1">
             <li>
-              ลบไฟล์ HTML ทั้งหมด ({completedCount} บท) ใน Cloud storage
+              ลบไฟล์ HTML ทั้งหมด ({completedCount} บท) ออกจาก Cloud
+              storage
             </li>
-            <li>ลบ Firestore record ของงานนี้</li>
-            <li>เค้าโครง (outline) จะไม่ถูกลบ</li>
+            <li>ลบประวัติการสร้างเนื้อหารอบนี้</li>
+            <li>เค้าโครง (outline) ของโปรเจกต์จะไม่ถูกลบ</li>
+            <li>โปรเจกต์จะไม่ถูกลบ</li>
           </ul>
           <p className="mt-3 font-medium text-red-700 dark:text-red-400">
             ⚠️ ไม่สามารถย้อนกลับได้
