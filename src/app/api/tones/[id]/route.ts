@@ -6,6 +6,7 @@ import {
   deleteTone,
   listSamples,
 } from "@/lib/firebase/tones";
+import { deleteSample as deleteSampleN8n } from "@/lib/n8n/tones";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 
 export const runtime = "nodejs";
@@ -134,7 +135,16 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 // DELETE /api/tones/[id] — hard delete tone + all samples
 //   - Owner can delete their own
 //   - Admin can delete any
-//   - Qdrant points: see n8n adapter (mock for now)
+//
+// Flow:
+//   1. Aggregate every qdrantPointId from every sample of this tone
+//   2. Call n8n /tone-delete-sample once with the full pointIds list
+//      → n8n removes all Qdrant points + re-analyze runs but yields
+//        null (no chunks remain) which we simply ignore here
+//   3. Delete Firestore docs (samples + tone)
+//
+// n8n failure does NOT block Firestore cleanup — we log a warning so
+// ops can sweep any orphan Qdrant points later.
 // ────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const profile = await getCurrentUserProfile();
@@ -151,6 +161,27 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // 1. Collect every Qdrant point ID across all samples
+  const samples = await listSamples(id);
+  const allPointIds = samples.flatMap((s) => s.qdrantPointIds ?? []);
+
+  // 2. Tell n8n to delete those Qdrant points (skip if none)
+  if (allPointIds.length > 0) {
+    try {
+      await deleteSampleN8n({
+        ownerUid: access.tone.ownerUid,
+        toneId: id,
+        pointIds: allPointIds,
+      });
+    } catch (e) {
+      console.warn(
+        "[tone-delete] n8n Qdrant cleanup failed (continuing with Firestore delete):",
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+
+  // 3. Delete Firestore docs (samples sub-collection + tone doc)
   await deleteTone(id);
 
   await logAuthEvent({
