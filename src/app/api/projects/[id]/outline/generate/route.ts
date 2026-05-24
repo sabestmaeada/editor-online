@@ -5,6 +5,7 @@ import {
   upsertOutline,
   markOutlineFailed,
 } from "@/lib/firebase/outlines";
+import { getTone } from "@/lib/firebase/tones";
 import { generateOutline, N8nError } from "@/lib/n8n/outline";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
@@ -75,7 +76,50 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   if ("error" in parse) {
     return NextResponse.json({ error: parse.error }, { status: 400 });
   }
-  const formInput = parse.formInput;
+  let formInput = parse.formInput;
+
+  // Resolve the tone (if user picked one). We re-fetch from Firestore
+  // rather than trusting the client-sent name — and verify ownership so
+  // a malicious caller can't tag their outline with someone else's tone.
+  let toneSystemPrompt: string | null = null;
+  if (formInput.toneId) {
+    const tone = await getTone(formInput.toneId);
+    if (!tone) {
+      return NextResponse.json(
+        { error: "Selected tone does not exist" },
+        { status: 400 },
+      );
+    }
+    if (tone.ownerUid !== profile.uid) {
+      // Don't leak whether the tone exists vs. is not yours.
+      return NextResponse.json(
+        { error: "Selected tone does not exist" },
+        { status: 400 },
+      );
+    }
+    if (tone.status !== "active") {
+      return NextResponse.json(
+        { error: "Selected tone is archived" },
+        { status: 400 },
+      );
+    }
+    if (!tone.systemPrompt) {
+      return NextResponse.json(
+        {
+          error:
+            "Selected tone has no samples yet — please add at least one sample first",
+        },
+        { status: 400 },
+      );
+    }
+    toneSystemPrompt = tone.systemPrompt;
+    // Snapshot the name into the formInput so future viewers see what
+    // tone was used even if it's renamed/deleted later.
+    formInput = { ...formInput, toneName: tone.name };
+  } else {
+    // Clear any stale toneName from the client.
+    formInput = { ...formInput, toneId: null, toneName: null };
+  }
 
   // Audit start. We log BEFORE calling n8n so failed attempts (e.g.
   // n8n down) still leave a trail.
@@ -93,7 +137,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   // Call n8n
   let result;
   try {
-    result = await generateOutline(formInput);
+    result = await generateOutline(formInput, { toneSystemPrompt });
   } catch (e) {
     const code =
       e instanceof N8nError ? e.code : ("UNKNOWN" as const);
@@ -205,6 +249,18 @@ function parseFormInput(
     return { error: "targetAudience must be 1-" + MAX_TEXT + " chars" };
   }
 
+  // toneId is optional — null / undefined / "" all mean "no tone".
+  // We accept only a sane-looking string; deeper validation (ownership,
+  // status, has-samples) happens after Firestore lookup in the caller.
+  let toneId: string | null = null;
+  if (
+    typeof r.toneId === "string" &&
+    r.toneId.trim().length > 0 &&
+    r.toneId.length <= 100
+  ) {
+    toneId = r.toneId.trim();
+  }
+
   return {
     formInput: {
       bookTitle,
@@ -213,6 +269,8 @@ function parseFormInput(
       bookPurpose,
       bookHighlights,
       targetAudience,
+      toneId,
+      toneName: null, // server fills this in after resolving the tone
     },
   };
 }

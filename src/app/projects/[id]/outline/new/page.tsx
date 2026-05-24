@@ -3,8 +3,9 @@ import Link from "next/link";
 import { requireUserProfile } from "@/lib/firebase/require-profile";
 import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { getOutline } from "@/lib/firebase/outlines";
+import { listTonesByOwner } from "@/lib/firebase/tones";
 import { Nav } from "@/components/nav";
-import { OutlineForm } from "./outline-form";
+import { OutlineForm, type ToneOption } from "./outline-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,17 @@ export default async function OutlineNewPage({
   // so retries / re-generations don't make the user re-type everything.
   // (The submit still overwrites — Q1=A: one outline per project.)
   const existing = await getOutline(id);
+
+  // Load the editor's own tone library entries (active + analysed only).
+  // Per Q-Tone-4 (a), admin does NOT see the dropdown — admin doesn't
+  // own tones and shouldn't accidentally tag outlines with someone else's
+  // style. Server side gates this on role.
+  const availableTones: ToneOption[] =
+    profile.role === "admin"
+      ? []
+      : (await listTonesByOwner(profile.uid, { status: "active" }))
+          .filter((t) => t.systemPrompt !== null && t.systemPrompt.length > 0)
+          .map((t) => ({ id: t.id, name: t.name }));
 
   return (
     <>
@@ -75,6 +87,7 @@ export default async function OutlineNewPage({
 
         <OutlineForm
           projectId={id}
+          availableTones={availableTones}
           defaults={{
             bookTitle:
               existing?.formInput.bookTitle || access.project.title || "",
@@ -88,6 +101,14 @@ export default async function OutlineNewPage({
               existing?.formInput.bookHighlights || DEFAULT_HIGHLIGHTS,
             targetAudience:
               existing?.formInput.targetAudience || DEFAULT_AUDIENCE,
+            // Pre-fill toneId only if it still resolves to an
+            // available tone (user may have archived/deleted it).
+            toneId:
+              existing?.formInput.toneId &&
+              availableTones.some((t) => t.id === existing.formInput.toneId)
+                ? existing.formInput.toneId
+                : null,
+            toneName: null,
           }}
         />
       </main>

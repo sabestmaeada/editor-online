@@ -106,9 +106,15 @@ export type GenerateOutlineResult = {
  * because Q-confirm-1 settled on a Webhook node (not formTrigger) — so
  * we can serialise our internal type 1:1 without translating to the
  * Thai field labels of the old formTrigger.
+ *
+ * When `extras.toneSystemPrompt` is provided, it's sent as a top-level
+ * `toneSystemPrompt` field in the body. n8n side can read it and
+ * prepend it to the LLM system prompt; if n8n ignores the field, the
+ * call still works (just without the tone influence).
  */
 export async function generateOutline(
   input: OutlineFormInput,
+  extras: { toneSystemPrompt?: string | null } = {},
 ): Promise<GenerateOutlineResult> {
   const url = process.env.N8N_OUTLINE_WEBHOOK_URL;
   const secret = process.env.N8N_OUTLINE_SECRET;
@@ -125,6 +131,22 @@ export async function generateOutline(
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+  // Build payload. We intentionally only forward toneSystemPrompt to
+  // n8n — NOT toneId or toneName (n8n doesn't need them and we'd rather
+  // not expose internal IDs to the workflow).
+  const payload: Record<string, unknown> = {
+    requestId,
+    bookTitle: input.bookTitle,
+    chapterCount: input.chapterCount,
+    pageCount: input.pageCount,
+    bookPurpose: input.bookPurpose,
+    bookHighlights: input.bookHighlights,
+    targetAudience: input.targetAudience,
+  };
+  if (extras.toneSystemPrompt && extras.toneSystemPrompt.length > 0) {
+    payload.toneSystemPrompt = extras.toneSystemPrompt;
+  }
+
   let res: Response;
   try {
     res = await fetch(url, {
@@ -134,7 +156,7 @@ export async function generateOutline(
         [SECRET_HEADER]: secret,
         "X-Request-Id": requestId,
       },
-      body: JSON.stringify({ requestId, ...input }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (e) {

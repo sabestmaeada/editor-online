@@ -345,6 +345,13 @@ export type OutlineFormInput = {
   bookPurpose: string;
   bookHighlights: string;
   targetAudience: string;
+  /** Optional tone library reference. When set, the server resolves it
+   *  to a `systemPrompt` (cached on the tone doc) and forwards that to
+   *  n8n so the LLM picks up the editor's writing-style. */
+  toneId?: string | null;
+  /** Snapshot of the tone name at submit time — useful for audit / UI
+   *  even if the tone is later renamed or deleted. */
+  toneName?: string | null;
 };
 
 export type Outline = {

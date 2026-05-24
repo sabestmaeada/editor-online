@@ -5,9 +5,21 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import type { OutlineFormInput } from "@/lib/types";
 
+/** Public shape for the tone dropdown — server only sends id+name to
+ *  the client (full tone doc isn't needed and would leak more than we
+ *  want into the bundle). */
+export type ToneOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   projectId: string;
   defaults: OutlineFormInput;
+  /** Tones the current editor can pick from. Empty array hides the
+   *  dropdown and shows a "create your first tone" CTA instead.
+   *  Admins always get an empty array (Q-Tone-4 = a). */
+  availableTones: ToneOption[];
 };
 
 type SubmitState =
@@ -27,10 +39,11 @@ type SubmitState =
  * After success we redirect to the outline editor page where the user
  * sees the generated tree and can drag / promote / demote nodes.
  */
-export function OutlineForm({ projectId, defaults }: Props) {
+export function OutlineForm({ projectId, defaults, availableTones }: Props) {
   const router = useRouter();
   const [data, setData] = useState<OutlineFormInput>(defaults);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
+  const hasTones = availableTones.length > 0;
 
   function update<K extends keyof OutlineFormInput>(
     key: K,
@@ -175,6 +188,50 @@ export function OutlineForm({ projectId, defaults }: Props) {
           required
         />
       </Field>
+
+      {hasTones ? (
+        <Field
+          label="สำนวนการเขียน"
+          hint="เลือกสำนวนจากคลังของคุณ — ระบบจะใช้สไตล์นั้นในการสร้างเค้าโครง (optional)"
+        >
+          <select
+            value={data.toneId ?? ""}
+            onChange={(e) => {
+              const id = e.target.value || null;
+              const name = id
+                ? (availableTones.find((t) => t.id === id)?.name ?? null)
+                : null;
+              setData((d) => ({ ...d, toneId: id, toneName: name }));
+            }}
+            disabled={submitting}
+            className={inputClass}
+          >
+            <option value="">— ไม่ใช้สำนวน —</option>
+            {availableTones.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : (
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            สำนวนการเขียน
+          </p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            คุณยังไม่มีสำนวนพร้อมใช้ — สร้างสำนวนแล้ว upload ตัวอย่างก่อน
+            เพื่อให้ AI เลียนสไตล์ของคุณตอนสร้างเค้าโครง
+          </p>
+          <Link
+            href="/tones/new"
+            target="_blank"
+            className="mt-3 inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            + สร้างสำนวนใหม่
+          </Link>
+        </div>
+      )}
 
       {state.kind === "error" && (
         <div
