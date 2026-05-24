@@ -6,6 +6,7 @@ import {
   hardDeleteUser,
 } from "@/lib/firebase/admin-users";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import { countTonesByOwner } from "@/lib/firebase/tones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,21 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       {
         error: `User owns ${ownedCount} project(s) — reassign ownership before deleting`,
         ownedProjects: ownedCount,
+      },
+      { status: 409 },
+    );
+  }
+
+  // Block if user owns tones — admin must transfer or archive first
+  // (Phase 1.5 / Q-Tone-2 = D). Tones contain LLM-analysed style
+  // profiles + Qdrant points that are expensive to recreate; we'd
+  // rather force an explicit decision than orphan the data.
+  const ownedTones = await countTonesByOwner(uid);
+  if (ownedTones > 0) {
+    return NextResponse.json(
+      {
+        error: `User owns ${ownedTones} tone(s) — transfer or archive at /tones?user=${uid} before deleting`,
+        ownedTones,
       },
       { status: 409 },
     );

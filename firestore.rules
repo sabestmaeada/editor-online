@@ -152,5 +152,19 @@ service cloud.firestore {
     match /projects/{projectId}/outline/{outlineId} {
       allow read, write: if false;
     }
+
+    // ── Tone library (Phase 1.5) ─────────────────────────
+    // Per-editor writing-style samples + analysed style profile.
+    // Owner-scoped permission (owner OR admin) is enforced server-side
+    // in /api/tones/* — Firestore rules just block direct client
+    // access because the membership logic (ownerUid + admin role
+    // check across separate users collection) doesn't fit cleanly in
+    // rules syntax and we don't gain much by duplicating it.
+    match /tones/{toneId} {
+      allow read, write: if false;
+    }
+    match /tones/{toneId}/samples/{sampleId} {
+      allow read, write: if false;
+    }
   }
 }

@@ -138,6 +138,14 @@ export const ALL_AUTH_EVENT_TYPES = [
   "content-generate-start",
   "content-generate-success",
   "content-generate-failed",
+  // Tone library (Phase 1.5 — writing-style samples + analyzed profiles)
+  "tone-create",
+  "tone-edit",
+  "tone-archive",
+  "tone-delete",
+  "tone-transfer-ownership",
+  "tone-sample-add",
+  "tone-sample-delete",
 ] as const;
 
 export type AuthEventType = (typeof ALL_AUTH_EVENT_TYPES)[number];
@@ -212,6 +220,14 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "content-generate-start": 730,
   "content-generate-success": 730,
   "content-generate-failed": 730,
+  // Tone library — cost/accountability trail (LLM embeddings cost money)
+  "tone-create": 730,
+  "tone-edit": 90,
+  "tone-archive": 730,
+  "tone-delete": 730,
+  "tone-transfer-ownership": 730,
+  "tone-sample-add": 730,
+  "tone-sample-delete": 730,
 };
 
 // ─── Projects ──────────────────────────────────────────────
@@ -366,4 +382,81 @@ export type Outline = {
     outputFileKey?: string;
     error?: string;
   };
+};
+
+// ─── Tone library (Phase 1.5) ───────────────────────────────
+// Per-editor writing-style samples → embedded in Qdrant + analysed by
+// LLM → produces a "system prompt" and "style profile" used to seed
+// Phase 1 outline generation and Phase 2 content generation so output
+// matches that editor's voice.
+
+export const TONE_STATUSES = ["active", "archived"] as const;
+export type ToneStatus = (typeof TONE_STATUSES)[number];
+
+export const SAMPLE_SOURCES = ["paste", "file"] as const;
+export type SampleSource = (typeof SAMPLE_SOURCES)[number];
+
+/** Analysed voice profile — populated by n8n after each sample embed.
+ *  All fields are LLM-generated strings; we keep the shape loose so a
+ *  future workflow can return richer values without a migration. */
+export type StyleProfile = {
+  /** Overall mood/register, e.g. "casual-friendly" / "academic-clear". */
+  tone: string;
+  /** ที่เรียกผู้อ่าน — "คุณ" / "เธอ" / "ผู้อ่าน" / "เรา" / "none". */
+  reader_address: string;
+  /** Point of view — "second-person" / "first-person" / "mixed" / ... */
+  pov: string;
+  /** Vocabulary level descriptor. */
+  vocabulary_level: string;
+  /** Sentence rhythm — "short-punchy" / "medium-flowing" / etc. */
+  sentence_style: string;
+  /** How often examples appear. */
+  uses_examples: string;
+  /** How often metaphors appear. */
+  uses_metaphors: string;
+  /** Humour register. */
+  humor_level: string;
+  /** Repeated phrases / signature words — the editor's voice fingerprint. */
+  signature_phrases: string[];
+};
+
+export type ToneStyle = {
+  id: string;
+  /** Editor who owns this tone — used for RAG scoping in Qdrant. */
+  ownerUid: string;
+  ownerEmail: string; // denormalised for list display
+  name: string;
+  description: string;
+  /** Qdrant collection — currently always "writing_styles". */
+  qdrantCollection: string;
+  /** Convenience counters maintained server-side; saves listing samples. */
+  sampleCount: number;
+  totalChunks: number;
+  status: ToneStatus;
+  /** Set by /tone-add-sample + /tone-delete-sample responses. null when
+   *  the tone has no samples (or last sample was just deleted). */
+  styleProfile: StyleProfile | null;
+  systemPrompt: string | null;
+  lastAnalyzedAt: Timestamp | null;
+  /** May differ from ownerUid when admin transfers ownership. */
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type ToneSample = {
+  id: string;
+  /** Full sample text (≤ 50KB per Q-Tone-7). */
+  text: string;
+  /** First ~200 chars for list rendering without loading full text. */
+  textPreview: string;
+  textLength: number;
+  /** Qdrant point IDs created from this sample (may be multiple chunks). */
+  qdrantPointIds: string[];
+  source: SampleSource;
+  /** Original filename if uploaded; null for paste. */
+  fileName: string | null;
+  /** May be admin acting on behalf of the editor. */
+  uploadedBy: string;
+  uploadedAt: Timestamp;
 };
