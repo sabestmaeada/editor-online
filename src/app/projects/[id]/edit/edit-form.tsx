@@ -14,6 +14,7 @@ type FormValues = {
   author: string;
   edition: string;
   status: ProjectStatus;
+  preface: string;
 };
 
 type Props = {
@@ -41,6 +42,7 @@ export function EditProjectForm({ projectId, defaultValues }: Props) {
       author: String(fd.get("author") ?? "").trim() || null,
       edition: String(fd.get("edition") ?? "").trim() || null,
       status: fd.get("status") as ProjectStatus,
+      preface: String(fd.get("preface") ?? "").trim() || null,
     };
 
     if (!payload.title) {
@@ -166,6 +168,29 @@ export function EditProjectForm({ projectId, defaultValues }: Props) {
           defaultValue={defaultValues.description}
           disabled={isPending}
           className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="preface"
+          className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+        >
+          คำนำ (Preface)
+        </label>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          คำนำของหนังสือ (Markdown) — ถ้ามีจะแสดงก่อนสารบัญตอนรวมเล่ม.
+          ไม่ใส่ก็ได้
+        </p>
+        <textarea
+          id="preface"
+          name="preface"
+          rows={8}
+          defaultValue={defaultValues.preface}
+          disabled={isPending}
+          maxLength={20000}
+          placeholder="ในยุคดิจิทัลที่เทคโนโลยีหมุนเปลี่ยนไปอย่างรวดเร็ว..."
+          className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-mono leading-relaxed outline-none focus:border-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100"
         />
       </div>
 

@@ -59,6 +59,41 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
   const [deleting, setDeleting] = useState<
     "idle" | "confirming" | "submitting" | { error: string }
   >("idle");
+  const [assembling, setAssembling] = useState<
+    "idle" | "submitting" | { done: number; bytes: number } | { error: string }
+  >("idle");
+
+  async function handleAssemble() {
+    setAssembling("submitting");
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/content/jobs/${job.id}/assemble`,
+        { method: "POST" },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        chapters?: number;
+        totalSize?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        setAssembling({
+          error:
+            data.error ?? `เกิดข้อผิดพลาด (HTTP ${res.status})`,
+        });
+        return;
+      }
+      setAssembling({
+        done: data.chapters ?? 0,
+        bytes: data.totalSize ?? 0,
+      });
+      // Refresh so project page picks up updated fileCount/totalSize.
+      router.refresh();
+    } catch (err) {
+      setAssembling({
+        error: err instanceof Error ? err.message : "เครือข่ายมีปัญหา",
+      });
+    }
+  }
 
   async function handleDelete() {
     setDeleting("submitting");
@@ -252,6 +287,19 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
           >
             🗑 ลบเนื้อหา
           </button>
+          {(job.status === "done" || job.status === "partial") &&
+            job.completedChapters > 0 && (
+              <button
+                type="button"
+                onClick={handleAssemble}
+                disabled={assembling === "submitting"}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                {assembling === "submitting"
+                  ? "กำลังรวม…"
+                  : "📚 รวมเป็นเล่ม"}
+              </button>
+            )}
           {(job.status === "done" || job.status === "partial") && (
             <Link
               href={`/projects/${projectId}/content/new`}
@@ -262,6 +310,30 @@ export function JobStatusView({ projectId, initialSnapshot }: Props) {
           )}
         </div>
       </section>
+
+      {typeof assembling === "object" && "done" in assembling && (
+        <div
+          role="status"
+          className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+        >
+          ✅ รวมเป็นเล่มเรียบร้อย — {assembling.done} บท ·{" "}
+          {(assembling.bytes / 1024).toFixed(1)} KB ·{" "}
+          <Link
+            href={`/projects/${projectId}`}
+            className="font-medium underline"
+          >
+            ไปดาวน์โหลด ZIP →
+          </Link>
+        </div>
+      )}
+      {typeof assembling === "object" && "error" in assembling && (
+        <div
+          role="alert"
+          className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300"
+        >
+          ❌ {assembling.error}
+        </div>
+      )}
 
       {(deleting === "confirming" ||
         deleting === "submitting" ||

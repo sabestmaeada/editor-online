@@ -301,6 +301,9 @@ export type Project = {
   coverKey?: string | null;          // R2 object key, e.g. "projects/abc/meta/cover.jpg"
   coverContentType?: string | null;  // MIME type for response Content-Type
   coverUpdatedAt?: Timestamp | null; // for cache busting in <img src=...?v=>
+  // Preface / คำนำ (Markdown). Used by the book assembler (Phase 2)
+  // to render a preface section before the TOC. Optional.
+  preface?: string | null;
 };
 
 export type ProjectMember = {

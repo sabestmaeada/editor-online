@@ -72,6 +72,7 @@ type UpdatePayload = {
   author?: unknown;
   edition?: unknown;
   status?: unknown;
+  preface?: unknown;
 };
 
 function asStr(v: unknown): string | null | undefined {
@@ -111,6 +112,23 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   for (const f of fields) {
     const v = asStr(body[f]);
     if (v !== undefined) update[f] = v;
+  }
+
+  // preface can be longer — bypass asStr trim/empty handling but
+  // still allow null (to clear). Cap at 20000 chars to avoid abuse.
+  if (body.preface !== undefined) {
+    if (body.preface === null) {
+      update.preface = null;
+    } else if (typeof body.preface === "string") {
+      const trimmed = body.preface.trim();
+      if (trimmed.length > 20000) {
+        return NextResponse.json(
+          { error: "preface must be ≤ 20000 chars" },
+          { status: 400 },
+        );
+      }
+      update.preface = trimmed.length > 0 ? trimmed : null;
+    }
   }
 
   if (body.pages !== undefined) {

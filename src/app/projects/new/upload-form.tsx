@@ -7,10 +7,13 @@ import {
   type UploadStatus,
 } from "@/lib/upload-via-presigned";
 
+type CreateMode = "empty" | "zip";
+
 export function ProjectUploadForm() {
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>({ stage: "idle" });
   const [zipFile, setZipFile] = useState<File | null>(null);
+  const [mode, setMode] = useState<CreateMode>("empty");
 
   function handleZipChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
@@ -20,13 +23,17 @@ export function ProjectUploadForm() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
-    if (!zipFile) {
-      setStatus({ stage: "error", message: "กรุณาเลือกไฟล์ ZIP" });
-      return;
-    }
-    if (!/\.zip$/i.test(zipFile.name)) {
-      setStatus({ stage: "error", message: "ไฟล์ต้องเป็น .zip" });
-      return;
+
+    // ZIP file is only required when mode === "zip"
+    if (mode === "zip") {
+      if (!zipFile) {
+        setStatus({ stage: "error", message: "กรุณาเลือกไฟล์ ZIP" });
+        return;
+      }
+      if (!/\.zip$/i.test(zipFile.name)) {
+        setStatus({ stage: "error", message: "ไฟล์ต้องเป็น .zip" });
+        return;
+      }
     }
 
     const fd = new FormData(form);
@@ -42,19 +49,27 @@ export function ProjectUploadForm() {
     };
 
     try {
-      // Step 1+2: presigned URL → direct PUT to R2
-      const { uploadKey } = await uploadFileToR2({
-        file: zipFile,
-        purpose: "create",
-        onStatus: setStatus,
-      });
+      let uploadKey: string | undefined;
 
-      // Step 3: tell server to process
+      // Mode "zip" — upload ZIP first, then create project with uploadKey
+      if (mode === "zip" && zipFile) {
+        const result = await uploadFileToR2({
+          file: zipFile,
+          purpose: "create",
+          onStatus: setStatus,
+        });
+        uploadKey = result.uploadKey;
+      }
+
+      // Tell server to create (with or without uploadKey)
       setStatus({ stage: "processing" });
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metadata, uploadKey }),
+        body: JSON.stringify({
+          metadata,
+          ...(uploadKey ? { uploadKey } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         project?: { id?: string };
@@ -111,29 +126,77 @@ export function ProjectUploadForm() {
         />
       </div>
 
-      {/* ZIP file */}
-      <div>
-        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          HTML Folder (zipped) *
+      {/* Create mode selector */}
+      <fieldset className="space-y-2">
+        <legend className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          วิธีสร้างโปรเจกต์
+        </legend>
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-zinc-200 bg-white p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+          <input
+            type="radio"
+            name="createMode"
+            value="empty"
+            checked={mode === "empty"}
+            onChange={() => setMode("empty")}
+            disabled={isBusy}
+            className="mt-0.5"
+          />
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              สร้างโปรเจกต์เปล่า (แนะนำ)
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              ใช้ AI สร้างเนื้อหาเอง (เค้าโครง → เนื้อหา) ไม่ต้อง upload อะไร
+            </div>
+          </div>
         </label>
-        <p className="mt-1 text-xs text-zinc-500">
-          บีบอัด folder ของหนังสือเป็น .zip ก่อน upload (ต้องมี HTML อย่างน้อย 1 ไฟล์)
-        </p>
-        <input
-          type="file"
-          accept=".zip,application/zip,application/x-zip-compressed"
-          onChange={handleZipChange}
-          required
-          disabled={isBusy}
-          className="mt-2 block w-full cursor-pointer rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:file:bg-zinc-800 dark:hover:bg-zinc-800"
-        />
-        {zipFile && (
-          <p className="mt-2 text-xs text-zinc-500">
-            Selected: <span className="font-medium">{zipFile.name}</span> (
-            {formatBytes(zipFile.size)})
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-zinc-200 bg-white p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+          <input
+            type="radio"
+            name="createMode"
+            value="zip"
+            checked={mode === "zip"}
+            onChange={() => setMode("zip")}
+            disabled={isBusy}
+            className="mt-0.5"
+          />
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              อัปโหลด ZIP ของไฟล์ HTML
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              สำหรับ import หนังสือที่มี HTML อยู่แล้ว
+            </div>
+          </div>
+        </label>
+      </fieldset>
+
+      {/* ZIP file — shown only when mode is "zip" */}
+      {mode === "zip" && (
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            HTML Folder (zipped) *
+          </label>
+          <p className="mt-1 text-xs text-zinc-500">
+            บีบอัด folder ของหนังสือเป็น .zip ก่อน upload (ต้องมี HTML
+            อย่างน้อย 1 ไฟล์)
           </p>
-        )}
-      </div>
+          <input
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onChange={handleZipChange}
+            required
+            disabled={isBusy}
+            className="mt-2 block w-full cursor-pointer rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:file:bg-zinc-800 dark:hover:bg-zinc-800"
+          />
+          {zipFile && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Selected: <span className="font-medium">{zipFile.name}</span> (
+              {formatBytes(zipFile.size)})
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Status messages */}
       <StatusBanner status={status} />
@@ -145,7 +208,11 @@ export function ProjectUploadForm() {
           disabled={isBusy}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
-          {isBusy ? "Working..." : "Create & Upload"}
+          {isBusy
+            ? "Working..."
+            : mode === "empty"
+              ? "สร้างโปรเจกต์"
+              : "Create & Upload"}
         </button>
       </div>
     </form>

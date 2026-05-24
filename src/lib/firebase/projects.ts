@@ -31,6 +31,7 @@ export type UpdateProjectInput = Partial<{
   totalSize: number;
   coverKey: string | null;
   coverContentType: string | null;
+  preface: string | null;
 }>;
 
 function newProjectId(): string {

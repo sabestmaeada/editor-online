@@ -73,6 +73,7 @@ export default async function EditProjectPage({
               author: p.author ?? "",
               edition: p.edition ?? "",
               status: p.status,
+              preface: p.preface ?? "",
             }}
           />
         </div>

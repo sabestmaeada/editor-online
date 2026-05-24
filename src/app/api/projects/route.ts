@@ -78,7 +78,11 @@ export async function POST(req: NextRequest) {
   const metadata = body.metadata ?? {};
   const uploadKey = typeof body.uploadKey === "string" ? body.uploadKey : "";
 
-  if (!isValidStagingKey(uploadKey)) {
+  // ZIP upload is OPTIONAL in v2 — Phase 2 generates HTML via AI so
+  // most users won't need to import legacy files. Empty uploadKey →
+  // create project + R2 prefix only.
+  const hasUpload = uploadKey.length > 0;
+  if (hasUpload && !isValidStagingKey(uploadKey)) {
     return NextResponse.json(
       { error: "Invalid uploadKey — must be from /api/projects/upload-url" },
       { status: 400 },
@@ -114,23 +118,26 @@ export async function POST(req: NextRequest) {
     addedBy: profile.uid,
   });
 
-  // Process the staged upload (download from R2 → unzip → upload to source/)
-  let uploadResult;
-  try {
-    uploadResult = await processStagedUpload(project.id, uploadKey);
-  } catch (err) {
-    // Roll back: delete project doc + any R2 objects already written
-    await Promise.allSettled([
-      deleteProjectFiles(project.id),
-      deleteProjectDoc(project.id),
-    ]);
-    const msg = err instanceof Error ? err.message : "Upload failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+  // Process the staged upload (download from R2 → unzip → upload to
+  // source/). Skipped when no uploadKey was provided.
+  let uploadResult: { fileCount: number; totalSize: number } | null = null;
+  if (hasUpload) {
+    try {
+      uploadResult = await processStagedUpload(project.id, uploadKey);
+    } catch (err) {
+      // Roll back: delete project doc + any R2 objects already written
+      await Promise.allSettled([
+        deleteProjectFiles(project.id),
+        deleteProjectDoc(project.id),
+      ]);
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
   }
 
   await updateProject(project.id, {
-    fileCount: uploadResult.fileCount,
-    totalSize: uploadResult.totalSize,
+    fileCount: uploadResult?.fileCount ?? 0,
+    totalSize: uploadResult?.totalSize ?? 0,
     status: "draft",
   });
 
@@ -148,8 +155,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     project: {
       ...project,
-      fileCount: uploadResult.fileCount,
-      totalSize: uploadResult.totalSize,
+      fileCount: uploadResult?.fileCount ?? 0,
+      totalSize: uploadResult?.totalSize ?? 0,
     },
     upload: uploadResult,
   });
