@@ -49,6 +49,7 @@ export function ContentSubmitForm({
 }: Props) {
   const router = useRouter();
   const [customInstructions, setCustomInstructions] = useState("");
+  const [generateImages, setGenerateImages] = useState(false);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [showDefaults, setShowDefaults] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -94,6 +95,7 @@ export function ContentSubmitForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customInstructions: customInstructions.trim() || null,
+            generateImages,
           }),
         },
       );
@@ -213,6 +215,30 @@ export function ContentSubmitForm({
         <div className="mt-1 text-right text-xs text-zinc-400">
           {customInstructions.length} / {MAX_CUSTOM}
         </div>
+      </section>
+
+      {/* ── Image generation option ── */}
+      <section>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={generateImages}
+            onChange={(e) => setGenerateImages(e.target.checked)}
+            disabled={submitting}
+            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+          />
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              สร้างภาพประกอบด้วย AI
+            </div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              เปิด AI generate ภาพประกอบสำหรับ {"[[IMAGE: ...]]"} placeholder
+              แต่ละจุดในเนื้อหา — ใช้เวลานานขึ้น + มีค่าใช้จ่ายเพิ่ม
+              <br />
+              ค่าเริ่มต้น: <strong>ไม่สร้าง</strong> — เพื่อความเร็วและประหยัด
+            </div>
+          </div>
+        </label>
       </section>
 
       {/* ── Preview composed prompt (collapsible) ── */}

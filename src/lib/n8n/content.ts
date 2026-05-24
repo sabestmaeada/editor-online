@@ -52,6 +52,10 @@ export type StartContentJobInput = {
   ownerUid: string;
   toneId: string | null;
   chapters: FlatChapter[];
+  /** When true, n8n side runs the image-gen sub-pipeline for each
+   *  [[IMAGE: ...]] placeholder. Default false to keep generation
+   *  fast + cheap. */
+  generateImages: boolean;
 };
 
 export type StartContentJobResult = {
@@ -99,6 +103,7 @@ export async function startContentJob(
     ownerUid: input.ownerUid,
     toneId: input.toneId,
     chapters: input.chapters,
+    generateImages: input.generateImages,
   });
 
   let res: Response;

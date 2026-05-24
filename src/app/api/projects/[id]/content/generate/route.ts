@@ -69,10 +69,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   if (limited) return limited;
 
   // Parse body — outlineId is optional (we ignore it for now since the
-  // outline is 1-per-project under "current"); customInstructions optional.
-  let body: { customInstructions?: unknown } = {};
+  // outline is 1-per-project under "current"); customInstructions optional;
+  // generateImages defaults to false.
+  let body: {
+    customInstructions?: unknown;
+    generateImages?: unknown;
+  } = {};
   try {
-    body = (await req.json()) as { customInstructions?: unknown };
+    body = (await req.json()) as typeof body;
   } catch {
     // Empty body is fine — treat as no custom instructions.
     body = {};
@@ -90,6 +94,10 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     }
     if (trimmed.length > 0) customInstructions = trimmed;
   }
+  // Image generation toggle — defaults to false (off) to keep gen
+  // fast + cheap. n8n side reads this flag and conditionally runs the
+  // image-gen sub-pipeline.
+  const generateImages = body.generateImages === true;
 
   // Load outline — must exist + be in a valid state.
   const outline = await getOutline(projectId);
@@ -229,6 +237,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       ownerUid: outline.createdBy,
       toneId,
       chapters,
+      generateImages,
     });
   } catch (e) {
     // n8n failed upfront — mark job + audit. Outline stays "ready"
