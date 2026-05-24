@@ -253,7 +253,61 @@ function sanitizeWholeArticleHtml(html: string): string {
   out = wrapLooseTextAfterHeading(out);
   out = cleanCodeBlockWhitespace(out);
   out = removeEmptyParagraphs(out);
+  out = mergeAdjacentTables(out);
   out = normalizeSpacing(out);
+  return out;
+}
+
+/**
+ * Stitch together tables that the Markdown parser split in two.
+ *
+ * Pattern seen in real AI output:
+ *
+ *   <div class="table-wrap"><table>
+ *     <thead><tr><th>col1</th><th>col2</th>...</tr></thead>
+ *     <tbody></tbody>            ← empty body
+ *   </table></div>
+ *   <div class="table-wrap"><table>
+ *     <thead><tr><th>data1</th><th>data2</th>...</tr></thead>  ← first data row, wrong tag
+ *     <tbody>
+ *       <tr><td>...</td>...</tr>
+ *       ...
+ *     </tbody>
+ *   </table></div>
+ *
+ * Cause: the n8n Markdown table parser treats the "first row in a
+ * row-run" as a header — so when the LLM emits the header rows + the
+ * separator (`|---|`) on one block and the data rows in another block
+ * (separated by a blank line), the parser builds two tables.
+ *
+ * Fix: detect adjacent table-wraps where the first has an empty tbody,
+ * merge them. Keep first thead. Demote second's "thead row" to a data
+ * row + prepend to its tbody.
+ */
+function mergeAdjacentTables(html: string): string {
+  // Optional whitespace between the two wrappers, including <p>... if
+  // the unwrap pass left a paragraph in between. Loop because there
+  // could be 3+ tables in a row.
+  let out = html;
+  for (let i = 0; i < 10; i++) {
+    const before = out;
+    out = out.replace(
+      /<div class="table-wrap"><table>(<thead>[\s\S]*?<\/thead>)<tbody>\s*<\/tbody><\/table><\/div>\s*(?:<p>\s*<\/p>\s*)*<div class="table-wrap"><table><thead><tr>([\s\S]*?)<\/tr><\/thead>(<tbody>[\s\S]*?<\/tbody>)<\/table><\/div>/g,
+      (_m, firstThead: string, secondHeaderRow: string, secondBody: string) => {
+        // Demote `<th>` → `<td>` so the row joins the data section.
+        const dataCells = secondHeaderRow
+          .replace(/<th(\s[^>]*)?>/gi, "<td$1>")
+          .replace(/<\/th>/gi, "</td>");
+        const promotedRow = `<tr>${dataCells}</tr>`;
+        const mergedBody = secondBody.replace(
+          /^<tbody>/,
+          `<tbody>${promotedRow}`,
+        );
+        return `<div class="table-wrap"><table>${firstThead}${mergedBody}</table></div>`;
+      },
+    );
+    if (out === before) break;
+  }
   return out;
 }
 
