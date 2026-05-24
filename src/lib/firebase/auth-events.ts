@@ -44,6 +44,10 @@ export type LogAuthEventInput = {
   inviteToken?: string;
   assignedRole?: UserRole;
   rejectReason?: string;
+  // Content generation extras (Phase 2)
+  jobId?: string;
+  chapterIndex?: number;
+  totalChapters?: number;
 };
 
 export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
@@ -95,6 +99,13 @@ export async function logAuthEvent(input: LogAuthEventInput): Promise<void> {
       : {}),
     ...(input.rejectReason !== undefined
       ? { rejectReason: input.rejectReason }
+      : {}),
+    ...(input.jobId !== undefined ? { jobId: input.jobId } : {}),
+    ...(input.chapterIndex !== undefined
+      ? { chapterIndex: input.chapterIndex }
+      : {}),
+    ...(input.totalChapters !== undefined
+      ? { totalChapters: input.totalChapters }
       : {}),
     timestamp: now,
     expiresAt,

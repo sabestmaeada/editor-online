@@ -166,5 +166,15 @@ service cloud.firestore {
     match /tones/{toneId}/samples/{sampleId} {
       allow read, write: if false;
     }
+
+    // ── Content generation jobs (Phase 2) ────────────────
+    // Top-level collection. One doc per "generate content" submission;
+    // n8n calls back per chapter to update progress (see
+    // CONTENT-GENERATION-DESIGN.md). All reads + writes go through
+    // /api/projects/[id]/content/* and /api/content/callback — clients
+    // never talk to Firestore directly for content jobs.
+    match /contentJobs/{jobId} {
+      allow read, write: if false;
+    }
   }
 }

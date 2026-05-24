@@ -29,3 +29,4 @@ export const INVITES_COLLECTION = "invites";
 export const PASSWORD_RESETS_COLLECTION = "passwordResets";
 export const TONES_COLLECTION = "tones";
 export const TONE_SAMPLES_SUB = "samples"; // sub-collection under tones/{id}
+export const CONTENT_JOBS_COLLECTION = "contentJobs";

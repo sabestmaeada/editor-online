@@ -131,6 +131,28 @@ export async function deleteOutline(projectId: string): Promise<void> {
   await outlineRef(projectId).delete();
 }
 
+/** Phase 2 entry: lock outline to `finalized` + leave a breadcrumb to
+ *  the contentJob. Caller is responsible for creating the ContentJob
+ *  doc first so the jobId is real.
+ *
+ *  Once finalized, the outline is read-only in the editor (see
+ *  `updateOutlineNodes`, which rejects writes when status is
+ *  "finalized"). A future "unlock" endpoint would need to revert it. */
+export async function finalizeOutlineWithJob(
+  projectId: string,
+  jobId: string,
+): Promise<void> {
+  const ref = outlineRef(projectId);
+  await ref.update({
+    status: "finalized",
+    updatedAt: Timestamp.now(),
+    contentJob: {
+      jobId,
+      startedAt: Timestamp.now(),
+    },
+  });
+}
+
 /* ─────────────────── helpers ─────────────────── */
 
 function docToOutline(
