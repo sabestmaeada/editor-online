@@ -55,38 +55,40 @@ export default async function ToneDetailPage({
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-10">
-        <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
-            <Link href="/tones" className="hover:underline">
-              สำนวนการเขียน
-            </Link>
-            <span>/</span>
-            <span className="text-zinc-900 dark:text-zinc-100">
-              {access.tone.name}
-            </span>
-            {access.tone.status === "archived" && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                archived
+        <div className="mx-auto w-full max-w-5xl">
+          <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
+            <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <Link href="/tones" className="hover:underline">
+                สำนวนการเขียน
+              </Link>
+              <span>/</span>
+              <span className="text-zinc-900 dark:text-zinc-100">
+                {access.tone.name}
               </span>
+              {access.tone.status === "archived" && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                  archived
+                </span>
+              )}
+            </div>
+            {access.isAdmin && !access.isOwner && (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                ⚠ คุณกำลังดู tone ของ {access.tone.ownerEmail} (admin)
+              </p>
             )}
-          </div>
-          {access.isAdmin && !access.isOwner && (
-            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-              ⚠ คุณกำลังดู tone ของ {access.tone.ownerEmail} (admin)
-            </p>
-          )}
-        </header>
+          </header>
 
-        <ToneDetailView
-          tone={toneJson}
-          samples={samplesJson}
-          permissions={{
-            canEdit: access.canEdit,
-            canAddSample: access.canAddSample,
-            canDelete: access.canDelete,
-            canTransfer: access.canTransfer,
-          }}
-        />
+          <ToneDetailView
+            tone={toneJson}
+            samples={samplesJson}
+            permissions={{
+              canEdit: access.canEdit,
+              canAddSample: access.canAddSample,
+              canDelete: access.canDelete,
+              canTransfer: access.canTransfer,
+            }}
+          />
+        </div>
       </main>
     </>
   );
