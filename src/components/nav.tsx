@@ -14,7 +14,7 @@ const TOOLS_ROLES = new Set(["admin", "editor"]);
 
 const TOOLS_ITEMS: NavDropdownItem[] = [
   { href: "/tools/credits", label: "Create Credit Page" },
-  { href: "/tones", label: "สำนวนการเขียน" },
+  { href: "/tones", label: "Tones" },
   { href: "/templates", label: "Prompt templates" },
 ];
 
