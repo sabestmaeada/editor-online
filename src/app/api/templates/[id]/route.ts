@@ -6,6 +6,7 @@ import {
   updatePromptTemplate,
 } from "@/lib/firebase/prompt-templates";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 import {
   PROMPT_TEMPLATE_CATEGORIES,
   PROMPT_TEMPLATE_SCOPES,
@@ -98,7 +99,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         { status: 400 },
       );
     }
-    const trimmed = label.trim();
+    const v = validateUserText(label);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.reason, code: v.code, field: "label" },
+        { status: 400 },
+      );
+    }
+    const trimmed = v.text.trim();
     if (!trimmed || trimmed.length > MAX_LABEL) {
       return NextResponse.json(
         { error: `label must be 1-${MAX_LABEL} chars` },
@@ -125,7 +133,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         { status: 400 },
       );
     }
-    const trimmed = snippet.trim();
+    const v = validateUserText(snippet);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.reason, code: v.code, field: "snippet" },
+        { status: 400 },
+      );
+    }
+    const trimmed = v.text.trim();
     if (!trimmed || trimmed.length > MAX_SNIPPET) {
       return NextResponse.json(
         { error: `snippet must be 1-${MAX_SNIPPET} chars` },

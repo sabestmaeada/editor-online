@@ -8,6 +8,7 @@ import {
 } from "@/lib/firebase/tones";
 import { deleteSample as deleteSampleN8n } from "@/lib/n8n/tones";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,7 +83,14 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   const patch: Parameters<typeof updateTone>[1] = {};
 
   if (name !== undefined) {
-    const s = typeof name === "string" ? name.trim() : "";
+    const v = validateUserText(typeof name === "string" ? name : "");
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.reason, code: v.code, field: "name" },
+        { status: 400 },
+      );
+    }
+    const s = v.text.trim();
     if (!s || s.length > MAX_NAME) {
       return NextResponse.json(
         { error: `name must be 1-${MAX_NAME} chars` },
@@ -92,7 +100,16 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     patch.name = s;
   }
   if (description !== undefined) {
-    const s = typeof description === "string" ? description.trim() : "";
+    const v = validateUserText(
+      typeof description === "string" ? description : "",
+    );
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.reason, code: v.code, field: "description" },
+        { status: 400 },
+      );
+    }
+    const s = v.text.trim();
     if (s.length > MAX_DESCRIPTION) {
       return NextResponse.json(
         { error: `description must be ≤ ${MAX_DESCRIPTION} chars` },

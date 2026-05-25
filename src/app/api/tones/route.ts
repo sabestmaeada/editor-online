@@ -12,6 +12,7 @@ import {
 } from "@/lib/firebase/tones";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,8 +98,27 @@ export async function POST(req: NextRequest) {
     description?: unknown;
   };
 
-  const nameStr = typeof name === "string" ? name.trim() : "";
-  const descStr = typeof description === "string" ? description.trim() : "";
+  // Sanitise + injection check for name + description (P2-S37). Both
+  // strings reach the LLM downstream (description as side context),
+  // so block prompt-injection at the gate.
+  const nameRaw = typeof name === "string" ? name : "";
+  const descRaw = typeof description === "string" ? description : "";
+  const nameV = validateUserText(nameRaw);
+  if (!nameV.ok) {
+    return NextResponse.json(
+      { error: nameV.reason, code: nameV.code, field: "name" },
+      { status: 400 },
+    );
+  }
+  const descV = validateUserText(descRaw);
+  if (!descV.ok) {
+    return NextResponse.json(
+      { error: descV.reason, code: descV.code, field: "description" },
+      { status: 400 },
+    );
+  }
+  const nameStr = nameV.text.trim();
+  const descStr = descV.text.trim();
   if (!nameStr || nameStr.length > MAX_NAME) {
     return NextResponse.json(
       { error: `name must be 1-${MAX_NAME} chars` },

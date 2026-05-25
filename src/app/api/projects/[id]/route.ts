@@ -13,6 +13,7 @@ import { deleteProjectFiles, listProjectFiles } from "@/lib/r2/download";
 import { deleteContentJobsByProject } from "@/lib/firebase/content-jobs";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/lib/types";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -116,11 +117,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   // preface can be longer — bypass asStr trim/empty handling but
   // still allow null (to clear). Cap at 20000 chars to avoid abuse.
+  // Sanitise + injection check before storing — preface renders into
+  // the assembled book HTML and could also reach the LLM if used as
+  // context in the future.
   if (body.preface !== undefined) {
     if (body.preface === null) {
       update.preface = null;
     } else if (typeof body.preface === "string") {
-      const trimmed = body.preface.trim();
+      const v = validateUserText(body.preface);
+      if (!v.ok) {
+        return NextResponse.json(
+          { error: v.reason, code: v.code, field: "preface" },
+          { status: 400 },
+        );
+      }
+      const trimmed = v.text.trim();
       if (trimmed.length > 20000) {
         return NextResponse.json(
           { error: "preface must be ≤ 20000 chars" },

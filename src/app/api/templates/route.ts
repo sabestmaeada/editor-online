@@ -13,6 +13,7 @@ import {
 } from "@/lib/firebase/prompt-templates";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 import {
   PROMPT_TEMPLATE_CATEGORIES,
   PROMPT_TEMPLATE_SCOPES,
@@ -116,8 +117,15 @@ export async function POST(req: NextRequest) {
   }
   const categoryVal = categoryStr as PromptTemplateCategory;
 
-  // Validate label
-  const labelStr = typeof label === "string" ? label.trim() : "";
+  // Validate label — sanitize + injection check first
+  const labelV = validateUserText(typeof label === "string" ? label : "");
+  if (!labelV.ok) {
+    return NextResponse.json(
+      { error: labelV.reason, code: labelV.code, field: "label" },
+      { status: 400 },
+    );
+  }
+  const labelStr = labelV.text.trim();
   if (!labelStr) {
     return NextResponse.json({ error: "label is required" }, { status: 400 });
   }
@@ -128,8 +136,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate snippet
-  const snippetStr = typeof snippet === "string" ? snippet.trim() : "";
+  // Validate snippet — same defence; this string reaches the LLM as
+  // Layer 3 (customInstructions) so injection here = direct attack on
+  // content gen.
+  const snippetV = validateUserText(typeof snippet === "string" ? snippet : "");
+  if (!snippetV.ok) {
+    return NextResponse.json(
+      { error: snippetV.reason, code: snippetV.code, field: "snippet" },
+      { status: 400 },
+    );
+  }
+  const snippetStr = snippetV.text.trim();
   if (!snippetStr) {
     return NextResponse.json(
       { error: "snippet is required" },

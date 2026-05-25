@@ -15,6 +15,7 @@ import { flattenOutlineToChapters } from "@/lib/content/flatten-outline";
 import { startContentJob, N8nContentError } from "@/lib/n8n/content";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { validateUserText } from "@/lib/security/sanitize-user-text";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,17 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
   let customInstructions: string | null = null;
   if (typeof body.customInstructions === "string") {
-    const trimmed = body.customInstructions.trim();
+    // Sanitise + injection check — customInstructions is the most
+    // direct path from user input → LLM as Layer 3 of the composed
+    // system prompt. P2-S37.
+    const v = validateUserText(body.customInstructions);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: v.reason, code: v.code, field: "customInstructions" },
+        { status: 400 },
+      );
+    }
+    const trimmed = v.text.trim();
     if (trimmed.length > MAX_CUSTOM_INSTRUCTIONS) {
       return NextResponse.json(
         {
