@@ -14,7 +14,13 @@ type Props = {
   bookTitle: string;
   chapterCount: number;
   tone: ToneDisplay;
-  defaultSections: string;
+  /** Layer 2 — read-only structure rules (heading, image syntax,
+   *  table, language, no emoji). Shown in "ดูข้อกำหนดโครงสร้าง"
+   *  collapse + appears as ② in the composed preview. */
+  structurePrompt: string;
+  /** Layer 3 default — pre-fills the customInstructions textarea so
+   *  the user starts with a sensible style baseline they can edit. */
+  defaultCustomInstructions: string;
   canSubmit: boolean;
   outlineFinalized: boolean;
 };
@@ -43,12 +49,18 @@ export function ContentSubmitForm({
   bookTitle,
   chapterCount,
   tone,
-  defaultSections,
+  structurePrompt,
+  defaultCustomInstructions,
   canSubmit,
   outlineFinalized,
 }: Props) {
   const router = useRouter();
-  const [customInstructions, setCustomInstructions] = useState("");
+  // Pre-fill the textarea with the default Layer 3 content style rules.
+  // User can edit/delete freely — what they leave at submit time is
+  // what gets sent (or null if they wipe it clean).
+  const [customInstructions, setCustomInstructions] = useState(
+    defaultCustomInstructions,
+  );
   const [generateImages, setGenerateImages] = useState(false);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [showDefaults, setShowDefaults] = useState(false);
@@ -70,7 +82,7 @@ export function ContentSubmitForm({
         ? `## ① สำนวน (Tone)\n${tonePrompt}${tonePrompt.length >= 240 ? "\n…(แสดง 240 ตัวอักษรแรก)" : ""}`
         : "## ① สำนวน (Tone)\n(ไม่ได้เลือกสำนวน — ข้ามชั้นนี้)",
     );
-    blocks.push(`## ② ข้อกำหนดพื้นฐาน (Defaults)\n${defaultSections}`);
+    blocks.push(`## ② โครงสร้าง (Structure)\n${structurePrompt}`);
     const c = customInstructions.trim();
     blocks.push(
       c.length > 0
@@ -78,7 +90,7 @@ export function ContentSubmitForm({
         : "## ③ คำสั่งเพิ่มเติม (Custom)\n(ไม่มี)",
     );
     return blocks.join("\n\n");
-  }, [tonePrompt, defaultSections, customInstructions]);
+  }, [tonePrompt, structurePrompt, customInstructions]);
 
   const estimatedMin = Math.max(1, Math.ceil((chapterCount * 30) / 60));
 
@@ -168,49 +180,60 @@ export function ContentSubmitForm({
         </p>
       </section>
 
-      {/* ── Default sections (collapsible) ── */}
+      {/* ── Structure rules (Layer 2 — read-only) ── */}
       <section>
         <button
           type="button"
           onClick={() => setShowDefaults((v) => !v)}
           className="flex items-center gap-2 text-sm font-semibold text-zinc-900 hover:underline dark:text-zinc-100"
         >
-          ข้อกำหนดพื้นฐาน (Defaults)
+          ข้อกำหนดโครงสร้าง (Structure)
           <span className="text-xs text-zinc-400">
             {showDefaults ? "▲ ซ่อน" : "▼ ดู"}
           </span>
         </button>
         <p className="mt-1 text-xs text-zinc-500">
-          ใช้กับทุก job — แก้ไขได้โดย admin (PR + redeploy)
+          กฎโครงสร้างที่ระบบบังคับ (heading, image, table, ภาษา) — แก้ไขได้โดย
+          admin (PR + redeploy) เท่านั้น
         </p>
         {showDefaults && (
           <pre className="mt-2 max-h-96 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-            {defaultSections}
+            {structurePrompt}
           </pre>
         )}
       </section>
 
-      {/* ── Custom instructions ── */}
+      {/* ── Custom instructions (Layer 3 — editable, pre-filled) ── */}
       <section>
         <label
           htmlFor="custom-instructions"
-          className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+          className="flex items-center justify-between text-sm font-semibold text-zinc-900 dark:text-zinc-100"
         >
-          คำสั่งเพิ่มเติม (optional)
+          <span>คำสั่งเพิ่มเติม / สไตล์เนื้อหา</span>
+          <button
+            type="button"
+            onClick={() => setCustomInstructions(defaultCustomInstructions)}
+            disabled={
+              submitting || customInstructions === defaultCustomInstructions
+            }
+            className="text-xs font-normal text-zinc-500 underline hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-zinc-100"
+          >
+            ↺ คืนค่าตั้งต้น
+          </button>
         </label>
         <p className="mt-1 text-xs text-zinc-500">
-          เพิ่มคำสั่งเฉพาะ job นี้ เช่น &ldquo;หนังสือนี้เน้น beginner
-          ใช้ตัวอย่างง่าย ๆ&rdquo;
+          ค่าเริ่มต้นเป็นสไตล์สำหรับตำราเชิงเทคนิค (ความยาวบท, code block,
+          note/workshop, step-by-step). แก้ไข/ลบทิ้งได้ตามชนิดหนังสือ
         </p>
         <textarea
           id="custom-instructions"
           value={customInstructions}
           onChange={(e) => setCustomInstructions(e.target.value)}
           disabled={submitting}
-          rows={6}
+          rows={14}
           maxLength={MAX_CUSTOM}
-          className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-          placeholder="พิมพ์คำสั่งเพิ่มเติม… (ไม่ใส่ก็ได้)"
+          className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          placeholder="พิมพ์คำสั่งเพิ่มเติม… (ลบทิ้งได้ถ้าไม่ต้องการ)"
         />
         <div className="mt-1 text-right text-xs text-zinc-400">
           {customInstructions.length} / {MAX_CUSTOM}
@@ -254,7 +277,7 @@ export function ContentSubmitForm({
           </span>
         </button>
         <p className="mt-1 text-xs text-zinc-500">
-          รวม 3 ชั้น (tone + default + custom) — อัปเดตทันทีตามที่พิมพ์
+          รวม 3 ชั้น (tone + structure + custom) — อัปเดตทันทีตามที่พิมพ์
         </p>
         {showPreview && (
           <pre className="mt-2 max-h-96 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">

@@ -5,7 +5,8 @@ import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { getOutline } from "@/lib/firebase/outlines";
 import { getTone } from "@/lib/firebase/tones";
 import { flattenOutlineToChapters } from "@/lib/content/flatten-outline";
-import { DEFAULT_PROMPT_SECTIONS } from "@/lib/content/default-prompt-sections";
+import { STRUCTURE_PROMPT } from "@/lib/content/structure-prompt";
+import { DEFAULT_CUSTOM_INSTRUCTIONS } from "@/lib/content/default-custom-instructions";
 import { Nav } from "@/components/nav";
 import { ContentSubmitForm } from "./content-submit-form";
 
@@ -128,7 +129,8 @@ export default async function ContentNewPage({
           bookTitle={outline.formInput.bookTitle || access.project.title}
           chapterCount={chapters.length}
           tone={toneDisplay}
-          defaultSections={DEFAULT_PROMPT_SECTIONS}
+          structurePrompt={STRUCTURE_PROMPT}
+          defaultCustomInstructions={DEFAULT_CUSTOM_INSTRUCTIONS}
           canSubmit={canSubmit}
           outlineFinalized={outline.status === "finalized"}
         />
