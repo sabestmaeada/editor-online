@@ -34,8 +34,8 @@ type Props = {
  * Design notes:
  *   - Full-screen fixed position with dark backdrop (covers Nav too)
  *   - NO container card — spinner + text float directly on backdrop
- *   - Multi-stop gradient stroke (sky → violet → pink) so the spinner
- *     pops on the neutral gray backdrop without looking corporate
+ *   - Sky-blue gradient stroke (matches the "active / in progress"
+ *     accent used in status badges across the app — sky-50/sky-700)
  *   - Soft outer glow on the spinner for a premium / "alive" feel
  *   - Static faint ring behind the moving arc so the orbit reads
  *     clearly even at small sizes
@@ -98,7 +98,7 @@ const SPINNER_GRADIENT_ID = "loading-overlay-spinner-grad";
 function GradientSpinner() {
   return (
     <svg
-      className="size-14 animate-spin drop-shadow-[0_0_18px_rgba(125,180,255,0.55)]"
+      className="size-14 animate-spin drop-shadow-[0_0_18px_rgba(56,189,248,0.55)]"
       viewBox="0 0 50 50"
       fill="none"
       aria-hidden="true"
@@ -111,9 +111,11 @@ function GradientSpinner() {
           x2="100%"
           y2="100%"
         >
-          <stop offset="0%" stopColor="#38bdf8" />   {/* sky-400 */}
-          <stop offset="50%" stopColor="#a78bfa" />  {/* violet-400 */}
-          <stop offset="100%" stopColor="#f472b6" /> {/* pink-400 */}
+          {/* Sky-blue gradient — light → mid → deep so the moving arc
+              shows depth/direction without leaving the blue family. */}
+          <stop offset="0%" stopColor="#7dd3fc" />   {/* sky-300 */}
+          <stop offset="50%" stopColor="#0ea5e9" />  {/* sky-500 */}
+          <stop offset="100%" stopColor="#0369a1" /> {/* sky-700 */}
         </linearGradient>
       </defs>
       {/* Static track — keeps the orbit visually anchored when the
