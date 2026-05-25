@@ -10,9 +10,10 @@ import {
  *
  *   1. tonePrompt           (from the tone library — optional)
  *   2. STRUCTURE_PROMPT     (from code constant — always; strict output structure)
- *   3. customInstructions   (per-job user input — optional; defaults
- *                            to DEFAULT_CUSTOM_INSTRUCTIONS but the
- *                            user is free to edit/delete)
+ *   3. customInstructions   (per-job user input — optional; starts empty
+ *                            and the editor builds it up by clicking
+ *                            chips, including the admin-curated "Default"
+ *                            shared template, or typing freely)
  *
  * Each layer is trimmed and the separator `PROMPT_LAYER_SEPARATOR`
  * (markdown horizontal rule) sits between layers to help the LLM

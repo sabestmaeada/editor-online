@@ -13,8 +13,10 @@
  *
  * Content style preferences (code block formatting, note frequency,
  * vocabulary conventions, step-by-step format, chapter length) live in
- * Layer 3 default (`default-custom-instructions.ts`) instead — those
- * are user-editable per job because they vary by book type.
+ * Layer 3 (customInstructions) and are curated as shared "Default"
+ * prompt templates by admin — editors apply them by clicking chips in
+ * the content-gen form. The previous hard-coded fallback was retired
+ * in P2-S32 in favour of admin control.
  *
  * Edit this file via PR — changes deploy with the next Vercel build.
  * Existing ContentJob docs are NOT affected (they snapshot the composed

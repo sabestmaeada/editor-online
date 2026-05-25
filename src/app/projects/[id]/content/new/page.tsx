@@ -6,7 +6,6 @@ import { getOutline } from "@/lib/firebase/outlines";
 import { getTone } from "@/lib/firebase/tones";
 import { flattenOutlineToChapters } from "@/lib/content/flatten-outline";
 import { STRUCTURE_PROMPT } from "@/lib/content/structure-prompt";
-import { DEFAULT_CUSTOM_INSTRUCTIONS } from "@/lib/content/default-custom-instructions";
 import { listTemplatesForEditor } from "@/lib/firebase/prompt-templates";
 import { canUseTemplates } from "@/lib/firebase/prompt-template-access";
 import { Nav } from "@/components/nav";
@@ -95,6 +94,24 @@ export default async function ContentNewPage({
     ? await listTemplatesForEditor(profile.uid)
     : [];
 
+  // Identify the "Default" chip — convention: shared template whose
+  // label, trimmed + lowercased, equals "default". Admin sets this by
+  // naming a shared template "Default" (or "default", "DEFAULT" — all
+  // match) at /templates/new?scope=shared. If multiple match, pick
+  // oldest by createdAt so the choice is stable for end users.
+  //
+  // If no match, defaultTemplateId is null and the form skips the
+  // onboarding banner + special chip styling. Editors still see all
+  // shared/personal chips as usual.
+  const defaultMatches = templates
+    .filter(
+      (t) =>
+        t.scope === "shared" &&
+        t.label.trim().toLowerCase() === "default",
+    )
+    .sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+  const defaultTemplateId = defaultMatches[0]?.id ?? null;
+
   return (
     <>
       <Nav profile={profile} />
@@ -140,7 +157,6 @@ export default async function ContentNewPage({
             chapterCount={chapters.length}
             tone={toneDisplay}
             structurePrompt={STRUCTURE_PROMPT}
-            defaultCustomInstructions={DEFAULT_CUSTOM_INSTRUCTIONS}
             templates={templates.map((t) => ({
               id: t.id,
               scope: t.scope,
@@ -148,6 +164,7 @@ export default async function ContentNewPage({
               category: t.category,
               snippet: t.snippet,
             }))}
+            defaultTemplateId={defaultTemplateId}
             canSubmit={canSubmit}
             outlineFinalized={outline.status === "finalized"}
           />

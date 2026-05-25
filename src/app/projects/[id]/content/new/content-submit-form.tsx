@@ -34,13 +34,17 @@ type Props = {
    *  table, language, no emoji). Shown in "ดูข้อกำหนดโครงสร้าง"
    *  collapse + appears as ② in the composed preview. */
   structurePrompt: string;
-  /** Layer 3 default — pre-fills the customInstructions textarea so
-   *  the user starts with a sensible style baseline they can edit. */
-  defaultCustomInstructions: string;
   /** Templates visible to this user (their personal + all shared).
    *  Empty array if the role can't use templates — chips section
    *  is hidden in that case. */
   templates: FormTemplate[];
+  /** ID of the shared template treated as "Default" (admin-curated).
+   *  Used to:
+   *    - highlight the chip with sky border + ⭐ icon
+   *    - show an onboarding banner when not yet applied
+   *  Null when no shared template is labelled "Default" yet (e.g.
+   *  on a fresh deploy before admin curates one). */
+  defaultTemplateId: string | null;
   canSubmit: boolean;
   outlineFinalized: boolean;
 };
@@ -70,18 +74,16 @@ export function ContentSubmitForm({
   chapterCount,
   tone,
   structurePrompt,
-  defaultCustomInstructions,
   templates,
+  defaultTemplateId,
   canSubmit,
   outlineFinalized,
 }: Props) {
   const router = useRouter();
-  // Pre-fill the textarea with the default Layer 3 content style rules.
-  // User can edit/delete freely — what they leave at submit time is
-  // what gets sent (or null if they wipe it clean).
-  const [customInstructions, setCustomInstructions] = useState(
-    defaultCustomInstructions,
-  );
+  // Textarea starts empty — editor builds it up by clicking chips
+  // (including the admin-curated "Default" chip) or typing freely.
+  // No hard-coded fallback any more (see P2-S32).
+  const [customInstructions, setCustomInstructions] = useState("");
   const [generateImages, setGenerateImages] = useState(false);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [showDefaults, setShowDefaults] = useState(false);
@@ -224,27 +226,26 @@ export function ContentSubmitForm({
         )}
       </section>
 
-      {/* ── Custom instructions (Layer 3 — editable, pre-filled) ── */}
+      {/* ── Custom instructions (Layer 3 — editable, starts empty) ── */}
       <section>
         <label
           htmlFor="custom-instructions"
           className="flex items-center justify-between text-sm font-semibold text-zinc-900 dark:text-zinc-100"
         >
           <span>คำสั่งเพิ่มเติม / สไตล์เนื้อหา</span>
-          <button
-            type="button"
-            onClick={() => setCustomInstructions(defaultCustomInstructions)}
-            disabled={
-              submitting || customInstructions === defaultCustomInstructions
-            }
-            className="text-xs font-normal text-zinc-500 underline hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-zinc-100"
-          >
-            ↺ คืนค่าตั้งต้น
-          </button>
+          {customInstructions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCustomInstructions("")}
+              disabled={submitting}
+              className="text-xs font-normal text-zinc-500 underline hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-zinc-100"
+            >
+              ล้างข้อความ
+            </button>
+          )}
         </label>
         <p className="mt-1 text-xs text-zinc-500">
-          ค่าเริ่มต้นเป็นสไตล์สำหรับตำราเชิงเทคนิค (ความยาวบท, code block,
-          note/workshop, step-by-step). แก้ไข/ลบทิ้งได้ตามชนิดหนังสือ
+          คลิก chip ด้านล่างเพื่อแทรกสไตล์อย่างรวดเร็ว หรือพิมพ์เองได้ตามต้องการ
         </p>
         <textarea
           id="custom-instructions"
@@ -263,6 +264,7 @@ export function ContentSubmitForm({
         {/* Template chips — toggle append/remove snippet from textarea */}
         <TemplateChips
           templates={templates}
+          defaultTemplateId={defaultTemplateId}
           customInstructions={customInstructions}
           setCustomInstructions={setCustomInstructions}
           disabled={submitting}
@@ -381,14 +383,20 @@ export function ContentSubmitForm({
  * Personal templates (👤) are owned by the user; shared (🌐) are
  * admin-curated. Grouped by category for scanability — only categories
  * that have at least one template are rendered.
+ *
+ * The shared "Default" template (identified by `defaultTemplateId`) is
+ * styled with a sky-coloured border + ⭐ icon to draw attention, and an
+ * onboarding banner explains it to first-time users until they apply it.
  */
 function TemplateChips({
   templates,
+  defaultTemplateId,
   customInstructions,
   setCustomInstructions,
   disabled,
 }: {
   templates: FormTemplate[];
+  defaultTemplateId: string | null;
   customInstructions: string;
   setCustomInstructions: (s: string) => void;
   disabled: boolean;
@@ -424,6 +432,14 @@ function TemplateChips({
     }
   }
 
+  // Resolve the Default template + its applied state for the banner.
+  const defaultTpl = defaultTemplateId
+    ? (templates.find((t) => t.id === defaultTemplateId) ?? null)
+    : null;
+  const defaultApplied = defaultTpl
+    ? customInstructions.includes(defaultTpl.snippet)
+    : false;
+
   return (
     <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">
       <div className="flex items-center justify-between">
@@ -437,6 +453,18 @@ function TemplateChips({
           จัดการ templates →
         </Link>
       </div>
+
+      {/* Onboarding banner — only when Default chip exists AND user hasn't
+          applied it yet. Hides itself the moment user clicks the chip. */}
+      {defaultTpl && !defaultApplied && (
+        <div className="mt-3 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200">
+          💡 คลิก chip{" "}
+          <span className="font-semibold">
+            ⭐ {defaultTpl.label}
+          </span>{" "}
+          ด้านล่างเพื่อใช้สไตล์ค่าเริ่มต้นที่ admin จัดไว้
+        </div>
+      )}
 
       {templates.length === 0 ? (
         <p className="mt-3 text-xs text-zinc-500">
@@ -464,6 +492,18 @@ function TemplateChips({
                 </span>
                 {items.map((t) => {
                   const applied = customInstructions.includes(t.snippet);
+                  const isDefault = t.id === defaultTemplateId;
+                  // 3 visual states layered: applied wins over isDefault
+                  // (emerald) so the user can always see "this is in your
+                  // textarea right now". When NOT applied, the Default
+                  // chip gets a sky-blue ring to draw attention.
+                  const className =
+                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
+                    (applied
+                      ? "border-emerald-500 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
+                      : isDefault
+                        ? "border-sky-500 bg-sky-50 text-sky-900 ring-2 ring-sky-200 hover:bg-sky-100 dark:border-sky-600 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-900 dark:hover:bg-sky-900"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800");
                   return (
                     <button
                       key={t.id}
@@ -471,13 +511,9 @@ function TemplateChips({
                       onClick={() => toggle(t)}
                       disabled={disabled}
                       title={t.snippet}
-                      className={
-                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
-                        (applied
-                          ? "border-emerald-500 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
-                          : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800")
-                      }
+                      className={className}
                     >
+                      {isDefault && <span aria-hidden="true">⭐</span>}
                       <span aria-hidden="true">
                         {t.scope === "shared" ? "🌐" : "👤"}
                       </span>
