@@ -47,70 +47,72 @@ export default async function OutlineNewPage({
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-10">
-        <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
-            <Link href="/projects" className="hover:underline">
-              Projects
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/projects/${id}`}
-              className="hover:underline"
-            >
-              {access.project.title}
-            </Link>
-            <span>/</span>
-            <span className="text-zinc-900 dark:text-zinc-100">
-              สร้างเค้าโครง
-            </span>
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-            สร้างเค้าโครงหนังสือด้วย AI
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            กรอกข้อมูลหนังสือ — ระบบจะสร้างโครงสารบัญ (บท / หัวข้อย่อย) ให้
-            จากนั้นปรับแก้ได้
-          </p>
-          {existing && existing.status === "finalized" && (
-            <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              ⚠️ โปรเจกต์นี้มีเค้าโครงที่ finalized แล้ว — การสร้างใหม่จะทับ
-              ของเดิม. ถ้าต้องการแก้แทน ใช้{" "}
-              <Link
-                href={`/projects/${id}/outline`}
-                className="font-medium underline"
-              >
-                หน้า outline editor
+        <div className="mx-auto w-full max-w-3xl">
+          <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
+            <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <Link href="/projects" className="hover:underline">
+                Projects
               </Link>
+              <span>/</span>
+              <Link
+                href={`/projects/${id}`}
+                className="hover:underline"
+              >
+                {access.project.title}
+              </Link>
+              <span>/</span>
+              <span className="text-zinc-900 dark:text-zinc-100">
+                สร้างเค้าโครง
+              </span>
             </div>
-          )}
-        </header>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+              สร้างเค้าโครงหนังสือด้วย AI
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              กรอกข้อมูลหนังสือ — ระบบจะสร้างโครงสารบัญ (บท / หัวข้อย่อย) ให้
+              จากนั้นปรับแก้ได้
+            </p>
+            {existing && existing.status === "finalized" && (
+              <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                ⚠️ โปรเจกต์นี้มีเค้าโครงที่ finalized แล้ว — การสร้างใหม่จะทับ
+                ของเดิม. ถ้าต้องการแก้แทน ใช้{" "}
+                <Link
+                  href={`/projects/${id}/outline`}
+                  className="font-medium underline"
+                >
+                  หน้า outline editor
+                </Link>
+              </div>
+            )}
+          </header>
 
-        <OutlineForm
-          projectId={id}
-          availableTones={availableTones}
-          defaults={{
-            bookTitle:
-              existing?.formInput.bookTitle || access.project.title || "",
-            chapterCount: existing?.formInput.chapterCount || 12,
-            pageCount:
-              existing?.formInput.pageCount || access.project.pages || 250,
-            bookPurpose:
-              existing?.formInput.bookPurpose ||
-              DEFAULT_PURPOSE,
-            bookHighlights:
-              existing?.formInput.bookHighlights || DEFAULT_HIGHLIGHTS,
-            targetAudience:
-              existing?.formInput.targetAudience || DEFAULT_AUDIENCE,
-            // Pre-fill toneId only if it still resolves to an
-            // available tone (user may have archived/deleted it).
-            toneId:
-              existing?.formInput.toneId &&
-              availableTones.some((t) => t.id === existing.formInput.toneId)
-                ? existing.formInput.toneId
-                : null,
-            toneName: null,
-          }}
-        />
+          <OutlineForm
+            projectId={id}
+            availableTones={availableTones}
+            defaults={{
+              bookTitle:
+                existing?.formInput.bookTitle || access.project.title || "",
+              chapterCount: existing?.formInput.chapterCount || 12,
+              pageCount:
+                existing?.formInput.pageCount || access.project.pages || 250,
+              bookPurpose:
+                existing?.formInput.bookPurpose ||
+                DEFAULT_PURPOSE,
+              bookHighlights:
+                existing?.formInput.bookHighlights || DEFAULT_HIGHLIGHTS,
+              targetAudience:
+                existing?.formInput.targetAudience || DEFAULT_AUDIENCE,
+              // Pre-fill toneId only if it still resolves to an
+              // available tone (user may have archived/deleted it).
+              toneId:
+                existing?.formInput.toneId &&
+                availableTones.some((t) => t.id === existing.formInput.toneId)
+                  ? existing.formInput.toneId
+                  : null,
+              toneName: null,
+            }}
+          />
+        </div>
       </main>
     </>
   );
