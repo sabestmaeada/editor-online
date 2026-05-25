@@ -20,7 +20,7 @@ type Props = {
  * Drop-in loading overlay for async mutations (Firestore writes, R2
  * uploads, n8n calls) where the page itself doesn't change. The form
  * keeps its own button spinner (per request from the user); this
- * overlay just adds a louder visual cue so the user notices that
+ * overlay adds a louder, prettier visual cue so the user notices that
  * something is happening.
  *
  * Usage:
@@ -32,10 +32,14 @@ type Props = {
  *   />
  *
  * Design notes:
- *   - Full-screen fixed position with backdrop (covers Nav too)
- *   - Blocks pointer events while visible — user can't double-submit
- *   - Click-through-friendly otherwise (we never block on a stuck
- *     overlay — every caller pairs open=true with a try/finally)
+ *   - Full-screen fixed position with dark backdrop (covers Nav too)
+ *   - NO container card — spinner + text float directly on backdrop
+ *   - Multi-stop gradient stroke (sky → violet → pink) so the spinner
+ *     pops on the neutral gray backdrop without looking corporate
+ *   - Soft outer glow on the spinner for a premium / "alive" feel
+ *   - Static faint ring behind the moving arc so the orbit reads
+ *     clearly even at small sizes
+ *   - Message in white with a drop-shadow for legibility without a card
  *   - Debounced render: avoids a jarring flicker for fast requests
  *   - ARIA role="status" + aria-live="polite" for screen readers
  */
@@ -45,16 +49,14 @@ export function LoadingOverlay({
   debounceMs = 300,
 }: Props) {
   // Local "should render?" state separate from `open` so we can
-  // debounce the rising edge without re-rendering the whole tree on
-  // every keystroke a parent might do while open=false.
+  // debounce the rising edge.
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    // Open=true → schedule the visible flip. The cleanup function
-    // handles BOTH cases that need to hide the overlay:
-    //   - open flipped back to false (effect re-runs → cleanup runs first)
-    //   - component unmounted while overlay was showing
+    // Open=true → schedule the visible flip. The cleanup handles both
+    // (a) open flipped back to false (effect re-runs → cleanup first)
+    // (b) component unmounted while overlay was showing
     // Putting the hide in cleanup keeps both flows uniform and stops
     // the React-19 `set-state-in-effect` lint from firing on a separate
     // setVisible(false) branch.
@@ -72,39 +74,67 @@ export function LoadingOverlay({
       role="status"
       aria-live="polite"
       aria-busy="true"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-black/40 backdrop-blur-[2px]"
     >
-      <div className="flex flex-col items-center gap-4 rounded-lg border border-zinc-200 bg-white px-8 py-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <Spinner />
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          {message}
-        </p>
-      </div>
+      <GradientSpinner />
+      <p className="text-base font-medium text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+        {message}
+      </p>
     </div>
   );
 }
 
-function Spinner() {
+/**
+ * Gradient ring spinner. Two stacked circles:
+ *   1. A faint static ring (background) — the "track"
+ *   2. The animated arc with a 3-stop linear gradient stroke
+ *
+ * We hard-code the SVG gradient id (only one overlay is on-screen at a
+ * time thanks to the debounce, so id collisions aren't an issue) so
+ * we don't need useId, which would require sanitising for SVG syntax.
+ */
+const SPINNER_GRADIENT_ID = "loading-overlay-spinner-grad";
+
+function GradientSpinner() {
   return (
     <svg
-      className="size-8 animate-spin text-zinc-900 dark:text-zinc-100"
-      viewBox="0 0 24 24"
+      className="size-14 animate-spin drop-shadow-[0_0_18px_rgba(125,180,255,0.55)]"
+      viewBox="0 0 50 50"
       fill="none"
       aria-hidden="true"
     >
+      <defs>
+        <linearGradient
+          id={SPINNER_GRADIENT_ID}
+          x1="0%"
+          y1="0%"
+          x2="100%"
+          y2="100%"
+        >
+          <stop offset="0%" stopColor="#38bdf8" />   {/* sky-400 */}
+          <stop offset="50%" stopColor="#a78bfa" />  {/* violet-400 */}
+          <stop offset="100%" stopColor="#f472b6" /> {/* pink-400 */}
+        </linearGradient>
+      </defs>
+      {/* Static track — keeps the orbit visually anchored when the
+          gradient arc swings around. */}
       <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeOpacity="0.2"
-        strokeWidth="3"
+        cx="25"
+        cy="25"
+        r="20"
+        stroke="rgba(255,255,255,0.18)"
+        strokeWidth="4"
       />
-      <path
-        d="M22 12a10 10 0 0 1-10 10"
-        stroke="currentColor"
-        strokeWidth="3"
+      {/* Animated arc. strokeDasharray creates the ~250° visible arc;
+          the parent's `animate-spin` rotates the whole SVG. */}
+      <circle
+        cx="25"
+        cy="25"
+        r="20"
+        stroke={`url(#${SPINNER_GRADIENT_ID})`}
+        strokeWidth="4"
         strokeLinecap="round"
+        strokeDasharray="90 50"
       />
     </svg>
   );
