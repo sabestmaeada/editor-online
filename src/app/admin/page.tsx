@@ -13,6 +13,7 @@ export default async function AdminPage() {
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-12">
+        <div className="mx-auto w-full max-w-7xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <h1 className="text-2xl font-semibold tracking-tight">
             Admin Console
@@ -78,6 +79,7 @@ export default async function AdminPage() {
             </p>
           </Link>
         </section>
+        </div>
       </main>
     </>
   );

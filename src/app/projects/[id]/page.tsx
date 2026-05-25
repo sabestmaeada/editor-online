@@ -65,6 +65,7 @@ export default async function ProjectDetailPage({
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-12">
+        <div className="mx-auto w-full max-w-5xl">
         {/* Breadcrumb */}
         <div className="flex items-center gap-3 text-sm text-zinc-500">
           <Link
@@ -383,6 +384,7 @@ export default async function ProjectDetailPage({
             </div>
           </section>
         )}
+        </div>
       </main>
     </>
   );

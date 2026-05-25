@@ -49,6 +49,7 @@ export default async function TonesListPage({ searchParams }: PageProps) {
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-10">
+        <div className="mx-auto w-full max-w-7xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <h1 className="text-2xl font-semibold tracking-tight">
             สำนวนการเขียน
@@ -189,6 +190,7 @@ export default async function TonesListPage({ searchParams }: PageProps) {
             </ul>
           )}
         </section>
+        </div>
       </main>
     </>
   );

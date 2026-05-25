@@ -9,6 +9,7 @@ export default function ProjectsLoading() {
     <>
       <NavSkeleton />
       <main className="flex flex-1 flex-col px-8 py-12">
+        <div className="mx-auto w-full max-w-7xl">
         <PageHeaderSkeleton withButton />
 
         {/* Filter bar */}
@@ -52,6 +53,7 @@ export default function ProjectsLoading() {
             </li>
           ))}
         </ul>
+        </div>
       </main>
     </>
   );

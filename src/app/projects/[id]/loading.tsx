@@ -5,6 +5,7 @@ export default function ProjectDetailLoading() {
     <>
       <NavSkeleton />
       <main className="flex flex-1 flex-col px-8 py-12">
+        <div className="mx-auto w-full max-w-5xl">
         {/* Breadcrumb */}
         <div className="flex items-center gap-3">
           <Skeleton className="h-3 w-16" />
@@ -77,6 +78,7 @@ export default function ProjectDetailLoading() {
             ))}
           </div>
         </section>
+        </div>
       </main>
     </>
   );

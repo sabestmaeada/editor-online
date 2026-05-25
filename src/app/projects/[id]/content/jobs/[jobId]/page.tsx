@@ -63,6 +63,7 @@ export default async function JobStatusPage({
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-10">
+        <div className="mx-auto w-full max-w-5xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <div className="flex items-center gap-2 text-sm text-zinc-500">
             <Link href="/projects" className="hover:underline">
@@ -101,6 +102,7 @@ export default async function JobStatusPage({
           projectFileCount={projectFileCount}
           initialSnapshot={snapshot}
         />
+        </div>
       </main>
     </>
   );

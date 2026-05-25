@@ -5,6 +5,7 @@ export default function TonesListLoading() {
     <>
       <NavSkeleton />
       <main className="flex flex-1 flex-col px-8 py-10">
+        <div className="mx-auto w-full max-w-7xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <Skeleton className="h-7 w-40" />
           <Skeleton className="mt-2 h-3 w-96" />
@@ -31,6 +32,7 @@ export default function TonesListLoading() {
             ))}
           </ul>
         </section>
+        </div>
       </main>
     </>
   );

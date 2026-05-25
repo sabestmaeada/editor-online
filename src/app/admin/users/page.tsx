@@ -52,6 +52,7 @@ export default async function AdminUsersPage({
     <>
       <Nav profile={caller} />
       <main className="flex flex-1 flex-col px-8 py-12">
+        <div className="mx-auto w-full max-w-7xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <div className="flex items-center gap-3 text-sm text-zinc-500">
             <Link
@@ -232,6 +233,7 @@ export default async function AdminUsersPage({
             </table>
           </section>
         )}
+        </div>
       </main>
     </>
   );

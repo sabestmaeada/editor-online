@@ -5,6 +5,7 @@ export default function JobStatusLoading() {
     <>
       <NavSkeleton />
       <main className="flex flex-1 flex-col px-8 py-10">
+        <div className="mx-auto w-full max-w-5xl">
         <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <Skeleton className="h-3 w-16" />
@@ -56,6 +57,7 @@ export default function JobStatusLoading() {
               ))}
             </ul>
           </section>
+        </div>
         </div>
       </main>
     </>
