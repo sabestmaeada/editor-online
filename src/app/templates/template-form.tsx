@@ -25,6 +25,10 @@ type Props = {
   canChangeScope: boolean;
   /** Edit mode only — controls whether the Delete button is rendered. */
   canDelete: boolean;
+  /** Read-only view (e.g. editor opening a shared admin template).
+   *  Disables every input + hides save/delete; only "กลับ" remains
+   *  so the user can navigate out. Default false. */
+  readOnly?: boolean;
 };
 
 const MAX_LABEL = 40;
@@ -45,6 +49,7 @@ export function TemplateForm({
   initial,
   canChangeScope,
   canDelete,
+  readOnly = false,
 }: Props) {
   const router = useRouter();
   const [label, setLabel] = useState(initial.label);
@@ -58,10 +63,13 @@ export function TemplateForm({
   );
   const [state, setState] = useState<State>({ kind: "idle" });
   const submitting = state.kind === "submitting";
+  // Inputs are disabled while submitting OR if the caller marked the
+  // form read-only (e.g. editor viewing a shared admin template).
+  const inputsDisabled = submitting || readOnly;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (submitting) return;
+    if (submitting || readOnly) return;
     setState({ kind: "submitting" });
 
     const url =
@@ -159,7 +167,7 @@ export function TemplateForm({
           maxLength={MAX_LABEL}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          disabled={submitting}
+          disabled={inputsDisabled}
           placeholder="Beginner"
           className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
         />
@@ -185,7 +193,7 @@ export function TemplateForm({
           onChange={(e) =>
             setCategory(e.target.value as PromptTemplateCategory)
           }
-          disabled={submitting}
+          disabled={inputsDisabled}
           className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
         >
           {PROMPT_TEMPLATE_CATEGORIES.map((c) => (
@@ -211,7 +219,7 @@ export function TemplateForm({
           id="scope"
           value={scope}
           onChange={(e) => setScope(e.target.value as PromptTemplateScope)}
-          disabled={submitting || !canChangeScope}
+          disabled={inputsDisabled || !canChangeScope}
           className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
         >
           <option value="personal">👤 Personal — เฉพาะคุณ</option>
@@ -242,7 +250,7 @@ export function TemplateForm({
           maxLength={MAX_SNIPPET}
           value={snippet}
           onChange={(e) => setSnippet(e.target.value)}
-          disabled={submitting}
+          disabled={inputsDisabled}
           rows={12}
           placeholder={`## ระดับผู้อ่าน\n- เขียนสำหรับผู้เริ่มต้น (beginner)\n- อธิบายศัพท์เทคนิคทุกคำเมื่อปรากฏครั้งแรก`}
           className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
@@ -252,8 +260,8 @@ export function TemplateForm({
         </div>
       </section>
 
-      {/* Status (edit only) */}
-      {mode === "edit" && (
+      {/* Status (edit only, hidden in read-only since user can't save changes) */}
+      {mode === "edit" && !readOnly && (
         <section>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -262,7 +270,7 @@ export function TemplateForm({
               onChange={(e) =>
                 setStatus(e.target.checked ? "archived" : "active")
               }
-              disabled={submitting}
+              disabled={inputsDisabled}
               className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-700"
             />
             <span className="text-zinc-900 dark:text-zinc-100">
@@ -286,11 +294,11 @@ export function TemplateForm({
 
       <div className="flex items-center justify-between border-t border-zinc-200 pt-6 dark:border-zinc-800">
         <div>
-          {mode === "edit" && canDelete && (
+          {mode === "edit" && canDelete && !readOnly && (
             <button
               type="button"
               onClick={onDelete}
-              disabled={submitting}
+              disabled={inputsDisabled}
               className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950"
             >
               ลบ template
@@ -302,11 +310,12 @@ export function TemplateForm({
             href="/templates"
             className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            ยกเลิก
+            {readOnly ? "← กลับ" : "ยกเลิก"}
           </Link>
+          {!readOnly && (
           <button
             type="submit"
-            disabled={submitting}
+            disabled={inputsDisabled}
             className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
             {submitting
@@ -315,6 +324,7 @@ export function TemplateForm({
                 ? "สร้าง template"
                 : "บันทึก"}
           </button>
+          )}
         </div>
       </div>
     </form>

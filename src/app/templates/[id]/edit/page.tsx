@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { requireUserProfile } from "@/lib/firebase/require-profile";
 import { resolveTemplateAccess } from "@/lib/firebase/prompt-template-access";
 import { Nav } from "@/components/nav";
@@ -17,12 +17,13 @@ export default async function EditTemplatePage({
 
   const access = await resolveTemplateAccess(profile, id);
   if (!access) notFound();
-  if (!access.canEdit) {
-    // Read-only access (e.g. editor viewing a shared template) — push
-    // them back to the list. They can copy snippet from the card preview.
-    redirect("/templates");
-  }
 
+  // When the caller doesn't have edit rights (typically an editor
+  // viewing a shared/admin-curated template) we DON'T redirect away
+  // — instead we render the same form in read-only mode so they can
+  // see the full snippet and decide whether to use it. Editing /
+  // deletion controls are hidden by the form when readOnly is true.
+  const readOnly = !access.canEdit;
   const { template } = access;
 
   return (
@@ -41,13 +42,20 @@ export default async function EditTemplatePage({
               </span>
             </div>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-              แก้ไข template
+              {readOnly ? "ดู template" : "แก้ไข template"}
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
               {template.scope === "shared" ? "🌐 Shared" : "👤 Personal"} ·
               สร้างโดย {template.ownerEmail} · ใช้แล้ว{" "}
               {template.usageCount} ครั้ง
             </p>
+            {readOnly && (
+              <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200">
+                🔒 Template นี้สร้างและจัดการโดย admin — คุณดูเนื้อหาได้
+                และนำไปใช้ในฟอร์มสร้างเนื้อหาได้ แต่แก้ไข/ลบไม่ได้.
+                ต้องการเปลี่ยน? ติดต่อ admin หรือสร้าง template ส่วนตัวของคุณเอง
+              </div>
+            )}
           </header>
 
           <TemplateForm
@@ -62,6 +70,7 @@ export default async function EditTemplatePage({
             }}
             canChangeScope={access.canChangeScope}
             canDelete={access.canDelete}
+            readOnly={readOnly}
           />
         </div>
       </main>
