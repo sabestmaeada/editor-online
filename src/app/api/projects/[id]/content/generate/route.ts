@@ -14,6 +14,10 @@ import { composeSystemPrompt } from "@/lib/content/compose-system-prompt";
 import { flattenOutlineToChapters } from "@/lib/content/flatten-outline";
 import { startContentJob, N8nContentError } from "@/lib/n8n/content";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
+import {
+  incrementTemplateUsage,
+  listTemplatesForEditor,
+} from "@/lib/firebase/prompt-templates";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { validateUserText } from "@/lib/security/sanitize-user-text";
 
@@ -309,6 +313,29 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     jobId: job.id,
     totalChapters: chapters.length,
   });
+
+  // Fire-and-forget: bump usageCount on every template whose snippet
+  // appears verbatim in customInstructions. Counts "actually used in a
+  // submitted job", not "clicked the chip then removed". A user-edited
+  // snippet won't match — that's intentional (the template's words
+  // didn't survive into the final job, so it didn't really "drive" it).
+  if (customInstructions) {
+    const customSnapshot = customInstructions;
+    void (async () => {
+      try {
+        const all = await listTemplatesForEditor(profile.uid);
+        const applied = all.filter(
+          (t) => t.snippet && customSnapshot.includes(t.snippet),
+        );
+        await Promise.allSettled(
+          applied.map((t) => incrementTemplateUsage(t.id)),
+        );
+      } catch (e) {
+        // Best-effort only — never fail the submit because of usage tracking.
+        console.warn("[content-generate] usageCount update failed:", e);
+      }
+    })();
+  }
 
   void n8nResult; // requestId — could persist later if needed
   return NextResponse.json({
