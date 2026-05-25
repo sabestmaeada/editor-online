@@ -149,6 +149,11 @@ export const ALL_AUTH_EVENT_TYPES = [
   "tone-transfer-ownership",
   "tone-sample-add",
   "tone-sample-delete",
+  // Prompt templates (Phase 2 — per-editor reusable snippets for
+  // customInstructions chips in content-generation form)
+  "prompt-template-create",
+  "prompt-template-edit",
+  "prompt-template-delete",
 ] as const;
 
 export type AuthEventType = (typeof ALL_AUTH_EVENT_TYPES)[number];
@@ -238,6 +243,11 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "tone-transfer-ownership": 730,
   "tone-sample-add": 730,
   "tone-sample-delete": 730,
+  // Prompt templates — low-stakes config data, 90 days is plenty for
+  // debugging "who deleted X?" questions.
+  "prompt-template-create": 90,
+  "prompt-template-edit": 90,
+  "prompt-template-delete": 90,
 };
 
 // ─── Projects ──────────────────────────────────────────────
@@ -556,4 +566,76 @@ export type ToneSample = {
   /** May be admin acting on behalf of the editor. */
   uploadedBy: string;
   uploadedAt: Timestamp;
+};
+
+// ─── Prompt templates (Phase 2 — reusable customInstructions snippets) ──
+// Editors save short prompt snippets they reuse across content-gen jobs
+// (e.g. "เน้นผู้อ่าน beginner", "+ Case study", "+ คำถามทบทวน"). Rendered
+// as toggleable chips below the customInstructions textarea — click =
+// append, click again = remove.
+//
+// Two scopes:
+//   - "personal" — owner-only; created by any editor for their own use
+//   - "shared"   — admin-curated; visible to all editors (e.g. "default",
+//                  "computer book", "cartoon book" genre baselines)
+//
+// Permission summary:
+//   - Editor: can CRUD their own personal templates; READ shared
+//   - Admin:  can CRUD any template (personal of any user, or shared)
+
+export const PROMPT_TEMPLATE_SCOPES = ["personal", "shared"] as const;
+export type PromptTemplateScope = (typeof PROMPT_TEMPLATE_SCOPES)[number];
+
+export const PROMPT_TEMPLATE_CATEGORIES = [
+  "audience",
+  "style",
+  "structure",
+  "content",
+  "custom",
+] as const;
+export type PromptTemplateCategory =
+  (typeof PROMPT_TEMPLATE_CATEGORIES)[number];
+
+/** Display labels for each category — used in form UI section headers. */
+export const PROMPT_TEMPLATE_CATEGORY_LABELS: Record<
+  PromptTemplateCategory,
+  string
+> = {
+  audience: "ผู้อ่าน",
+  style: "สไตล์",
+  structure: "โครงสร้าง",
+  content: "เนื้อหา",
+  custom: "อื่นๆ",
+};
+
+export const PROMPT_TEMPLATE_STATUSES = ["active", "archived"] as const;
+export type PromptTemplateStatus = (typeof PROMPT_TEMPLATE_STATUSES)[number];
+
+/** A reusable prompt snippet — personal (owner-scoped) or shared
+ *  (admin-curated, visible to everyone). */
+export type PromptTemplate = {
+  id: string;
+  /** "personal" → only ownerUid sees it; "shared" → everyone sees it.
+   *  Editor can only create scope="personal" via API; scope="shared"
+   *  requires admin role. */
+  scope: PromptTemplateScope;
+  /** Creator — for personal: the editor; for shared: the admin who
+   *  curated it. Used by canManagePromptTemplate permission helper. */
+  ownerUid: string;
+  ownerEmail: string; // denormalised for /templates list view
+  /** Chip display text — short (max 40 chars). */
+  label: string;
+  category: PromptTemplateCategory;
+  /** Text appended to customInstructions when chip is clicked.
+   *  Max 2000 chars — keeps a job's composed prompt manageable even
+   *  when many chips are applied. */
+  snippet: string;
+  status: PromptTemplateStatus;
+  /** Increment each time the user toggles this chip ON in a form.
+   *  Used to sort chips by frequency in a future iteration. */
+  usageCount: number;
+  /** Last time the chip was toggled ON. Null until first use. */
+  lastUsedAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 };

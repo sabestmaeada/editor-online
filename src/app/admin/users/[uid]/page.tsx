@@ -95,6 +95,12 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   "tone-sample-delete":
     "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  "prompt-template-create":
+    "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  "prompt-template-edit":
+    "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  "prompt-template-delete":
+    "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
 };
 
 export default async function AdminUserDetailPage({

@@ -176,5 +176,15 @@ service cloud.firestore {
     match /contentJobs/{jobId} {
       allow read, write: if false;
     }
+
+    // ── Prompt templates (Phase 2) ───────────────────────
+    // Per-editor reusable customInstructions snippets shown as chips
+    // below the textarea in the content-gen form. Two scopes: "personal"
+    // (owner-only) and "shared" (admin-curated). Permission checks
+    // (scope + ownership + admin role) live in /api/templates/* server
+    // routes. Direct client access is blocked.
+    match /promptTemplates/{templateId} {
+      allow read, write: if false;
+    }
   }
 }

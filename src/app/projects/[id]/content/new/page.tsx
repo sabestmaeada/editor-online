@@ -7,6 +7,8 @@ import { getTone } from "@/lib/firebase/tones";
 import { flattenOutlineToChapters } from "@/lib/content/flatten-outline";
 import { STRUCTURE_PROMPT } from "@/lib/content/structure-prompt";
 import { DEFAULT_CUSTOM_INSTRUCTIONS } from "@/lib/content/default-custom-instructions";
+import { listTemplatesForEditor } from "@/lib/firebase/prompt-templates";
+import { canUseTemplates } from "@/lib/firebase/prompt-template-access";
 import { Nav } from "@/components/nav";
 import { ContentSubmitForm } from "./content-submit-form";
 
@@ -86,54 +88,70 @@ export default async function ContentNewPage({
     chapters.length <= 30 &&
     (toneDisplay === null || "id" in toneDisplay);
 
+  // Load prompt templates for the chips UI. Viewers shouldn't reach this
+  // page (canEdit gate above), so canUseTemplates is true for everyone
+  // here — but guard cheaply in case role check changes later.
+  const templates = canUseTemplates(profile)
+    ? await listTemplatesForEditor(profile.uid)
+    : [];
+
   return (
     <>
       <Nav profile={profile} />
       <main className="flex flex-1 flex-col px-8 py-10">
-        <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
-            <Link href="/projects" className="hover:underline">
-              Projects
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/projects/${projectId}`}
-              className="hover:underline"
-            >
-              {access.project.title}
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/projects/${projectId}/outline`}
-              className="hover:underline"
-            >
-              เค้าโครง
-            </Link>
-            <span>/</span>
-            <span className="text-zinc-900 dark:text-zinc-100">
-              สร้างเนื้อหา
-            </span>
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-            สร้างเนื้อหาหนังสือ &ldquo;
-            {outline.formInput.bookTitle || access.project.title}&rdquo;
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            ระบบจะใช้ AI เขียนเนื้อหาแต่ละบทเป็น HTML แล้วเก็บใน Google
-            Drive — ใช้เวลาประมาณ 30 วินาทีต่อบท
-          </p>
-        </header>
+        <div className="mx-auto w-full max-w-3xl">
+          <header className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
+            <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <Link href="/projects" className="hover:underline">
+                Projects
+              </Link>
+              <span>/</span>
+              <Link
+                href={`/projects/${projectId}`}
+                className="hover:underline"
+              >
+                {access.project.title}
+              </Link>
+              <span>/</span>
+              <Link
+                href={`/projects/${projectId}/outline`}
+                className="hover:underline"
+              >
+                เค้าโครง
+              </Link>
+              <span>/</span>
+              <span className="text-zinc-900 dark:text-zinc-100">
+                สร้างเนื้อหา
+              </span>
+            </div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+              สร้างเนื้อหาหนังสือ &ldquo;
+              {outline.formInput.bookTitle || access.project.title}&rdquo;
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              ระบบจะใช้ AI เขียนเนื้อหาแต่ละบทเป็น HTML แล้วเก็บใน Google
+              Drive — ใช้เวลาประมาณ 30 วินาทีต่อบท
+            </p>
+          </header>
 
-        <ContentSubmitForm
-          projectId={projectId}
-          bookTitle={outline.formInput.bookTitle || access.project.title}
-          chapterCount={chapters.length}
-          tone={toneDisplay}
-          structurePrompt={STRUCTURE_PROMPT}
-          defaultCustomInstructions={DEFAULT_CUSTOM_INSTRUCTIONS}
-          canSubmit={canSubmit}
-          outlineFinalized={outline.status === "finalized"}
-        />
+          <ContentSubmitForm
+            projectId={projectId}
+            bookTitle={outline.formInput.bookTitle || access.project.title}
+            chapterCount={chapters.length}
+            tone={toneDisplay}
+            structurePrompt={STRUCTURE_PROMPT}
+            defaultCustomInstructions={DEFAULT_CUSTOM_INSTRUCTIONS}
+            templates={templates.map((t) => ({
+              id: t.id,
+              scope: t.scope,
+              label: t.label,
+              category: t.category,
+              snippet: t.snippet,
+            }))}
+            canSubmit={canSubmit}
+            outlineFinalized={outline.status === "finalized"}
+          />
+        </div>
       </main>
     </>
   );

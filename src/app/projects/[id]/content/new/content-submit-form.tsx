@@ -3,11 +3,27 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
+import {
+  PROMPT_TEMPLATE_CATEGORIES,
+  PROMPT_TEMPLATE_CATEGORY_LABELS,
+  type PromptTemplateCategory,
+  type PromptTemplateScope,
+} from "@/lib/types";
 
 type ToneDisplay =
   | { id: string; name: string; preview: string }
   | { error: string }
   | null;
+
+/** Slim payload of a template — only the fields the chip UI needs.
+ *  Page strips heavy fields (timestamps, usage, owner) before sending. */
+export type FormTemplate = {
+  id: string;
+  scope: PromptTemplateScope;
+  label: string;
+  category: PromptTemplateCategory;
+  snippet: string;
+};
 
 type Props = {
   projectId: string;
@@ -21,6 +37,10 @@ type Props = {
   /** Layer 3 default — pre-fills the customInstructions textarea so
    *  the user starts with a sensible style baseline they can edit. */
   defaultCustomInstructions: string;
+  /** Templates visible to this user (their personal + all shared).
+   *  Empty array if the role can't use templates — chips section
+   *  is hidden in that case. */
+  templates: FormTemplate[];
   canSubmit: boolean;
   outlineFinalized: boolean;
 };
@@ -51,6 +71,7 @@ export function ContentSubmitForm({
   tone,
   structurePrompt,
   defaultCustomInstructions,
+  templates,
   canSubmit,
   outlineFinalized,
 }: Props) {
@@ -238,6 +259,14 @@ export function ContentSubmitForm({
         <div className="mt-1 text-right text-xs text-zinc-400">
           {customInstructions.length} / {MAX_CUSTOM}
         </div>
+
+        {/* Template chips — toggle append/remove snippet from textarea */}
+        <TemplateChips
+          templates={templates}
+          customInstructions={customInstructions}
+          setCustomInstructions={setCustomInstructions}
+          disabled={submitting}
+        />
       </section>
 
       {/* ── Image generation option ── */}
@@ -335,6 +364,134 @@ export function ContentSubmitForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Chips section rendered under the customInstructions textarea.
+ *
+ * Each chip = one prompt template. Click behaviour is "toggle":
+ *   - if snippet is NOT currently in textarea → append it (separated by \n\n)
+ *   - if snippet IS in textarea → remove it (and any extra blank lines)
+ *
+ * "Applied" state is computed from `customInstructions.includes(snippet)`
+ * so if the user manually edits/deletes a snippet's text, the chip auto-
+ * resyncs. Stale state from a separate `appliedSet` would be confusing.
+ *
+ * Personal templates (👤) are owned by the user; shared (🌐) are
+ * admin-curated. Grouped by category for scanability — only categories
+ * that have at least one template are rendered.
+ */
+function TemplateChips({
+  templates,
+  customInstructions,
+  setCustomInstructions,
+  disabled,
+}: {
+  templates: FormTemplate[];
+  customInstructions: string;
+  setCustomInstructions: (s: string) => void;
+  disabled: boolean;
+}) {
+  // Group templates by category. Stable iteration order matches the
+  // PROMPT_TEMPLATE_CATEGORIES constant declaration order.
+  const grouped = useMemo(() => {
+    const map = new Map<PromptTemplateCategory, FormTemplate[]>();
+    for (const c of PROMPT_TEMPLATE_CATEGORIES) map.set(c, []);
+    for (const t of templates) {
+      const arr = map.get(t.category);
+      if (arr) arr.push(t);
+    }
+    return map;
+  }, [templates]);
+
+  function toggle(t: FormTemplate) {
+    if (disabled) return;
+    if (customInstructions.includes(t.snippet)) {
+      // Remove — also collapse any double blank lines left behind so the
+      // textarea doesn't accumulate whitespace after multiple toggles.
+      const next = customInstructions
+        .replace(t.snippet, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      setCustomInstructions(next);
+    } else {
+      // Append with a blank line separator so each snippet reads as its
+      // own block when the AI sees the composed prompt.
+      const current = customInstructions.trimEnd();
+      const sep = current.length > 0 ? "\n\n" : "";
+      setCustomInstructions(current + sep + t.snippet);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+          เทมเพลตด่วน — คลิกเพื่อแทรก / คลิกซ้ำเพื่อลบ
+        </div>
+        <Link
+          href="/templates"
+          className="text-xs text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          จัดการ templates →
+        </Link>
+      </div>
+
+      {templates.length === 0 ? (
+        <p className="mt-3 text-xs text-zinc-500">
+          ยังไม่มี template — สร้าง snippet ที่ใช้บ่อยใน{" "}
+          <Link
+            href="/templates/new"
+            className="underline hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            หน้า templates
+          </Link>{" "}
+          เพื่อเรียกใช้ซ้ำได้
+        </p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {PROMPT_TEMPLATE_CATEGORIES.map((cat) => {
+            const items = grouped.get(cat) ?? [];
+            if (items.length === 0) return null;
+            return (
+              <div
+                key={cat}
+                className="flex flex-wrap items-center gap-1.5 text-xs"
+              >
+                <span className="min-w-[80px] shrink-0 text-zinc-500">
+                  {PROMPT_TEMPLATE_CATEGORY_LABELS[cat]}:
+                </span>
+                {items.map((t) => {
+                  const applied = customInstructions.includes(t.snippet);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggle(t)}
+                      disabled={disabled}
+                      title={t.snippet}
+                      className={
+                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
+                        (applied
+                          ? "border-emerald-500 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
+                          : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800")
+                      }
+                    >
+                      <span aria-hidden="true">
+                        {t.scope === "shared" ? "🌐" : "👤"}
+                      </span>
+                      <span>{t.label}</span>
+                      {applied && <span aria-hidden="true">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
