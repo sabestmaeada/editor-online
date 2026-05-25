@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { StyleProfile } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type ToneJson = {
   id: string;
@@ -144,6 +145,7 @@ export function ToneDetailView({ tone, samples, permissions }: Props) {
 
   return (
     <div className="mt-8 grid gap-8 lg:grid-cols-3">
+      <LoadingOverlay open={saving} message="กำลังประมวลผล..." />
       {/* Left: metadata + style profile */}
       <section className="space-y-6 lg:col-span-2">
         {/* Metadata card */}

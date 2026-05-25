@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type FormValues = {
   title: string;
@@ -76,6 +77,7 @@ export function EditProjectForm({ projectId, defaultValues }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+      <LoadingOverlay open={isPending} message="กำลังบันทึก..." />
       {/* Required */}
       <section className="grid gap-4 sm:grid-cols-2">
         <Field

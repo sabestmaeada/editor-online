@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type SubmitState =
   | { kind: "idle" }
@@ -51,6 +52,10 @@ export function CreateToneForm() {
 
   return (
     <form onSubmit={onSubmit} className="mt-8 max-w-2xl space-y-5">
+      <LoadingOverlay
+        open={submitting}
+        message="กำลังสร้างสำนวน..."
+      />
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-900 dark:text-zinc-100">
           ชื่อสำนวน <span className="text-red-500">*</span>

@@ -7,6 +7,7 @@ import type {
   ContentJobStatus,
   ChapterJobStatus,
 } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 /** Serialised version of ContentJob (Timestamps → epoch ms) for RSC handoff. */
 export type JobSnapshot = {
@@ -192,6 +193,14 @@ export function JobStatusView({
 
   return (
     <div className="mt-8 space-y-6">
+      <LoadingOverlay
+        open={assembling === "submitting"}
+        message="กำลังรวมเป็นเล่ม (book.html + style.css)..."
+      />
+      <LoadingOverlay
+        open={deleting === "submitting"}
+        message="กำลังลบเนื้อหา..."
+      />
       <section>
         <div className="flex items-end justify-between">
           <div>

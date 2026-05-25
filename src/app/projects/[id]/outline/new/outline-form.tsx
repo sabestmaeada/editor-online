@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import type { OutlineFormInput } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 /** Public shape for the tone dropdown — server only sends id+name to
  *  the client (full tone doc isn't needed and would leak more than we
@@ -94,6 +95,10 @@ export function OutlineForm({ projectId, defaults, availableTones }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="mt-8 max-w-3xl space-y-6">
+      <LoadingOverlay
+        open={submitting}
+        message="กำลังสร้างเค้าโครงด้วย AI (อาจใช้เวลาสักครู่)..."
+      />
       <Field
         label="ชื่อหนังสือ"
         required

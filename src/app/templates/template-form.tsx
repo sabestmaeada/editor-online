@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import {
   PROMPT_TEMPLATE_CATEGORIES,
   PROMPT_TEMPLATE_CATEGORY_LABELS,
@@ -135,6 +136,10 @@ export function TemplateForm({
 
   return (
     <form onSubmit={onSubmit} className="mt-8 space-y-6">
+      <LoadingOverlay
+        open={submitting}
+        message={mode === "create" ? "กำลังสร้าง template..." : "กำลังบันทึก..."}
+      />
       {/* Label */}
       <section>
         <label

@@ -9,6 +9,7 @@ import {
   type PromptTemplateCategory,
   type PromptTemplateScope,
 } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type ToneDisplay =
   | { id: string; name: string; preview: string }
@@ -160,6 +161,10 @@ export function ContentSubmitForm({
 
   return (
     <form onSubmit={onSubmit} className="mt-8 max-w-3xl space-y-6">
+      <LoadingOverlay
+        open={submitting}
+        message="กำลังส่งงานสร้างเนื้อหา..."
+      />
       {outlineFinalized && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
           ⚠️ เค้าโครงนี้ถูก finalize แล้ว — การสร้างเนื้อหารอบนี้คือ retry.

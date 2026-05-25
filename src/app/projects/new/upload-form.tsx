@@ -6,6 +6,7 @@ import {
   uploadFileToR2,
   type UploadStatus,
 } from "@/lib/upload-via-presigned";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type CreateMode = "empty" | "zip";
 
@@ -96,6 +97,16 @@ export function ProjectUploadForm() {
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+      <LoadingOverlay
+        open={isBusy}
+        message={
+          status.stage === "uploading"
+            ? "กำลังอัปโหลดไฟล์..."
+            : status.stage === "processing"
+              ? "กำลังประมวลผล..."
+              : "กำลังเริ่มต้น..."
+        }
+      />
       {/* Required fields */}
       <section className="grid gap-4 sm:grid-cols-2">
         <Field label="Title *" name="title" required placeholder="The Book Title" />

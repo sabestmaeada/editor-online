@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 type Mode = "paste" | "file";
 type SubmitState =
@@ -92,6 +93,10 @@ export function AddSampleForm({ toneId }: { toneId: string }) {
 
   return (
     <form onSubmit={onSubmit} className="mt-8 max-w-3xl space-y-5">
+      <LoadingOverlay
+        open={submitting}
+        message="กำลังวิเคราะห์สำนวน (embed + analyze)..."
+      />
       {/* Mode toggle */}
       <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
         <button
