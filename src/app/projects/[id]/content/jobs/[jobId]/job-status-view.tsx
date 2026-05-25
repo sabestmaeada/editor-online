@@ -659,11 +659,16 @@ function JobStatusBadge({ status }: { status: ContentJobStatus }) {
     },
   };
   const { label, cls } = map[status];
+  // Show animated dots only while work is in flight so the user can
+  // see at a glance "the page isn't frozen". pending also gets dots —
+  // it means n8n hasn't ack'd yet, which is also "waiting work".
+  const showDots = status === "generating" || status === "pending";
   return (
     <span
       className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}
     >
       {label}
+      {showDots && <WorkingDots />}
     </span>
   );
 }
@@ -693,6 +698,33 @@ function ChapterStatusBadge({ status }: { status: ChapterJobStatus }) {
       className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}
     >
       {label}
+      {status === "generating" && <WorkingDots />}
+    </span>
+  );
+}
+
+/**
+ * Three small dots that pulse-fade in sequence — the classic
+ * "thinking / working" typing-indicator. Used in the status badges
+ * to signal that the page is alive while we wait for n8n callbacks.
+ *
+ * Uses `bg-current` so it inherits the badge's text color (sky-700 in
+ * the generating state). The staggered animationDelay creates the
+ * wave illusion without needing custom keyframes.
+ */
+function WorkingDots() {
+  return (
+    <span
+      className="ml-1.5 inline-flex items-center gap-0.5"
+      aria-hidden="true"
+    >
+      {[0, 200, 400].map((delay) => (
+        <span
+          key={delay}
+          className="block size-1 rounded-full bg-current animate-pulse"
+          style={{ animationDelay: `${delay}ms`, animationDuration: "1.2s" }}
+        />
+      ))}
     </span>
   );
 }
