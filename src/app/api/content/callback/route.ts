@@ -15,6 +15,7 @@ import {
 } from "@/lib/firebase/firestore-admin";
 import { RETENTION_DAYS } from "@/lib/types";
 import { r2, R2_BUCKET, contentChapterKey } from "@/lib/r2/client";
+import { mergeAdjacentTables } from "@/lib/content/assemble-book";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +78,17 @@ export async function POST(req: NextRequest) {
       parsed.jobId,
       parsed.chapterIndex,
     );
-    const bodyBytes = Buffer.from(parsed.html, "utf-8");
+    // Pre-clean the chapter HTML before storing in R2. The n8n
+    // Markdown→HTML converter sometimes splits a single Markdown table
+    // into two adjacent <table> elements (first with empty <tbody>,
+    // second uses its first data row as <thead>). assemble-book.ts
+    // runs the same merge during book assembly as a safety net, but
+    // doing it here too means:
+    //   - per-chapter preview / direct R2 reads are also clean
+    //   - re-assemble after fix doesn't depend on AI re-emitting the
+    //     content (the stored HTML itself is already correct)
+    const cleanedHtml = mergeAdjacentTables(parsed.html);
+    const bodyBytes = Buffer.from(cleanedHtml, "utf-8");
     try {
       await r2().send(
         new PutObjectCommand({

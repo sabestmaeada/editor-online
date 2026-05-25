@@ -284,7 +284,7 @@ function sanitizeWholeArticleHtml(html: string): string {
  * merge them. Keep first thead. Demote second's "thead row" to a data
  * row + prepend to its tbody.
  */
-function mergeAdjacentTables(html: string): string {
+export function mergeAdjacentTables(html: string): string {
   // Optional whitespace between the two wrappers, including <p>... if
   // the unwrap pass left a paragraph in between. Loop because there
   // could be 3+ tables in a row.
