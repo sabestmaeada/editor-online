@@ -4,7 +4,9 @@ import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import {
   deleteContentJob,
   getContentJob,
+  listContentJobsByProject,
 } from "@/lib/firebase/content-jobs";
+import { unlinkOutlineFromDeletedJob } from "@/lib/firebase/outlines";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { r2, R2_BUCKET, contentChapterKey } from "@/lib/r2/client";
 import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
@@ -118,6 +120,30 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
   // 2. Delete Firestore doc
   await deleteContentJob(jobId);
+
+  // 3. Repair the outline → contentJob pointer if it was aimed at
+  //    the job we just deleted. Otherwise the outline page's
+  //    "ดูเนื้อหาล่าสุด" link 404s. Find the next-most-recent surviving
+  //    job (top of the desc-ordered query) so the outline still has
+  //    something useful to point to; if none remain, the helper
+  //    clears the pointer + reverts outline.status back to "ready".
+  try {
+    const remaining = await listContentJobsByProject(projectId, { limit: 1 });
+    const replacementJobId = remaining[0]?.id ?? null;
+    await unlinkOutlineFromDeletedJob(
+      projectId,
+      jobId,
+      replacementJobId,
+    );
+  } catch (e) {
+    // Non-fatal — outline link might be stale until next time the
+    // user visits the outline page. Log and continue so we don't
+    // block the rest of the response.
+    console.warn(
+      "[content-job-delete] outline repair failed:",
+      e,
+    );
+  }
 
   await logAuthEvent({
     headers: req.headers,

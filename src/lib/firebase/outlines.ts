@@ -274,6 +274,68 @@ export async function deleteOutline(projectId: string): Promise<void> {
   await outlineRef(projectId).delete();
 }
 
+/**
+ * Repair the `contentJob` pointer + outline status after a content
+ * job has been deleted. Callers should pass:
+ *
+ *   - `deletedJobId` — the id that was just removed.
+ *   - `replacementJobId` — the id of the next-most-recent surviving
+ *     job for this project, or `null` if none remain.
+ *
+ * Behaviour:
+ *   - If the outline's pointer wasn't aimed at the deleted job → no-op.
+ *   - If `replacementJobId` is set → swap the pointer + bump
+ *     `updatedAt`; outline stays "finalized".
+ *   - If `replacementJobId` is null → clear the pointer entirely AND
+ *     revert status from "finalized" back to "ready" so the user can
+ *     edit the outline again and start a fresh content job.
+ *
+ * Idempotent: safe to call multiple times. Best-effort: catches and
+ * swallows errors so a failed repair doesn't block the surrounding
+ * delete flow.
+ */
+export async function unlinkOutlineFromDeletedJob(
+  projectId: string,
+  deletedJobId: string,
+  replacementJobId: string | null,
+): Promise<void> {
+  try {
+    const ref = outlineRef(projectId);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const data = snap.data() ?? {};
+    const currentJobId = (
+      data.contentJob as { jobId?: string } | undefined
+    )?.jobId;
+    if (currentJobId !== deletedJobId) return; // pointing elsewhere — nothing to repair
+
+    const now = Timestamp.now();
+    if (replacementJobId) {
+      await ref.update({
+        contentJob: {
+          jobId: replacementJobId,
+          startedAt: now,
+        },
+        updatedAt: now,
+      });
+    } else {
+      // No surviving jobs → clear pointer + revert lock so user can
+      // edit outline again.
+      const { FieldValue } = await import("firebase-admin/firestore");
+      await ref.update({
+        contentJob: FieldValue.delete(),
+        status: "ready",
+        updatedAt: now,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      `[outlines] unlinkOutlineFromDeletedJob failed (project=${projectId} deletedJob=${deletedJobId}):`,
+      e,
+    );
+  }
+}
+
 /** Phase 2 entry: lock outline to `finalized` + leave a breadcrumb to
  *  the contentJob. Caller is responsible for creating the ContentJob
  *  doc first so the jobId is real.
