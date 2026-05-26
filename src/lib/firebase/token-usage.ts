@@ -1,5 +1,9 @@
 import "server-only";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import {
+  AggregateField,
+  FieldValue,
+  Timestamp,
+} from "firebase-admin/firestore";
 import { db, USERS_COLLECTION } from "./firestore-admin";
 import {
   calculateCostUsd,
@@ -234,6 +238,87 @@ function numberOrZero(v: unknown): number {
     return Math.floor(v);
   }
   return 0;
+}
+
+/**
+ * Aggregate one user's token usage scoped to a single project.
+ *
+ * Used by the project detail page to show the viewer their own
+ * spend on this project. Multi-user projects need per-user roll-up
+ * across members; that's a separate query for the owner view.
+ *
+ * Implementation: Firestore aggregation query (sum + count) runs
+ * server-side — counts as ONE read in billing, no matter how many
+ * events. Falls back to zero if the user has no usage on this
+ * project yet (empty subcollection or no matching projectId).
+ */
+export type ProjectTokenSummary = {
+  /** Sum of `promptTokens` across all matching events. */
+  promptTokens: number;
+  /** Sum of `completionTokens`. */
+  completionTokens: number;
+  /** Sum of `totalTokens`. */
+  totalTokens: number;
+  /** Sum of `estimatedCostUsd`. Events with unknown model contribute 0. */
+  estimatedCostUsd: number;
+  /** Number of LLM calls counted. */
+  eventCount: number;
+};
+
+export async function getProjectTokenSummary(
+  uid: string,
+  projectId: string,
+): Promise<ProjectTokenSummary> {
+  const empty: ProjectTokenSummary = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    estimatedCostUsd: 0,
+    eventCount: 0,
+  };
+  if (!uid || !projectId) return empty;
+
+  try {
+    const snap = await db
+      .collection(USERS_COLLECTION)
+      .doc(uid)
+      .collection("tokenUsage")
+      .where("projectId", "==", projectId)
+      .aggregate({
+        promptTokens: AggregateField.sum("promptTokens"),
+        completionTokens: AggregateField.sum("completionTokens"),
+        totalTokens: AggregateField.sum("totalTokens"),
+        estimatedCostUsd: AggregateField.sum("estimatedCostUsd"),
+        eventCount: AggregateField.count(),
+      })
+      .get();
+    const data = snap.data();
+    return {
+      promptTokens: numberOrZero(data.promptTokens),
+      completionTokens: numberOrZero(data.completionTokens),
+      totalTokens: numberOrZero(data.totalTokens),
+      // Cost is fractional (USD with sub-cent precision) — don't
+      // floor like the integer helper. Fall back to 0 for null /
+      // non-finite values.
+      estimatedCostUsd:
+        typeof data.estimatedCostUsd === "number" &&
+        Number.isFinite(data.estimatedCostUsd) &&
+        data.estimatedCostUsd >= 0
+          ? data.estimatedCostUsd
+          : 0,
+      eventCount: numberOrZero(data.eventCount),
+    };
+  } catch (e) {
+    // Aggregation requires the field to exist on at least one
+    // matching doc. Fresh users + projects with no usage yet may
+    // return an error or empty — treat as zero rather than failing
+    // the page render.
+    console.warn(
+      `[token-usage] getProjectTokenSummary failed for uid=${uid} projectId=${projectId}:`,
+      e,
+    );
+    return empty;
+  }
 }
 
 /**

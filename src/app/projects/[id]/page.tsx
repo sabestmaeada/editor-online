@@ -4,8 +4,10 @@ import { requireUserProfile } from "@/lib/firebase/require-profile";
 import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { listMembersOfProject } from "@/lib/firebase/project-members";
 import { listContentJobsByProject } from "@/lib/firebase/content-jobs";
+import { getProjectTokenSummary } from "@/lib/firebase/token-usage";
 import { listProjectFiles } from "@/lib/r2/download";
 import { Nav } from "@/components/nav";
+import { ProjectTokenCard } from "./project-token-card";
 import { formatTimestamp, formatRelative } from "@/lib/format";
 import {
   DeleteProjectButton,
@@ -47,7 +49,7 @@ export default async function ProjectDetailPage({
   const access = await resolveProjectAccess(profile, id);
   if (!access) notFound();
 
-  const [files, members, contentJobs] = await Promise.all([
+  const [files, members, contentJobs, tokenSummary] = await Promise.all([
     listProjectFiles(id),
     listMembersOfProject(id),
     // Safe-default: if the composite index hasn't been deployed yet
@@ -57,6 +59,9 @@ export default async function ProjectDetailPage({
       console.warn("[project-page] listContentJobsByProject failed:", e);
       return [];
     }),
+    // Per-user token usage on this project. Caught inside the helper
+    // already; this is the viewer's own contribution.
+    getProjectTokenSummary(profile.uid, id),
   ]);
 
   const { project } = access;
@@ -215,6 +220,14 @@ export default async function ProjectDetailPage({
             </p>
           </section>
         )}
+
+        {/* Token usage — keep prominent so editors can monitor LLM cost.
+            Scoped to the VIEWING user (events come from
+            users/{uid}/tokenUsage). Multi-member projects only see
+            their own contribution here. */}
+        <div className="mt-6">
+          <ProjectTokenCard summary={tokenSummary} />
+        </div>
 
         {/* Members */}
         <section className="mt-10">
