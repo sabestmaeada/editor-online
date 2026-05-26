@@ -274,12 +274,18 @@ export function JobStatusView({
     };
   }, [polling, projectId, job.id]);
 
+  // Progress = "เสร็จจริง" only. Failed chapters DON'T count toward %
+  // — they're tracked separately in the "ล้มเหลว X บท" subtitle. This
+  // matches user mental model: 100% = book is actually finished, not
+  // "all chapters reached a terminal state regardless of success".
+  //
+  // Side-effect of this choice: clicking retry on a failed chapter
+  // leaves the % unchanged (stays at completedChapters/total) — the
+  // bar only nudges up after the retry callback lands and flips the
+  // chapter to "done".
   const progressPct =
     job.totalChapters > 0
-      ? Math.round(
-          ((job.completedChapters + job.failedChapters) / job.totalChapters) *
-            100,
-        )
+      ? Math.round((job.completedChapters / job.totalChapters) * 100)
       : 0;
 
   return (
