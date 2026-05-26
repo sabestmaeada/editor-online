@@ -279,10 +279,13 @@ export async function getProjectTokenSummary(
   if (!uid || !projectId) return empty;
 
   try {
-    const snap = await db
+    const subcol = db
       .collection(USERS_COLLECTION)
       .doc(uid)
-      .collection("tokenUsage")
+      .collection("tokenUsage");
+
+    // Filtered (per-project) aggregation — what the UI actually uses.
+    const filteredSnap = await subcol
       .where("projectId", "==", projectId)
       .aggregate({
         promptTokens: AggregateField.sum("promptTokens"),
@@ -292,7 +295,29 @@ export async function getProjectTokenSummary(
         eventCount: AggregateField.count(),
       })
       .get();
-    const data = snap.data();
+    const data = filteredSnap.data();
+    const eventCount = numberOrZero(data.eventCount);
+
+    // 🔬 Diagnostic — if the filter found nothing, sniff whether the
+    // subcollection has ANY docs at all. Mismatch ⇒ wrong projectId on
+    // events; total-zero ⇒ no usage yet. Log so we can tell them
+    // apart from production logs.
+    if (eventCount === 0) {
+      try {
+        const totalSnap = await subcol
+          .aggregate({ total: AggregateField.count() })
+          .get();
+        const totalAll = numberOrZero(totalSnap.data().total);
+        console.warn(
+          `[token-usage] getProjectTokenSummary empty match — uid=${uid} ` +
+            `projectId="${projectId}" filteredCount=0 ` +
+            `subcollectionTotal=${totalAll}`,
+        );
+      } catch {
+        // Diagnostic only; never fail the page render because of it.
+      }
+    }
+
     return {
       promptTokens: numberOrZero(data.promptTokens),
       completionTokens: numberOrZero(data.completionTokens),
@@ -306,7 +331,7 @@ export async function getProjectTokenSummary(
         data.estimatedCostUsd >= 0
           ? data.estimatedCostUsd
           : 0,
-      eventCount: numberOrZero(data.eventCount),
+      eventCount,
     };
   } catch (e) {
     // Aggregation requires the field to exist on at least one
