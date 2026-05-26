@@ -278,13 +278,17 @@ export async function getProjectTokenSummary(
   };
   if (!uid || !projectId) return empty;
 
-  try {
-    const subcol = db
-      .collection(USERS_COLLECTION)
-      .doc(uid)
-      .collection("tokenUsage");
+  const subcol = db
+    .collection(USERS_COLLECTION)
+    .doc(uid)
+    .collection("tokenUsage");
 
-    // Filtered (per-project) aggregation — what the UI actually uses.
+  // Path 1 — server-side aggregation (cheap: 1 read regardless of
+  // matching event count). Some firebase-admin versions / runtimes
+  // sometimes return zero from `.sum()` even when matching docs
+  // exist, so we treat this as the FAST path and fall through to a
+  // manual sum if it comes back suspiciously empty.
+  try {
     const filteredSnap = await subcol
       .where("projectId", "==", projectId)
       .aggregate({
@@ -297,53 +301,92 @@ export async function getProjectTokenSummary(
       .get();
     const data = filteredSnap.data();
     const eventCount = numberOrZero(data.eventCount);
+    if (eventCount > 0) {
+      return {
+        promptTokens: numberOrZero(data.promptTokens),
+        completionTokens: numberOrZero(data.completionTokens),
+        totalTokens: numberOrZero(data.totalTokens),
+        estimatedCostUsd: nonNegativeFloat(data.estimatedCostUsd),
+        eventCount,
+      };
+    }
+  } catch (e) {
+    // Aggregate query failed (could be SDK / runtime quirk) — fall
+    // through to the manual path rather than returning zero.
+    console.warn(
+      `[token-usage] aggregate failed for uid=${uid} projectId=${projectId}, falling back to manual:`,
+      e,
+    );
+  }
 
-    // 🔬 Diagnostic — if the filter found nothing, sniff whether the
-    // subcollection has ANY docs at all. Mismatch ⇒ wrong projectId on
-    // events; total-zero ⇒ no usage yet. Log so we can tell them
-    // apart from production logs.
-    if (eventCount === 0) {
+  // Path 2 — manual sum via a plain query. Slower (N reads) but
+  // bulletproof: if there's a doc with matching projectId, this WILL
+  // find it. We cap at 1000 docs as a safety guard.
+  try {
+    const docsSnap = await subcol
+      .where("projectId", "==", projectId)
+      .limit(1000)
+      .get();
+
+    if (docsSnap.empty) {
+      // Genuine empty — sniff the subcollection so logs distinguish
+      // "no usage yet" from "wrong projectId on events".
       try {
         const totalSnap = await subcol
           .aggregate({ total: AggregateField.count() })
           .get();
         const totalAll = numberOrZero(totalSnap.data().total);
-        console.warn(
-          `[token-usage] getProjectTokenSummary empty match — uid=${uid} ` +
-            `projectId="${projectId}" filteredCount=0 ` +
-            `subcollectionTotal=${totalAll}`,
-        );
+        if (totalAll > 0) {
+          console.warn(
+            `[token-usage] manual query also empty — uid=${uid} ` +
+              `projectId="${projectId}" subcollectionTotal=${totalAll} ` +
+              `(events exist but none match this projectId)`,
+          );
+        }
       } catch {
-        // Diagnostic only; never fail the page render because of it.
+        /* swallow */
       }
+      return empty;
     }
 
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let estimatedCostUsd = 0;
+    for (const doc of docsSnap.docs) {
+      const d = doc.data();
+      promptTokens += numberOrZero(d.promptTokens);
+      completionTokens += numberOrZero(d.completionTokens);
+      totalTokens += numberOrZero(d.totalTokens);
+      const c = nonNegativeFloat(d.estimatedCostUsd);
+      estimatedCostUsd += c;
+    }
+
+    console.log(
+      `[token-usage] manual sum uid=${uid} projectId="${projectId}" ` +
+        `events=${docsSnap.size} totalTokens=${totalTokens} ` +
+        `cost=$${estimatedCostUsd.toFixed(4)}`,
+    );
+
     return {
-      promptTokens: numberOrZero(data.promptTokens),
-      completionTokens: numberOrZero(data.completionTokens),
-      totalTokens: numberOrZero(data.totalTokens),
-      // Cost is fractional (USD with sub-cent precision) — don't
-      // floor like the integer helper. Fall back to 0 for null /
-      // non-finite values.
-      estimatedCostUsd:
-        typeof data.estimatedCostUsd === "number" &&
-        Number.isFinite(data.estimatedCostUsd) &&
-        data.estimatedCostUsd >= 0
-          ? data.estimatedCostUsd
-          : 0,
-      eventCount,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      estimatedCostUsd,
+      eventCount: docsSnap.size,
     };
   } catch (e) {
-    // Aggregation requires the field to exist on at least one
-    // matching doc. Fresh users + projects with no usage yet may
-    // return an error or empty — treat as zero rather than failing
-    // the page render.
     console.warn(
-      `[token-usage] getProjectTokenSummary failed for uid=${uid} projectId=${projectId}:`,
+      `[token-usage] manual query failed for uid=${uid} projectId=${projectId}:`,
       e,
     );
     return empty;
   }
+}
+
+/** Lenient numeric parser for fractional cost (USD). */
+function nonNegativeFloat(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
 }
 
 /**
