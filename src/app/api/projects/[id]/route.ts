@@ -11,6 +11,7 @@ import {
 } from "@/lib/firebase/project-members";
 import { deleteProjectFiles, listProjectFiles } from "@/lib/r2/download";
 import { deleteContentJobsByProject } from "@/lib/firebase/content-jobs";
+import { deleteOutline } from "@/lib/firebase/outlines";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { PROJECT_STATUSES, type ProjectStatus } from "@/lib/types";
 import { validateUserText } from "@/lib/security/sanitize-user-text";
@@ -206,25 +207,109 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // 1. Delete R2 objects (best effort) — covers source/, content/,
-  //    meta/cover, exports/ etc. since it wipes the whole projects/{id}/
-  //    prefix.
-  const deletedCount = await deleteProjectFiles(id).catch(() => 0);
+  // We log every step's outcome so partial failures are observable
+  // in production. The DELETE response also reports them so the UI
+  // can surface "deleted, but some cleanup failed" if needed.
+  //
+  // Order matters:
+  //   1. R2 first (most-likely-to-fail external call). Failing here
+  //      leaves Firestore intact → user can retry the whole delete.
+  //   2. Subcollections + side-collections BEFORE the project doc —
+  //      orphan subcollections (Firestore doesn't cascade) are the
+  //      classic footgun. Outline lives at projects/{id}/outline/current.
+  //   3. Project doc LAST. Once it's gone, the user no longer sees the
+  //      project at all; if earlier steps half-succeeded, we still
+  //      logged warnings server-side and the next admin cleanup can
+  //      mop up orphans.
 
-  // 2. Delete project members
-  const members = await listMembersOfProject(id);
-  await Promise.all(
-    members.map((m) =>
-      removeProjectMember(id, m.uid).catch(() => undefined),
-    ),
-  );
+  // 1. R2 objects — covers source/, content/, meta/cover, exports/
+  //    since it wipes the whole projects/{id}/ prefix.
+  let deletedFiles = 0;
+  let r2Error: string | null = null;
+  try {
+    deletedFiles = await deleteProjectFiles(id);
+  } catch (e) {
+    r2Error = e instanceof Error ? e.message : String(e);
+    console.error(
+      `[project-delete] R2 cleanup failed for project ${id}:`,
+      e,
+    );
+  }
 
-  // 3. Delete content jobs (Phase 2). R2 objects under
-  //    projects/{id}/content/ are already gone from step 1.
-  const deletedJobs = await deleteContentJobsByProject(id).catch(() => 0);
+  // 2a. Delete outline subcollection FIRST (was missed in P2-S51 fix).
+  //     Firestore does NOT cascade-delete subcollections when the parent
+  //     doc is removed — without this, projects/{id}/outline/current
+  //     stays alive forever as an orphan.
+  let outlineDeleted = true;
+  try {
+    await deleteOutline(id);
+  } catch (e) {
+    outlineDeleted = false;
+    console.error(
+      `[project-delete] outline cleanup failed for project ${id}:`,
+      e,
+    );
+  }
 
-  // 4. Delete project doc
-  await deleteProjectDoc(id);
+  // 2b. Project members
+  let memberCount = 0;
+  let memberErrors = 0;
+  try {
+    const members = await listMembersOfProject(id);
+    memberCount = members.length;
+    const results = await Promise.allSettled(
+      members.map((m) => removeProjectMember(id, m.uid)),
+    );
+    memberErrors = results.filter((r) => r.status === "rejected").length;
+    if (memberErrors > 0) {
+      console.error(
+        `[project-delete] ${memberErrors} member removals failed for project ${id}`,
+      );
+    }
+  } catch (e) {
+    console.error(
+      `[project-delete] listing members failed for project ${id}:`,
+      e,
+    );
+  }
+
+  // 3. Content jobs (Phase 2). R2 objects under projects/{id}/content/
+  //    were already wiped in step 1.
+  let deletedJobs = 0;
+  let jobsError: string | null = null;
+  try {
+    deletedJobs = await deleteContentJobsByProject(id);
+  } catch (e) {
+    jobsError = e instanceof Error ? e.message : String(e);
+    console.error(
+      `[project-delete] content jobs cleanup failed for project ${id}:`,
+      e,
+    );
+  }
+
+  // 4. Project doc LAST. If this fails after everything else has been
+  //    wiped, the doc itself is the last remnant — admin can manually
+  //    delete via Firestore console.
+  let projectDocDeleted = true;
+  try {
+    await deleteProjectDoc(id);
+  } catch (e) {
+    projectDocDeleted = false;
+    console.error(
+      `[project-delete] project doc deletion failed for ${id}:`,
+      e,
+    );
+  }
+
+  // Audit — record success only if every step succeeded so a partial
+  // delete shows up in the audit log as a "failed" event for an admin
+  // to investigate.
+  const fullSuccess =
+    !r2Error &&
+    outlineDeleted &&
+    memberErrors === 0 &&
+    !jobsError &&
+    projectDocDeleted;
 
   await logAuthEvent({
     headers: req.headers,
@@ -232,14 +317,49 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     email: profile.email,
     eventType: "project-delete",
     provider: "system",
-    success: true,
+    success: fullSuccess,
+    errorCode: fullSuccess
+      ? null
+      : [
+          r2Error ? "R2_FAILED" : null,
+          !outlineDeleted ? "OUTLINE_FAILED" : null,
+          memberErrors > 0 ? "MEMBER_FAILED" : null,
+          jobsError ? "JOBS_FAILED" : null,
+          !projectDocDeleted ? "PROJECT_DOC_FAILED" : null,
+        ]
+          .filter(Boolean)
+          .join(","),
     projectId: id,
     projectTitle: access.project.title,
   }).catch(() => {});
 
+  // If the project doc itself failed to delete, return a server error
+  // so the client doesn't redirect away (user can retry). Other partial
+  // failures still return 200 with the warnings array — the project is
+  // effectively gone from the user's perspective.
+  if (!projectDocDeleted) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Project document could not be deleted — please retry",
+        deletedFiles,
+        deletedJobs,
+      },
+      { status: 500 },
+    );
+  }
+
+  const warnings: string[] = [];
+  if (r2Error) warnings.push(`R2 cleanup partially failed: ${r2Error}`);
+  if (!outlineDeleted) warnings.push("Outline cleanup failed");
+  if (memberErrors > 0)
+    warnings.push(`${memberErrors} of ${memberCount} member removals failed`);
+  if (jobsError) warnings.push(`Content jobs cleanup failed: ${jobsError}`);
+
   return NextResponse.json({
     ok: true,
-    deletedFiles: deletedCount,
+    deletedFiles,
     deletedJobs,
+    ...(warnings.length > 0 ? { warnings } : {}),
   });
 }
