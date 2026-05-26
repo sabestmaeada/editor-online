@@ -124,6 +124,12 @@ export function JobStatusView({
   }
 
   async function handleRetry(chapterIndex: number) {
+    // Defense-in-depth: server side already gates via "status must be
+    // failed" + rate limit, but the UI shouldn't fire a second request
+    // while the first is in flight either (would slow the user down with
+    // a needless 400 / 429 round-trip).
+    if (retrying.has(chapterIndex)) return;
+
     // Optimistic state: mark as retrying so the button disables and any
     // previous error message clears.
     setRetrying((prev) => {
@@ -152,12 +158,42 @@ export function JobStatusView({
         }));
         return;
       }
-      // Server reset the chapter to "pending" and re-fired n8n. Resume
-      // polling so the UI flips to generating → done/failed as the
-      // callback lands.
+      // Optimistic local update: flip the chapter we just retried to
+      // "pending" right away so the retry button hides immediately
+      // (it's keyed on `c.status === "failed"`). The next poll tick
+      // (≤5s) confirms with authoritative data from the server. Also
+      // adjust the job-level counters so the progress bar moves back.
+      setJob((prev) => {
+        const chapters = prev.chapters.map((c) =>
+          c.index === chapterIndex
+            ? {
+                ...c,
+                status: "pending" as const,
+                hasHtml: false,
+                error: null,
+                wordCount: null,
+                imageCount: null,
+              }
+            : c,
+        );
+        const wasFailedBefore = prev.chapters.some(
+          (c) => c.index === chapterIndex && c.status === "failed",
+        );
+        return {
+          ...prev,
+          chapters,
+          failedChapters: wasFailedBefore
+            ? Math.max(0, prev.failedChapters - 1)
+            : prev.failedChapters,
+          status: "generating" as const,
+        };
+      });
+      // Resume polling so the UI flips to done/failed as the callback
+      // lands. Polling was likely off because the job had reached a
+      // terminal state (partial/failed/done).
       setPolling(true);
-      // Refresh router to ensure server component sees the latest job
-      // state on the next navigation.
+      // Refresh router so a navigation away + back picks up the new
+      // server-side job state too.
       router.refresh();
     } catch (err) {
       setRetryError((prev) => ({
@@ -255,6 +291,10 @@ export function JobStatusView({
       <LoadingOverlay
         open={deleting === "submitting"}
         message="กำลังลบเนื้อหา..."
+      />
+      <LoadingOverlay
+        open={retrying.size > 0}
+        message="กำลังส่งคำขอสร้างใหม่..."
       />
       <section>
         <div className="flex items-end justify-between">
