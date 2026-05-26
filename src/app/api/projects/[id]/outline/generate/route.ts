@@ -1,15 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from "crypto";
 import { getCurrentUserProfile } from "@/lib/firebase/get-current-profile";
 import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import {
-  upsertOutline,
-  markOutlineFailed,
+  markOutlineGenerating,
+  markOutlineFailedFromCallback,
 } from "@/lib/firebase/outlines";
 import { getTone } from "@/lib/firebase/tones";
-import { generateOutline, N8nError } from "@/lib/n8n/outline";
+import { startOutlineJob, N8nError } from "@/lib/n8n/outline";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/audit/ip";
 import type { OutlineFormInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -30,21 +30,26 @@ const RATE_LIMIT_PER_HOUR = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 // ────────────────────────────────────────────────────────────
-// POST /api/projects/[id]/outline/generate
+// POST /api/projects/[id]/outline/generate (ASYNC, P2-S41)
 //
-// Submit the seed form to n8n, wait for the outline response, persist
-// it, return to client. Slow endpoint (n8n + LLM, ~15-30s typically) —
-// the rate limit + Vercel function timeout (45s in n8n adapter) keep
-// us within budget.
+// Submits the seed form to n8n + returns immediately once n8n acks.
+// The actual outline tree arrives later via /api/outline/callback,
+// which flips the outline doc from "generating" → "ready" (or
+// "failed"). The client UI polls the outline page until the status
+// flips.
+//
+// Why async? Outline generation can exceed Vercel's 60s function
+// timeout, especially with many chapters or a heavy tone prompt. The
+// sync model previously timed out for those users.
 // ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const profile = await getCurrentUserProfile();
   if (!profile) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { id } = await ctx.params;
+  const { id: projectId } = await ctx.params;
 
-  const access = await resolveProjectAccess(profile, id);
+  const access = await resolveProjectAccess(profile, projectId);
   if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -53,8 +58,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
 
   // Rate limit per user (uid), not per IP — a user generating from
-  // multiple devices shouldn't get a separate budget per device, and
-  // we want abuse tied to the account.
+  // multiple devices shouldn't get a separate budget per device.
   const limit = checkRateLimit(
     `outline-generate:${profile.uid}`,
     RATE_LIMIT_PER_HOUR,
@@ -121,8 +125,41 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     formInput = { ...formInput, toneId: null, toneName: null };
   }
 
-  // Audit start. We log BEFORE calling n8n so failed attempts (e.g.
-  // n8n down) still leave a trail.
+  // Build callback URL — n8n needs an absolute URL.
+  const callbackUrl = absoluteCallbackUrl(req);
+  const callbackSecret = process.env.N8N_OUTLINE_SECRET ?? "";
+  if (!callbackSecret) {
+    return NextResponse.json(
+      { error: "Server is not configured for outline generation" },
+      { status: 500 },
+    );
+  }
+
+  // Generate the requestId used to correlate this submit with the
+  // eventual callback. The id is persisted into the outline doc's
+  // n8nMeta.requestId so the callback handler can reject stale
+  // callbacks (user retried before original came back).
+  const requestId = randomUUID();
+
+  // Create outline doc with status="generating" BEFORE firing n8n.
+  // Doing it first means callbacks can't arrive at an empty doc, and
+  // the user's redirect to /outline lands on a real (in-progress) row.
+  try {
+    await markOutlineGenerating(projectId, {
+      createdBy: profile.uid,
+      formInput,
+      requestId,
+    });
+  } catch (e) {
+    console.error("[outline-generate] failed to create outline doc:", e);
+    return NextResponse.json(
+      { error: "Failed to persist outline state — please retry" },
+      { status: 500 },
+    );
+  }
+
+  // Audit start — log AFTER we have a doc so we don't leave audit
+  // entries pointing at non-existent outlines.
   await logAuthEvent({
     headers: req.headers,
     uid: profile.uid,
@@ -130,23 +167,32 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     eventType: "outline-generate-start",
     provider: "system",
     success: true,
-    projectId: id,
+    projectId,
     projectTitle: access.project.title,
   });
 
-  // Call n8n
-  let result;
+  // Fire the n8n webhook. We only wait for the ack — the result comes
+  // back later via /api/outline/callback.
   try {
-    result = await generateOutline(formInput, { toneSystemPrompt });
+    await startOutlineJob({
+      projectId,
+      requestId,
+      formInput,
+      toneSystemPrompt,
+      callbackUrl,
+      callbackSecret,
+    });
   } catch (e) {
-    const code =
-      e instanceof N8nError ? e.code : ("UNKNOWN" as const);
+    const code = e instanceof N8nError ? e.code : ("UNKNOWN" as const);
     const message = e instanceof Error ? e.message : "Unknown error";
 
-    // Persist a failed-status outline so the user sees what happened
-    // and can retry without re-typing the form.
+    // Flip outline → failed so the UI surfaces what happened. We pass
+    // the same requestId so this mirrors the callback path's logic.
     try {
-      await markOutlineFailed(id, profile.uid, formInput);
+      await markOutlineFailedFromCallback(projectId, {
+        requestId,
+        error: `n8n ack failed (${code}): ${message}`,
+      });
     } catch {
       /* swallow — already in error path */
     }
@@ -159,58 +205,57 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       provider: "system",
       success: false,
       errorCode: code,
-      projectId: id,
+      projectId,
       projectTitle: access.project.title,
     });
 
-    // Map n8n errors to HTTP status:
-    //   - MISSING_ENV → 500 (server misconfig — admin's problem)
-    //   - TIMEOUT, NETWORK → 504 (upstream)
-    //   - HTTP, INVALID_RESPONSE → 502 (bad gateway)
     const status =
       code === "MISSING_ENV"
         ? 500
         : code === "TIMEOUT" || code === "NETWORK"
           ? 504
           : 502;
-    // Don't leak n8n internals in the message (URL, secret presence).
     const userMessage =
       code === "MISSING_ENV"
         ? "Server is not configured for outline generation"
         : code === "TIMEOUT"
-          ? "Outline generation timed out — please try again"
-          : "Outline generation failed — please try again";
+          ? "n8n took too long to acknowledge — please retry"
+          : "Outline generation service failed — please retry";
     return NextResponse.json(
-      { error: userMessage, code, detail: process.env.NODE_ENV === "development" ? message : undefined },
+      {
+        error: userMessage,
+        code,
+        detail:
+          process.env.NODE_ENV === "development" ? message : undefined,
+      },
       { status },
     );
   }
 
-  // Success: persist + audit
-  const outline = await upsertOutline(id, {
-    createdBy: profile.uid,
-    status: "ready",
-    formInput,
-    nodes: result.nodes,
-    n8nMeta: result.meta,
+  // n8n acknowledged. The actual outline-tree result will arrive at
+  // /api/outline/callback and flip status → ready (or failed). Return
+  // immediately — client redirects to the outline page, which polls
+  // for completion.
+  return NextResponse.json({
+    requestId,
+    status: "generating",
   });
+}
 
-  await logAuthEvent({
-    headers: req.headers,
-    uid: profile.uid,
-    email: profile.email,
-    eventType: "outline-generate-success",
-    provider: "system",
-    success: true,
-    projectId: id,
-    projectTitle: access.project.title,
-  });
-
-  // unused — kept to suppress "unused import" warnings for getClientIp
-  // (we may use it later for richer audit logs).
-  void getClientIp;
-
-  return NextResponse.json({ outline });
+/**
+ * Build the absolute callback URL n8n will POST to. Prefer the
+ * deployed NEXT_PUBLIC_APP_URL env (production) over inferring from
+ * the request headers (dev / preview deploys). Forge-proof since this
+ * only runs server-side.
+ */
+function absoluteCallbackUrl(req: NextRequest): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL;
+  if (fromEnv) {
+    return new URL("/api/outline/callback", fromEnv).toString();
+  }
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("host") ?? "localhost:3000";
+  return `${proto}://${host}/api/outline/callback`;
 }
 
 // ────────────────────────────────────────────────────────────

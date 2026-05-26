@@ -6,6 +6,7 @@ import { getOutline } from "@/lib/firebase/outlines";
 import { Nav } from "@/components/nav";
 import { formatRelative } from "@/lib/format";
 import { OutlineView } from "./outline-view";
+import { OutlineGeneratingWait } from "./outline-generating-wait";
 
 export const dynamic = "force-dynamic";
 
@@ -68,14 +69,15 @@ export default async function OutlinePage({
                     📄 ดูเนื้อหาล่าสุด
                   </Link>
                 )}
-                {outline.status !== "finalized" && (
-                  <Link
-                    href={`/projects/${id}/outline/new`}
-                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
-                    🔄 สร้างใหม่
-                  </Link>
-                )}
+                {outline.status !== "finalized" &&
+                  outline.status !== "generating" && (
+                    <Link
+                      href={`/projects/${id}/outline/new`}
+                      className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      🔄 สร้างใหม่
+                    </Link>
+                  )}
                 {(outline.status === "ready" ||
                   outline.status === "finalized") &&
                   outline.nodes.length > 0 && (
@@ -91,14 +93,67 @@ export default async function OutlinePage({
           </div>
         </header>
 
-        <OutlineView
-          projectId={id}
-          initialNodes={outline.nodes}
-          canEdit={access.canEdit && outline.status !== "finalized"}
-        />
+        {outline.status === "generating" ? (
+          <OutlineGeneratingWait
+            startedAt={outline.updatedAt.toMillis()}
+          />
+        ) : outline.status === "failed" ? (
+          <FailedOutlineCard
+            projectId={id}
+            errorMessage={outline.n8nMeta?.error ?? null}
+            canRetry={access.canEdit}
+          />
+        ) : (
+          <OutlineView
+            projectId={id}
+            initialNodes={outline.nodes}
+            canEdit={access.canEdit && outline.status !== "finalized"}
+          />
+        )}
         </div>
       </main>
     </>
+  );
+}
+
+function FailedOutlineCard({
+  projectId,
+  errorMessage,
+  canRetry,
+}: {
+  projectId: string;
+  errorMessage: string | null;
+  canRetry: boolean;
+}) {
+  return (
+    <div className="mt-8 rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center dark:border-red-900 dark:bg-red-950">
+      <p className="text-base font-semibold text-red-900 dark:text-red-100">
+        การสร้างเค้าโครงไม่สำเร็จ
+      </p>
+      <p className="mt-2 text-sm text-red-700 dark:text-red-300">
+        AI ไม่สามารถสร้างเค้าโครงให้ได้ — สามารถส่งคำขอใหม่ได้
+      </p>
+      {errorMessage && (
+        <details className="mt-3 inline-block text-left">
+          <summary className="cursor-pointer text-xs text-red-600 dark:text-red-400">
+            รายละเอียดข้อผิดพลาด
+          </summary>
+          <pre className="mt-2 max-w-md whitespace-pre-wrap break-words text-xs text-red-700 dark:text-red-300">
+            {errorMessage}
+          </pre>
+        </details>
+      )}
+      {canRetry && (
+        <div className="mt-4">
+          <Link
+            href={`/projects/${projectId}/outline/new`}
+            className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+          >
+            🔄 ลองใหม่
+          </Link>
+        </div>
+      )}
+    </div>
   );
 }
 

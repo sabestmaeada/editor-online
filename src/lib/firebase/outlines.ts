@@ -127,6 +127,149 @@ export async function markOutlineFailed(
   } satisfies Outline);
 }
 
+/**
+ * Create / overwrite the outline doc in "generating" state. Called by the
+ * outline-generate API BEFORE firing the n8n webhook, so the callback
+ * handler has something to update when n8n eventually calls back.
+ *
+ * The `requestId` is stored in `n8nMeta.requestId` and used by the
+ * callback handler to reject stale callbacks: if the user retries
+ * outline generation while the first one is still in flight, the first
+ * callback must NOT clobber the second request's "generating" doc.
+ */
+export async function markOutlineGenerating(
+  projectId: string,
+  input: {
+    createdBy: string;
+    formInput: OutlineFormInput;
+    requestId: string;
+  },
+): Promise<void> {
+  const now = Timestamp.now();
+  const ref = outlineRef(projectId);
+  const existing = await ref.get();
+  const createdAt =
+    existing.exists && existing.data()?.createdAt instanceof Timestamp
+      ? (existing.data()?.createdAt as Timestamp)
+      : now;
+
+  // Use set() not update() — retrying after a previous "failed" outline
+  // should fully replace the doc. We also intentionally drop any prior
+  // contentJob breadcrumb (this is a brand-new outline generation —
+  // the old content job no longer corresponds to it).
+  await ref.set({
+    projectId,
+    createdBy: input.createdBy,
+    createdAt,
+    updatedAt: now,
+    status: "generating",
+    formInput: input.formInput,
+    nodes: [],
+    n8nMeta: { requestId: input.requestId },
+  } satisfies Outline);
+}
+
+/**
+ * Apply the n8n callback result for a successful outline generation.
+ *
+ * Race-safety: caller passes the `requestId` from the callback payload;
+ * we only update if it matches the requestId we stored when starting
+ * the generation. This stops a stale callback (user retried while
+ * original was still in flight) from clobbering the newer attempt.
+ *
+ * Returns:
+ *   - "applied"  — update committed
+ *   - "stale"    — requestId mismatch, callback ignored (no-op)
+ *   - "missing"  — outline doc doesn't exist (deleted, malformed callback)
+ */
+export async function markOutlineReady(
+  projectId: string,
+  input: {
+    requestId: string;
+    nodes: OutlineNode[];
+    meta?: Outline["n8nMeta"];
+  },
+): Promise<"applied" | "stale" | "missing"> {
+  const ref = outlineRef(projectId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return "missing" as const;
+    const data = snap.data() ?? {};
+    const storedRequestId =
+      typeof (data.n8nMeta as { requestId?: unknown })?.requestId === "string"
+        ? ((data.n8nMeta as { requestId: string }).requestId)
+        : null;
+    if (storedRequestId !== input.requestId) {
+      return "stale" as const;
+    }
+    // Don't downgrade a "finalized" outline either — if the user somehow
+    // started content gen before the callback arrived (shouldn't happen
+    // since finalize requires status="ready", but be defensive).
+    if (data.status === "finalized") {
+      return "stale" as const;
+    }
+    const now = Timestamp.now();
+    tx.update(ref, {
+      status: "ready",
+      nodes: input.nodes,
+      updatedAt: now,
+      ...(input.meta
+        ? {
+            n8nMeta: {
+              // keep requestId so future stale-check still works
+              requestId: input.requestId,
+              ...input.meta,
+            },
+          }
+        : {}),
+    });
+    return "applied" as const;
+  });
+}
+
+/**
+ * Apply the n8n callback result for a FAILED outline generation. Same
+ * requestId guard as `markOutlineReady`. Preserves the formInput
+ * snapshot from the generating doc so the user can retry.
+ */
+export async function markOutlineFailedFromCallback(
+  projectId: string,
+  input: {
+    requestId: string;
+    error?: string | null;
+  },
+): Promise<"applied" | "stale" | "missing"> {
+  const ref = outlineRef(projectId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return "missing" as const;
+    const data = snap.data() ?? {};
+    const storedRequestId =
+      typeof (data.n8nMeta as { requestId?: unknown })?.requestId === "string"
+        ? ((data.n8nMeta as { requestId: string }).requestId)
+        : null;
+    if (storedRequestId !== input.requestId) {
+      return "stale" as const;
+    }
+    if (data.status === "finalized") {
+      return "stale" as const;
+    }
+    const now = Timestamp.now();
+    tx.update(ref, {
+      status: "failed",
+      updatedAt: now,
+      // keep nodes=[] (we never populated them) — don't touch existing nodes
+      // in case some race left them set.
+      nodes: [],
+      n8nMeta: {
+        requestId: input.requestId,
+        ...(input.error ? { error: input.error.slice(0, 500) } : {}),
+      },
+    });
+    return "applied" as const;
+  });
+}
+
 export async function deleteOutline(projectId: string): Promise<void> {
   await outlineRef(projectId).delete();
 }

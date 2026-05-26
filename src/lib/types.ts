@@ -400,6 +400,9 @@ export type Outline = {
     durationMs?: number;
     model?: string;
     tokensUsed?: number;
+    /** Error message from n8n when status="failed" (callback path).
+     *  Truncated to 500 chars before storage. */
+    error?: string;
   };
 
   /** Pointer to the most recent content-generation job for this

@@ -8,26 +8,35 @@ import { OUTLINE_NODE_TYPES } from "@/lib/types";
 import { randomUUID } from "crypto";
 
 /**
- * n8n outline-generation adapter.
+ * n8n outline-generation adapter (async pattern, P2-S40+).
  *
- * Wraps a single HTTP round-trip to the n8n webhook:
- *   - Sends form data + an internal requestId so we can correlate logs
- *   - Adds the static secret token (X-Outline-Secret) so the webhook can
- *     reject unauthenticated callers
- *   - Validates the response shape strictly before we trust it
+ * Two surfaces:
  *
- * All errors are normalised into N8nError so the API layer can map them
- * to user-facing 4xx/5xx without leaking n8n internals.
+ *   - `startOutlineJob(...)` — fires the webhook, expects only a
+ *     lightweight ack back. n8n then runs the LLM (which may take
+ *     minutes) and calls our `/api/outline/callback` when done.
+ *
+ *   - `parseOutlineNodes(...)` / `extractMeta(...)` — exported so the
+ *     callback handler can validate the n8n payload using the same
+ *     strict parser the old sync adapter used.
+ *
+ * Why async? Outline generation can exceed Vercel's 60s function
+ * timeout (especially with `chapterCount > 20` + tones). Wrapping it
+ * in the existing callback pattern (already used for content gen)
+ * gives unbounded n8n runtime while keeping our HTTP handlers fast.
+ *
+ * All errors are normalised into `N8nError` so the API layer can map
+ * them to user-facing 4xx/5xx without leaking n8n internals.
  */
 
 /** Header that the n8n Webhook node must require via "Header Auth". */
 const SECRET_HEADER = "X-Outline-Secret";
 
-/** Soft client-side timeout for the outline webhook. n8n + LLM should
- *  return within ~30s; longer than this and something is wrong. We cap
- *  below Vercel's 60s function timeout to leave room for the rest of
- *  the request (auth, audit, Firestore writes). */
-const TIMEOUT_MS = 45_000;
+/** Short timeout for the n8n ack. The webhook should respond
+ *  immediately (Respond to Webhook = "Immediately" mode); 30s is a
+ *  generous ceiling that still leaves room inside Vercel's 60s
+ *  function timeout for auth / Firestore writes. */
+const ACK_TIMEOUT_MS = 30_000;
 
 export class N8nError extends Error {
   readonly code:
@@ -52,21 +61,14 @@ export class N8nError extends Error {
 }
 
 /**
- * The adapter accepts TWO response formats for forward compatibility:
+ * Two callback payload formats supported (same as the old sync adapter):
  *
- * Format A (proposed clean contract):
+ * Format A (clean contract):
  *   { outline: { nodes: [...] }, meta?: {...} }
  *
- * Format B (n8n native — what the current workflow actually returns):
+ * Format B (n8n native — what the current workflow returns):
  *   [{ output: { title, pages, content: [{ chapter, title, content, topics }] } }]
- *
- * Format B is wrapped in an array because n8n's "Respond to Webhook" node
- * passes through each execution result. Inside `output.content`, each
- * chapter has a flat shape with `topics: string[]`; we transform those into
- * our nested OutlineNode tree (chapter → [p summary, h2 per topic]).
- *
- * If the workflow is later cleaned up to return Format A directly, no
- * code change is needed.
+ *   or  { output: { ... } } (when "Respond to Webhook" passes a single item)
  */
 type N8nFormatAResponse = {
   outline: { nodes: OutlineNode[] };
@@ -89,33 +91,29 @@ type N8nFormatBItem = {
   };
 };
 
-export type GenerateOutlineResult = {
-  nodes: OutlineNode[];
-  meta: {
-    requestId: string;
-    durationMs: number;
-    model?: string;
-    tokensUsed?: number;
-  };
+export type StartOutlineJobResult = {
+  requestId: string;
 };
 
 /**
- * Call the n8n outline webhook and return a validated outline tree.
+ * Fire the n8n outline webhook and return as soon as n8n acks the
+ * request. The actual outline tree arrives later via
+ * `/api/outline/callback`.
  *
- * The request body uses English keys (matching `OutlineFormInput`)
- * because Q-confirm-1 settled on a Webhook node (not formTrigger) — so
- * we can serialise our internal type 1:1 without translating to the
- * Thai field labels of the old formTrigger.
- *
- * When `extras.toneSystemPrompt` is provided, it's sent as a top-level
- * `toneSystemPrompt` field in the body. n8n side can read it and
- * prepend it to the LLM system prompt; if n8n ignores the field, the
- * call still works (just without the tone influence).
+ * The webhook payload includes:
+ *   - `requestId` — echoed back in the callback for race-safety
+ *   - `callbackUrl` + `callbackSecret` — n8n posts the result here
+ *   - The form input fields (book title, chapter count, etc.)
+ *   - Optional `toneSystemPrompt` (server-resolved from toneId)
  */
-export async function generateOutline(
-  input: OutlineFormInput,
-  extras: { toneSystemPrompt?: string | null } = {},
-): Promise<GenerateOutlineResult> {
+export async function startOutlineJob(input: {
+  projectId: string;
+  requestId: string;
+  formInput: OutlineFormInput;
+  toneSystemPrompt?: string | null;
+  callbackUrl: string;
+  callbackSecret: string;
+}): Promise<StartOutlineJobResult> {
   const url = process.env.N8N_OUTLINE_WEBHOOK_URL;
   const secret = process.env.N8N_OUTLINE_SECRET;
   if (!url || !secret) {
@@ -125,26 +123,26 @@ export async function generateOutline(
     );
   }
 
-  const requestId = randomUUID();
-  const startedAt = Date.now();
-
   const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutHandle = setTimeout(() => controller.abort(), ACK_TIMEOUT_MS);
 
-  // Build payload. We intentionally only forward toneSystemPrompt to
-  // n8n — NOT toneId or toneName (n8n doesn't need them and we'd rather
-  // not expose internal IDs to the workflow).
+  // We intentionally only forward `toneSystemPrompt` to n8n — NOT
+  // toneId/toneName (n8n doesn't need them and we'd rather not expose
+  // internal IDs to the workflow).
   const payload: Record<string, unknown> = {
-    requestId,
-    bookTitle: input.bookTitle,
-    chapterCount: input.chapterCount,
-    pageCount: input.pageCount,
-    bookPurpose: input.bookPurpose,
-    bookHighlights: input.bookHighlights,
-    targetAudience: input.targetAudience,
+    requestId: input.requestId,
+    projectId: input.projectId,
+    callbackUrl: input.callbackUrl,
+    callbackSecret: input.callbackSecret,
+    bookTitle: input.formInput.bookTitle,
+    chapterCount: input.formInput.chapterCount,
+    pageCount: input.formInput.pageCount,
+    bookPurpose: input.formInput.bookPurpose,
+    bookHighlights: input.formInput.bookHighlights,
+    targetAudience: input.formInput.targetAudience,
   };
-  if (extras.toneSystemPrompt && extras.toneSystemPrompt.length > 0) {
-    payload.toneSystemPrompt = extras.toneSystemPrompt;
+  if (input.toneSystemPrompt && input.toneSystemPrompt.length > 0) {
+    payload.toneSystemPrompt = input.toneSystemPrompt;
   }
 
   let res: Response;
@@ -154,7 +152,7 @@ export async function generateOutline(
       headers: {
         "Content-Type": "application/json",
         [SECRET_HEADER]: secret,
-        "X-Request-Id": requestId,
+        "X-Request-Id": input.requestId,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -162,7 +160,10 @@ export async function generateOutline(
   } catch (e) {
     clearTimeout(timeoutHandle);
     if (e instanceof Error && e.name === "AbortError") {
-      throw new N8nError("TIMEOUT", `n8n webhook timed out after ${TIMEOUT_MS}ms`);
+      throw new N8nError(
+        "TIMEOUT",
+        `n8n webhook ack timed out after ${ACK_TIMEOUT_MS}ms`,
+      );
     }
     throw new N8nError(
       "NETWORK",
@@ -180,33 +181,20 @@ export async function generateOutline(
     );
   }
 
-  let parsed: unknown;
-  try {
-    parsed = await res.json();
-  } catch {
-    throw new N8nError("INVALID_RESPONSE", "n8n response is not valid JSON");
-  }
+  // We don't validate the ack body — n8n's "Respond to Webhook" node
+  // in "Immediately" mode may return anything (empty body, `{ok:true}`,
+  // a default object). Success = HTTP 2xx is enough.
 
-  const nodes = parseOutlineNodes(parsed);
-  const meta = extractMeta(parsed);
-
-  return {
-    nodes,
-    meta: {
-      requestId,
-      durationMs: Date.now() - startedAt,
-      model: meta?.model,
-      tokensUsed: meta?.tokensUsed,
-    },
-  };
+  return { requestId: input.requestId };
 }
 
-/** Strict parser for the n8n response. Walks the tree recursively and
- *  rejects unknown node types / wrong shapes. We DON'T sanitize HTML
- *  here — `text` is plain text, and at render time React escapes it.
+/** Strict parser for the n8n callback payload's outline tree. Walks
+ *  the tree recursively and rejects unknown node types / wrong shapes.
+ *  We DON'T sanitize HTML here — `text` is plain text, and at render
+ *  time React escapes it.
  *
  *  Accepts both Format A and Format B (see type comments above). */
-function parseOutlineNodes(raw: unknown): OutlineNode[] {
+export function parseOutlineNodes(raw: unknown): OutlineNode[] {
   // Unwrap array (Format B is `[{ output: ... }]`)
   const data = Array.isArray(raw) ? raw[0] : raw;
   if (!data || typeof data !== "object") {
@@ -345,7 +333,7 @@ function isOutlineNodeType(v: string): v is OutlineNodeType {
 
 /** Look for a `meta` field either at the top level (Format A) or inside
  *  `output` (Format B). Returns undefined if neither has it. */
-function extractMeta(raw: unknown): N8nFormatAResponse["meta"] {
+export function extractMeta(raw: unknown): N8nFormatAResponse["meta"] {
   const data = Array.isArray(raw) ? raw[0] : raw;
   if (!data || typeof data !== "object") return undefined;
   const r = data as Record<string, unknown>;

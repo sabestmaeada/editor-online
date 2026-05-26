@@ -31,14 +31,15 @@ type SubmitState =
 /**
  * Outline generation form (Phase 1 entry point).
  *
- * Submission is intentionally synchronous from the client's POV — we
- * show a "กำลังสร้าง..." overlay and wait for the POST to come back
- * (n8n+LLM is typically 15-30s). The server side has its own 45s
- * timeout (see `src/lib/n8n/outline.ts`) so we're well within Vercel's
- * 60s function limit.
+ * Async since P2-S43: the POST returns as soon as n8n acks (~1-2s),
+ * NOT after the LLM finishes generating the outline. We redirect to
+ * the outline view page where status="generating" is shown with a
+ * polling indicator; the page flips to "ready" once the n8n callback
+ * lands at `/api/outline/callback`.
  *
- * After success we redirect to the outline editor page where the user
- * sees the generated tree and can drag / promote / demote nodes.
+ * This lets us support outlines that take minutes to generate (large
+ * chapter counts, heavy tone prompts) — the old sync path was capped
+ * at Vercel's 60s function timeout.
  */
 export function OutlineForm({ projectId, defaults, availableTones }: Props) {
   const router = useRouter();
@@ -97,7 +98,7 @@ export function OutlineForm({ projectId, defaults, availableTones }: Props) {
     <form onSubmit={onSubmit} className="mt-8 max-w-3xl space-y-6">
       <LoadingOverlay
         open={submitting}
-        message="กำลังสร้างเค้าโครงด้วย AI (อาจใช้เวลาสักครู่)..."
+        message="กำลังส่งคำขอ — เดี๋ยวพาไปดูสถานะ..."
       />
       <Field
         label="ชื่อหนังสือ"
@@ -261,7 +262,7 @@ export function OutlineForm({ projectId, defaults, availableTones }: Props) {
         >
           {submitting ? (
             <>
-              <Spinner /> กำลังสร้างเค้าโครง…
+              <Spinner /> กำลังส่งคำขอ…
             </>
           ) : (
             <>สร้างเค้าโครง →</>
@@ -271,7 +272,7 @@ export function OutlineForm({ projectId, defaults, availableTones }: Props) {
 
       {submitting && (
         <p className="text-center text-xs text-zinc-500">
-          ใช้เวลาประมาณ 15-30 วินาที — กรุณาอย่าปิดหน้าต่าง
+          ส่งคำขอใช้เวลาแค่ครู่เดียว — หลังจากนั้น AI จะเขียนเค้าโครงให้ในหน้าถัดไป
         </p>
       )}
     </form>
