@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { TRACK_COLORS } from "@/lib/colors";
 import { ChangePasswordForm } from "./change-password-form";
+import { InlineSpinner } from "@/components/inline-spinner";
 
 type Props = {
   initialDisplayName: string;
@@ -194,27 +195,37 @@ export function PersonalSettings({
               ใช้ใน Track Changes ของ Editor
             </span>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {TRACK_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => handleColorChange(c)}
-                disabled={isColorPending}
-                aria-label={`Choose color ${c}`}
-                aria-pressed={c === color}
-                className={`size-7 rounded-full transition-all disabled:opacity-50 ${
-                  c === color
-                    ? "ring-2 ring-zinc-900 ring-offset-2 dark:ring-zinc-100 dark:ring-offset-zinc-950"
-                    : "hover:scale-110"
-                }`}
-                style={{ background: c }}
-              />
-            ))}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {TRACK_COLORS.map((c) => {
+              const isSelected = c === color;
+              // Pulse the *currently-selected* swatch while we wait for
+              // the server to confirm the change — visual cue that the
+              // optimistic value isn't committed yet.
+              const isSaving = isColorPending && isSelected;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleColorChange(c)}
+                  disabled={isColorPending}
+                  aria-label={`Choose color ${c}`}
+                  aria-pressed={isSelected}
+                  className={`size-7 rounded-full transition-all disabled:opacity-50 ${
+                    isSelected
+                      ? "ring-2 ring-zinc-900 ring-offset-2 dark:ring-zinc-100 dark:ring-offset-zinc-950"
+                      : "hover:scale-110"
+                  } ${isSaving ? "animate-pulse" : ""}`}
+                  style={{ background: c }}
+                />
+              );
+            })}
+            {isColorPending && (
+              <span className="ml-1 inline-flex items-center gap-1.5 text-xs text-zinc-500">
+                <InlineSpinner size={12} />
+                กำลังบันทึก…
+              </span>
+            )}
           </div>
-          {isColorPending && (
-            <p className="mt-2 text-xs text-zinc-500">Saving...</p>
-          )}
           {colorError && (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">
               {colorError}

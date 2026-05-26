@@ -7,6 +7,7 @@ import {
   formatProjectRole,
   type ProjectMemberRole,
 } from "@/lib/types";
+import { InlineSpinner } from "@/components/inline-spinner";
 
 // ─── Invite form ────────────────────────────────────────────
 export function InviteMemberForm({ projectId }: { projectId: string }) {
@@ -202,6 +203,7 @@ export function MemberRow({
           >
             Remove
           </button>
+          {isPending && <InlineSpinner />}
         </>
       ) : (
         <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -306,18 +308,21 @@ export function StatusSelector({
   }
 
   return (
-    <select
-      value={value}
-      onChange={handleChange}
-      disabled={isPending}
-      aria-label="Project status"
-      className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
-    >
-      <option value="draft">draft</option>
-      <option value="in-progress">in-progress</option>
-      <option value="review">review</option>
-      <option value="completed">completed</option>
-      <option value="archived">archived</option>
-    </select>
+    <span className="inline-flex items-center gap-2">
+      <select
+        value={value}
+        onChange={handleChange}
+        disabled={isPending}
+        aria-label="Project status"
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <option value="draft">draft</option>
+        <option value="in-progress">in-progress</option>
+        <option value="review">review</option>
+        <option value="completed">completed</option>
+        <option value="archived">archived</option>
+      </select>
+      {isPending && <InlineSpinner />}
+    </span>
   );
 }
