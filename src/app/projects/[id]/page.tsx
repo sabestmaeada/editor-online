@@ -61,9 +61,18 @@ export default async function ProjectDetailPage({
       console.warn("[project-page] listContentJobsByProject failed:", e);
       return [];
     }),
-    // Per-user token usage on this project. Caught inside the helper
-    // already; this is the viewer's own contribution.
-    getProjectTokenSummary(profile.uid, id),
+    // Token usage scoped to the project OWNER (not the viewer). This
+    // way:
+    //   - Owner viewing their own project → sees their accumulated cost
+    //   - Admin / project member viewing → sees the same numbers
+    //     (the owner's running tally), not their own empty
+    //     subcollection which is the misleading "no data" state.
+    //
+    // Trade-off: multi-user projects where a non-owner contributes via
+    // content gen don't show the contributor's usage here — only the
+    // owner's. We accept that for now; cross-member aggregation would
+    // require N queries (one per member) and a heavier UI.
+    getProjectTokenSummary(access.project.ownerUid, id),
     // Outline status — drives the polling decision below. Cheap
     // single-doc read; if the project has no outline yet returns null.
     getOutline(id).catch(() => null),
