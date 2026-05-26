@@ -181,6 +181,23 @@ export async function hardDeleteUser(uid: string): Promise<{
     await batch.commit();
   }
 
+  // Wipe token usage subcollection BEFORE deleting the user doc —
+  // Firestore doesn't cascade subcollection deletion, and once the
+  // parent doc is gone we lose the natural query path. Done as a
+  // dynamic import to keep this module free of recordTokenUsage's
+  // wider dependency surface (pricing tables, etc.).
+  try {
+    const { deleteAllTokenUsageForUser } = await import("./token-usage");
+    await deleteAllTokenUsageForUser(uid);
+  } catch (e) {
+    // Non-fatal — at worst we leak a subcollection that the next
+    // admin sweep can clean up. We still want the user gone.
+    console.warn(
+      `[admin-users] tokenUsage cleanup failed for ${uid}:`,
+      e,
+    );
+  }
+
   // Delete Firestore profile
   await db.collection(USERS_COLLECTION).doc(uid).delete();
 

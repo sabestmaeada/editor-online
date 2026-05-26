@@ -42,6 +42,64 @@ export type UserProfile = {
   updatedAt: Timestamp;
   lastLoginAt: Timestamp | null;
   lastLoginIp: string | null;
+  /** Rolling lifetime LLM token usage attributed to this user. Updated
+   *  atomically (FieldValue.increment) every time `recordTokenUsage`
+   *  writes events to the user's `tokenUsage` subcollection.
+   *
+   *  Cost is computed at write time using the rate card in
+   *  `src/lib/content/token-pricing.ts`. If rates change later, new
+   *  events use the new rates — historical totals are NOT recomputed. */
+  totalTokenUsage?: UserTokenUsageSummary;
+};
+
+/** Aggregate snapshot of a user's lifetime LLM usage. Lives directly
+ *  on the user doc so dashboards / admin views can read it in one
+ *  shot without scanning the subcollection. */
+export type UserTokenUsageSummary = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** Sum of per-event USD cost computed at write time. May exclude
+   *  events whose model didn't have a known price (those are still in
+   *  the subcollection but contribute 0 to this aggregate). */
+  estimatedCostUsd: number;
+  /** Number of LLM calls counted — useful for distinguishing 10 cheap
+   *  calls vs. 1 expensive one when looking at the headline cost. */
+  eventCount: number;
+  updatedAt: Timestamp;
+};
+
+/** Single LLM-call usage event. Stored as
+ *  `users/{uid}/tokenUsage/{eventId}` so we can drill down per job /
+ *  per project / per month without a join. Index on
+ *  `(createdAt desc, jobId, model)` is enough for the views we ship. */
+export type TokenUsageEvent = {
+  /** Source workflow — "content" (writer/editor/html), "outline"
+   *  (chapter list / add details), "tone" (analysis), etc. */
+  source: "content" | "outline" | "tone";
+  /** Logical step inside the workflow (writer, editor, html, etc.).
+   *  Set by n8n in the callback payload so we know which node burned
+   *  the tokens. */
+  node: string;
+  /** Job id (for content), outline projectId (for outline), tone id
+   *  (for tone analysis). Null if the source has no natural parent. */
+  jobId: string | null;
+  /** projectId — only set when the event ties to a project. Lets us
+   *  do per-project cost lookups without joining. Null for tone (which
+   *  isn't project-bound). */
+  projectId: string | null;
+  /** Zero-based chapter index for content events. Null otherwise. */
+  chapter: number | null;
+  /** Bare model name (e.g. "gemini-3.5-flash"). The "models/" prefix
+   *  is stripped before storage. */
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** Null when the model isn't in our pricing table — token counts
+   *  still recorded, cost just isn't computed. */
+  estimatedCostUsd: number | null;
+  createdAt: Timestamp;
 };
 
 // ─── Invites (admin → new user) ─────────────────────────────

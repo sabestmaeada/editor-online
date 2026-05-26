@@ -10,6 +10,10 @@ import {
   extractMeta,
   N8nError,
 } from "@/lib/n8n/outline";
+import {
+  recordTokenUsage,
+  parseTokenUsageArray,
+} from "@/lib/firebase/token-usage";
 import { Timestamp } from "firebase-admin/firestore";
 import {
   AUTH_EVENTS_COLLECTION,
@@ -169,6 +173,24 @@ export async function POST(req: NextRequest) {
     projectId,
     success: true,
   });
+
+  // Token usage tracking — best-effort, fire-and-forget. n8n's outline
+  // workflow sends `tokenUsage[]` at the top level of the callback
+  // body (same shape as the content callback). The outline's
+  // createdBy is the authoritative uid.
+  const rawTokenUsage =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>).tokenUsage
+      : undefined;
+  const events = parseTokenUsageArray(rawTokenUsage, {
+    source: "outline",
+    jobId: null,
+    projectId,
+    chapterFallback: null,
+  });
+  if (events.length > 0) {
+    void recordTokenUsage(existing.createdBy, events);
+  }
 
   return NextResponse.json({ ok: true, applied: true, status: "ready" });
 }

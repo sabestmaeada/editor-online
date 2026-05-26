@@ -7,6 +7,7 @@ import {
   updateTone,
 } from "@/lib/firebase/tones";
 import { addSample, N8nToneError } from "@/lib/n8n/tones";
+import { recordTokenUsage } from "@/lib/firebase/token-usage";
 import { parseUploadedFile } from "@/lib/file-parse/tones";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
@@ -238,6 +239,26 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     targetUid: access.tone.ownerUid,
     targetEmail: access.tone.ownerEmail,
   });
+
+  // Token usage tracking — best-effort, fire-and-forget. Attributed
+  // to the TONE OWNER, not the caller — admin/editor who adds a
+  // sample to someone else's tone shouldn't show on their bill.
+  if (n8nResult.tokenUsage.length > 0) {
+    void recordTokenUsage(
+      access.tone.ownerUid,
+      n8nResult.tokenUsage.map((t) => ({
+        source: "tone" as const,
+        node: t.node,
+        jobId: id, // tone id stands in for jobId here
+        projectId: null,
+        chapter: null,
+        model: t.model,
+        promptTokens: t.promptTokens,
+        completionTokens: t.completionTokens,
+        totalTokens: t.totalTokens,
+      })),
+    );
+  }
 
   return NextResponse.json({
     sample,

@@ -53,6 +53,17 @@ export type AddSampleResult = {
   totalChars: number;
   styleProfile: StyleProfile | null;
   systemPrompt: string | null;
+  /** Optional per-AI-call token usage from n8n. Each entry has the
+   *  same shape as the content/outline callback's `tokenUsage[]`.
+   *  The API route forwards this to `recordTokenUsage` for the tone
+   *  owner. Empty array if n8n didn't include it. */
+  tokenUsage: Array<{
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    node: string;
+    model: string;
+  }>;
 };
 
 /** Send a sample to n8n for embed + Qdrant insert + style analysis.
@@ -144,12 +155,39 @@ function parseAddSampleResponse(raw: unknown): AddSampleResult {
   const systemPrompt =
     typeof r.systemPrompt === "string" ? r.systemPrompt : null;
 
+  // Tolerant token usage parsing — n8n may or may not include it
+  // depending on whether the per-node capture is wired up yet.
+  const tokenUsage: AddSampleResult["tokenUsage"] = [];
+  if (Array.isArray(r.tokenUsage)) {
+    for (const item of r.tokenUsage as unknown[]) {
+      if (!item || typeof item !== "object") continue;
+      const t = item as Record<string, unknown>;
+      const promptTokens =
+        typeof t.promptTokens === "number" ? t.promptTokens : 0;
+      const completionTokens =
+        typeof t.completionTokens === "number" ? t.completionTokens : 0;
+      const totalTokens =
+        typeof t.totalTokens === "number"
+          ? t.totalTokens
+          : promptTokens + completionTokens;
+      if (totalTokens === 0) continue;
+      tokenUsage.push({
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        node: typeof t.node === "string" ? t.node : "unknown",
+        model: typeof t.model === "string" ? t.model : "unknown",
+      });
+    }
+  }
+
   return {
     pointIds,
     chunkCount,
     totalChars,
     styleProfile,
     systemPrompt,
+    tokenUsage,
   };
 }
 

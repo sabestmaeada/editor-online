@@ -16,6 +16,10 @@ import {
 import { RETENTION_DAYS } from "@/lib/types";
 import { r2, R2_BUCKET, contentChapterKey } from "@/lib/r2/client";
 import { mergeAdjacentTables } from "@/lib/content/assemble-book";
+import {
+  recordTokenUsage,
+  parseTokenUsageArray,
+} from "@/lib/firebase/token-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +63,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   const parsed = result.data;
+  // tokenUsage is optional — n8n only sends it once the per-AI-call
+  // capture is wired up on its side. Until then this is a no-op.
+  const rawTokenUsage =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>).tokenUsage
+      : undefined;
 
   // 3. Load job + sanity check
   const existing = await getContentJob(parsed.jobId);
@@ -193,6 +203,20 @@ export async function POST(req: NextRequest) {
       success: updated.status === "done",
       totalChapters: updated.totalChapters,
     });
+  }
+
+  // 7. Token usage tracking — best-effort, fire-and-forget. Failure
+  //    here MUST NOT block the chapter update (which already
+  //    committed). The job's createdBy is the authoritative uid
+  //    since they own the project / triggered the gen.
+  const events = parseTokenUsageArray(rawTokenUsage, {
+    source: "content",
+    jobId: parsed.jobId,
+    projectId: existing.projectId,
+    chapterFallback: parsed.chapterIndex,
+  });
+  if (events.length > 0) {
+    void recordTokenUsage(existing.createdBy, events);
   }
 
   return NextResponse.json({ ok: true, jobStatus: updated.status });
