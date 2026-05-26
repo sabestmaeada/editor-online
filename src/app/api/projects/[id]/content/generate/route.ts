@@ -223,6 +223,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       index: c.index,
       chapter: c.chapter,
       title: c.title,
+      content: c.content,
+      topics: c.topics,
     })),
   });
 

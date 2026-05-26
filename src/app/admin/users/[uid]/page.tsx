@@ -78,6 +78,8 @@ const EVENT_BADGE: Record<AuthEventType, string> = {
     "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
   "content-chapter-failed":
     "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  "content-chapter-retry":
+    "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   "content-job-complete":
     "bg-cyan-50 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
   // Tone library

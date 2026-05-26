@@ -27,11 +27,17 @@ export type CreateContentJobInput = {
   n8nRequestId: string;
   /** Initial chapter list — copied verbatim into ContentJob.chapters
    *  with status="pending". Index field on each item must match the
-   *  array position (0-based). */
+   *  array position (0-based).
+   *
+   *  `content` + `topics` are snapshotted so retry-single-chapter can
+   *  re-fire n8n without re-fetching the outline (which may have been
+   *  edited between submit and retry). */
   chapters: Array<{
     index: number;
     chapter: string;
     title: string;
+    content: string;
+    topics: string[];
   }>;
 };
 
@@ -47,6 +53,8 @@ export async function createContentJob(
     index: c.index,
     chapter: c.chapter,
     title: c.title,
+    content: c.content,
+    topics: c.topics,
     status: "pending",
     htmlR2Key: null,
     htmlBytes: null,
@@ -266,6 +274,97 @@ export async function updateChapterAndCounters(
  *  audit "content-job-complete" trigger condition. */
 export function isJobTerminal(status: ContentJobStatus): boolean {
   return status === "done" || status === "partial" || status === "failed";
+}
+
+export type RetryChapterPrepResult =
+  | {
+      ok: true;
+      chapter: ChapterJobItem;
+      job: ContentJob;
+      previousR2Key: string | null;
+    }
+  | { ok: false; reason: "not-found" | "out-of-range" | "not-failed" };
+
+/**
+ * Atomically reset a single chapter for retry:
+ *
+ *   - chapter.status: failed → pending
+ *   - chapter.{htmlR2Key, htmlBytes, wordCount, imageCount, error} → null
+ *   - decrement failedChapters by 1
+ *   - flip job.status back to "generating" (so the polling UI shows
+ *     progress instead of "partial/failed")
+ *
+ * Race-safety: the whole operation runs in a Firestore transaction.
+ * The caller MUST verify auth/ownership BEFORE invoking this — there
+ * are no permission checks here (data-layer trust).
+ *
+ * Returns the previous R2 key (if any) so the caller can clean up the
+ * stale HTML object AFTER the n8n re-fire is queued. We don't delete
+ * inside the transaction because R2 ops aren't transactional and a
+ * failed n8n call would leave the chapter resetted but no way to
+ * recover the original HTML.
+ *
+ * Only retries chapters in "failed" state — calling on a "done" or
+ * "pending" chapter is a no-op (returns `not-failed`).
+ */
+export async function resetChapterForRetry(input: {
+  jobId: string;
+  chapterIndex: number;
+}): Promise<RetryChapterPrepResult> {
+  const ref = db.collection(CONTENT_JOBS_COLLECTION).doc(input.jobId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { ok: false, reason: "not-found" } as const;
+    const job = docToContentJob(snap.id, snap.data() ?? {});
+
+    const idx = input.chapterIndex;
+    if (idx < 0 || idx >= job.chapters.length) {
+      return { ok: false, reason: "out-of-range" } as const;
+    }
+    const prev = job.chapters[idx];
+    if (prev.status !== "failed") {
+      return { ok: false, reason: "not-failed" } as const;
+    }
+
+    const now = Timestamp.now();
+    const next: ChapterJobItem = {
+      ...prev,
+      status: "pending",
+      htmlR2Key: null,
+      htmlBytes: null,
+      wordCount: null,
+      imageCount: null,
+      error: null,
+      updatedAt: now,
+    };
+    const chapters = job.chapters.slice();
+    chapters[idx] = next;
+
+    const failedChapters = Math.max(0, job.failedChapters - 1);
+    // Anytime we put a chapter back into a non-terminal state, the job
+    // is no longer terminal either — flip back to "generating".
+    const overall: ContentJobStatus = "generating";
+
+    tx.update(ref, {
+      chapters,
+      failedChapters,
+      status: overall,
+      updatedAt: now,
+    });
+
+    return {
+      ok: true,
+      chapter: next,
+      previousR2Key: prev.htmlR2Key ?? null,
+      job: {
+        ...job,
+        chapters,
+        failedChapters,
+        status: overall,
+        updatedAt: now,
+      } satisfies ContentJob,
+    } as const;
+  });
 }
 
 /* ─────────────────────── helpers ─────────────────────── */

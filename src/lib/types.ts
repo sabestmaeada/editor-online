@@ -140,6 +140,7 @@ export const ALL_AUTH_EVENT_TYPES = [
   "content-generate-failed",
   "content-chapter-done",
   "content-chapter-failed",
+  "content-chapter-retry",
   "content-job-complete",
   // Tone library (Phase 1.5 — writing-style samples + analyzed profiles)
   "tone-create",
@@ -234,6 +235,7 @@ export const RETENTION_DAYS: Record<AuthEventType, number> = {
   "content-generate-failed": 730,
   "content-chapter-done": 730,
   "content-chapter-failed": 730,
+  "content-chapter-retry": 730,
   "content-job-complete": 730,
   // Tone library — cost/accountability trail (LLM embeddings cost money)
   "tone-create": 730,
@@ -446,6 +448,16 @@ export type ChapterJobItem = {
   chapter: string;
   /** Chapter title — snapshot at submit time. */
   title: string;
+  /** Chapter intro/summary paragraph — snapshot of the outline data
+   *  shipped to n8n. Used by retry-single-chapter so we don't have to
+   *  re-derive from the (possibly mutated) outline tree.
+   *
+   *  Optional for backwards-compat with old job docs created before
+   *  this field was added; retry falls back to refetching the outline
+   *  when missing. */
+  content?: string;
+  /** Subsection titles — snapshot, same reasoning as `content`. */
+  topics?: string[];
   status: ChapterJobStatus;
   /** R2 key where the generated HTML is stored. View/download go
    *  through Vercel API endpoints (server fetches from R2). Only set

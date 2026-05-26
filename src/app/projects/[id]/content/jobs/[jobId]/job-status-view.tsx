@@ -64,6 +64,10 @@ export function JobStatusView({
     !TERMINAL.includes(initialSnapshot.status),
   );
   const [previewing, setPreviewing] = useState<number | null>(null);
+  /** Chapter indexes currently mid-retry (button disabled + spinner). */
+  const [retrying, setRetrying] = useState<Set<number>>(() => new Set());
+  /** Per-chapter retry error (transient — shown until next poll tick). */
+  const [retryError, setRetryError] = useState<Record<number, string>>({});
   const [deleting, setDeleting] = useState<
     "idle" | "confirming" | "submitting" | { error: string }
   >("idle");
@@ -115,6 +119,57 @@ export function JobStatusView({
     } catch (err) {
       setAssembling({
         error: err instanceof Error ? err.message : "เครือข่ายมีปัญหา",
+      });
+    }
+  }
+
+  async function handleRetry(chapterIndex: number) {
+    // Optimistic state: mark as retrying so the button disables and any
+    // previous error message clears.
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      next.add(chapterIndex);
+      return next;
+    });
+    setRetryError((prev) => {
+      const { [chapterIndex]: _omit, ...rest } = prev;
+      void _omit;
+      return rest;
+    });
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/content/jobs/${job.id}/chapters/${chapterIndex}/retry`,
+        { method: "POST" },
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+      };
+      if (!res.ok) {
+        setRetryError((prev) => ({
+          ...prev,
+          [chapterIndex]: body.error ?? `เกิดข้อผิดพลาด (HTTP ${res.status})`,
+        }));
+        return;
+      }
+      // Server reset the chapter to "pending" and re-fired n8n. Resume
+      // polling so the UI flips to generating → done/failed as the
+      // callback lands.
+      setPolling(true);
+      // Refresh router to ensure server component sees the latest job
+      // state on the next navigation.
+      router.refresh();
+    } catch (err) {
+      setRetryError((prev) => ({
+        ...prev,
+        [chapterIndex]:
+          err instanceof Error ? err.message : "เครือข่ายมีปัญหา",
+      }));
+    } finally {
+      setRetrying((prev) => {
+        const next = new Set(prev);
+        next.delete(chapterIndex);
+        return next;
       });
     }
   }
@@ -263,6 +318,11 @@ export function JobStatusView({
                         {c.error}
                       </div>
                     )}
+                    {retryError[c.index] && (
+                      <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                        ลองใหม่ไม่สำเร็จ: {retryError[c.index]}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <ChapterStatusBadge status={c.status} />
@@ -290,6 +350,15 @@ export function JobStatusView({
                           ดาวน์โหลด
                         </a>
                       </div>
+                    ) : c.status === "failed" ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRetry(c.index)}
+                        disabled={retrying.has(c.index)}
+                        className="text-xs font-medium text-amber-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-400"
+                      >
+                        {retrying.has(c.index) ? "กำลังส่ง…" : "🔄 สร้างใหม่"}
+                      </button>
                     ) : (
                       <span className="text-zinc-400">—</span>
                     )}
