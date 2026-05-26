@@ -5,9 +5,11 @@ import { resolveProjectAccess } from "@/lib/firebase/project-access";
 import { listMembersOfProject } from "@/lib/firebase/project-members";
 import { listContentJobsByProject } from "@/lib/firebase/content-jobs";
 import { getProjectTokenSummary } from "@/lib/firebase/token-usage";
+import { getOutline } from "@/lib/firebase/outlines";
 import { listProjectFiles } from "@/lib/r2/download";
 import { Nav } from "@/components/nav";
 import { ProjectTokenCard } from "./project-token-card";
+import { ProjectPagePoller } from "./project-page-poller";
 import { formatTimestamp, formatRelative } from "@/lib/format";
 import {
   DeleteProjectButton,
@@ -49,7 +51,7 @@ export default async function ProjectDetailPage({
   const access = await resolveProjectAccess(profile, id);
   if (!access) notFound();
 
-  const [files, members, contentJobs, tokenSummary] = await Promise.all([
+  const [files, members, contentJobs, tokenSummary, outline] = await Promise.all([
     listProjectFiles(id),
     listMembersOfProject(id),
     // Safe-default: if the composite index hasn't been deployed yet
@@ -62,13 +64,29 @@ export default async function ProjectDetailPage({
     // Per-user token usage on this project. Caught inside the helper
     // already; this is the viewer's own contribution.
     getProjectTokenSummary(profile.uid, id),
+    // Outline status — drives the polling decision below. Cheap
+    // single-doc read; if the project has no outline yet returns null.
+    getOutline(id).catch(() => null),
   ]);
+
+  // Smart polling: re-render the page every 10s only when something
+  // is actually changing — outline gen running, or any content job
+  // not yet in a terminal state. Idle projects stay quiet.
+  const hasActiveJob = contentJobs.some(
+    (j) => j.status === "pending" || j.status === "generating",
+  );
+  const outlineGenerating = outline?.status === "generating";
+  const shouldPoll = hasActiveJob || outlineGenerating;
 
   const { project } = access;
 
   return (
     <>
       <Nav profile={profile} />
+      {/* Polls in the background (every 10s) while outline / content
+          jobs are still running — gives the token card + counters a
+          chance to refresh without the user reloading. */}
+      <ProjectPagePoller active={shouldPoll} />
       <main className="flex flex-1 flex-col px-8 py-12">
         <div className="mx-auto w-full max-w-5xl">
         {/* Breadcrumb */}
