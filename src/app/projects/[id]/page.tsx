@@ -112,6 +112,28 @@ export default async function ProjectDetailPage({
           </span>
         </div>
 
+        {/* Admin-viewing-other-user banner. Shows ONLY when the viewer
+            is admin AND not the owner AND not a project member. Helps
+            admin understand why content-edit buttons are hidden — the
+            permission model lets admin manage (status/members/delete)
+            but not edit content. To actually edit, admin should
+            invite themselves as a project_editor member via the
+            members section below. */}
+        {access.isAdmin && !access.isOwner && !access.membership && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+            <p>
+              <strong>คุณกำลังดูในฐานะ Admin</strong> — จัดการ project ได้
+              (status / members / delete / transfer) แต่{" "}
+              <strong>แก้ content ไม่ได้</strong>{" "}
+              (outline, รัน gen, แก้ chapter, แทนที่ไฟล์)
+            </p>
+            <p className="mt-1 text-xs">
+              ถ้าจำเป็นต้องแก้ content → เพิ่มตัวเองเป็น <em>Editor</em>
+              ในส่วน Members ด้านล่าง (audit จะบันทึก)
+            </p>
+          </div>
+        )}
+
         {/* Header */}
         <header className="mt-2 flex flex-wrap items-start gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
           {/* Cover thumbnail */}
