@@ -54,13 +54,20 @@ export default async function EditProjectPage({
           </header>
 
           <div className="space-y-8">
-            <section className="mt-6 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-              <CoverUploader
-                projectId={p.id}
-                hasCover={Boolean(p.coverKey)}
-                initialVersion={p.coverUpdatedAt?.toMillis() ?? 0}
-              />
-            </section>
+            {/* Cover uploader — content-level mutation (replaces the
+                book's visual identity), gated on canEdit. Admin viewing
+                someone else's project gets canManage but NOT canEdit,
+                so the uploader is hidden for them. Metadata fields
+                below stay editable since those are canManage. */}
+            {access.canEdit && (
+              <section className="mt-6 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                <CoverUploader
+                  projectId={p.id}
+                  hasCover={Boolean(p.coverKey)}
+                  initialVersion={p.coverUpdatedAt?.toMillis() ?? 0}
+                />
+              </section>
+            )}
 
             <EditProjectForm
               projectId={p.id}

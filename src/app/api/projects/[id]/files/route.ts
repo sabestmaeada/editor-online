@@ -17,13 +17,14 @@ type RouteContext = { params: Promise<{ id: string }> };
  * PUT /api/projects/[id]/files
  *
  * Replace ALL source files of a project with a previously-uploaded ZIP.
- * Owner / admin only.
+ * Owner / project_editor member only.
  *
  * Body: { uploadKey: "projects/_staging/uuid.zip" }
  * The uploadKey must come from POST /api/projects/upload-url
  *
  * Steps:
- *   1. Auth + canManage check
+ *   1. Auth + canEdit check (content-level — admin excluded; admin
+ *      must invite themselves as editor to upload)
  *   2. Validate uploadKey is a staging key (defense-in-depth)
  *   3. Delete all objects under projects/{id}/source/
  *   4. Stream-unzip staged ZIP from R2 → upload files to source/
@@ -43,7 +44,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const access = await resolveProjectAccess(profile, id);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!access.canManage) {
+  // canEdit (not canManage) — replacing files mutates project content,
+  // not metadata. Admin viewing another user's project shouldn't be
+  // able to overwrite their book source. See project-access.ts comment
+  // for the full rationale.
+  if (!access.canEdit) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

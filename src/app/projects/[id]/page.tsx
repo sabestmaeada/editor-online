@@ -384,8 +384,9 @@ export default async function ProjectDetailPage({
             ทุกไฟล์ใน R2 prefix <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{project.r2Prefix}source/</code>
           </p>
 
-          {/* Replace files — owner / admin only */}
-          {access.canManage && (
+          {/* Replace files — content-level operation, gated on canEdit
+              (owner or project_editor member only — NOT bare admin) */}
+          {access.canEdit && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
               <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
                 ⚠ Replace all files

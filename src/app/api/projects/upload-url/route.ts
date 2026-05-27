@@ -18,7 +18,10 @@ const CREATABLE_ROLES: UserRole[] = ["admin", "editor"];
  * Body: { purpose: "create" | "replace", projectId?: string }
  *
  * - purpose=create   → caller must have global role editor/admin
- * - purpose=replace  → caller must be admin/owner of the given projectId
+ * - purpose=replace  → caller must have canEdit on the project (owner
+ *                      or project_editor member; admin viewing as
+ *                      system admin only is NOT allowed — must join
+ *                      as a member first to replace content)
  *
  * Returns: { uploadKey, uploadUrl, expiresAt }
  */
@@ -55,7 +58,10 @@ export async function POST(req: NextRequest) {
     if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (!access.canManage) {
+    // canEdit (not canManage) — replacing files is a content-level
+    // mutation. Pair with the same gate on PUT /api/projects/[id]/files
+    // so the presign step + the actual write step agree.
+    if (!access.canEdit) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   } else {

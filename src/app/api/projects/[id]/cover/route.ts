@@ -75,7 +75,10 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const access = await resolveProjectAccess(profile, id);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!access.canManage) {
+  // canEdit (not canManage) — cover is a visual asset of the book,
+  // i.e. content. Admin viewing as system admin shouldn't be able to
+  // replace someone else's cover; must invite themselves as editor.
+  if (!access.canEdit) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -157,7 +160,10 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const access = await resolveProjectAccess(profile, id);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!access.canManage) {
+  // canEdit (not canManage) — cover is a visual asset of the book,
+  // i.e. content. Admin viewing as system admin shouldn't be able to
+  // replace someone else's cover; must invite themselves as editor.
+  if (!access.canEdit) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
