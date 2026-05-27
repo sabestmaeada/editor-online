@@ -59,37 +59,57 @@ export default async function OutlinePage({
                 {formatRelative(outline.updatedAt)}
               </p>
             </div>
-            {access.canEdit && (
-              <div className="flex items-center gap-2">
-                {outline.contentJob?.jobId && (
-                  <Link
-                    href={`/projects/${id}/content/jobs/${outline.contentJob.jobId}`}
+            <div className="flex items-center gap-2">
+              {/* Download — Markdown export. Available to anyone with
+                  canDownload (project members + admin), as long as the
+                  outline has real content (ready / finalized). */}
+              {access.canDownload &&
+                (outline.status === "ready" ||
+                  outline.status === "finalized") &&
+                outline.nodes.length > 0 && (
+                  <a
+                    href={`/api/projects/${id}/outline/download`}
+                    download
                     className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    title="ดาวน์โหลด outline เป็น Markdown (.md)"
                   >
-                    📄 ดูเนื้อหาล่าสุด
-                  </Link>
+                    ⬇ ดาวน์โหลด MD
+                  </a>
                 )}
-                {outline.status !== "finalized" &&
-                  outline.status !== "generating" && (
+
+              {/* Edit-only actions (owner + project_editor) */}
+              {access.canEdit && (
+                <>
+                  {outline.contentJob?.jobId && (
                     <Link
-                      href={`/projects/${id}/outline/new`}
+                      href={`/projects/${id}/content/jobs/${outline.contentJob.jobId}`}
                       className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     >
-                      🔄 สร้างใหม่
+                      📄 ดูเนื้อหาล่าสุด
                     </Link>
                   )}
-                {(outline.status === "ready" ||
-                  outline.status === "finalized") &&
-                  outline.nodes.length > 0 && (
-                    <Link
-                      href={`/projects/${id}/content/new`}
-                      className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                    >
-                      สร้างเนื้อหา →
-                    </Link>
-                  )}
-              </div>
-            )}
+                  {outline.status !== "finalized" &&
+                    outline.status !== "generating" && (
+                      <Link
+                        href={`/projects/${id}/outline/new`}
+                        className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      >
+                        🔄 สร้างใหม่
+                      </Link>
+                    )}
+                  {(outline.status === "ready" ||
+                    outline.status === "finalized") &&
+                    outline.nodes.length > 0 && (
+                      <Link
+                        href={`/projects/${id}/content/new`}
+                        className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        สร้างเนื้อหา →
+                      </Link>
+                    )}
+                </>
+              )}
+            </div>
           </div>
         </header>
 
