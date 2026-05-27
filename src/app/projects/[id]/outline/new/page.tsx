@@ -32,16 +32,21 @@ export default async function OutlineNewPage({
   // (The submit still overwrites — Q1=A: one outline per project.)
   const existing = await getOutline(id);
 
-  // Load the editor's own tone library entries (active + analysed only).
-  // Per Q-Tone-4 (a), admin does NOT see the dropdown — admin doesn't
-  // own tones and shouldn't accidentally tag outlines with someone else's
-  // style. Server side gates this on role.
-  const availableTones: ToneOption[] =
-    profile.role === "admin"
-      ? []
-      : (await listTonesByOwner(profile.uid, { status: "active" }))
-          .filter((t) => t.systemPrompt !== null && t.systemPrompt.length > 0)
-          .map((t) => ({ id: t.id, name: t.name }));
+  // Load the caller's own tone library entries (active + analysed only).
+  //
+  // Historical note: an earlier design (Q-Tone-4 = a) hid the dropdown
+  // from admins on the assumption that admins don't author books and
+  // shouldn't tag others' projects with personal tones. That premise
+  // changed with P2-S61: admins now don't have `canEdit` on other
+  // users' projects at all — so the only way an admin reaches this
+  // page is when they're the project's owner / project_editor member.
+  // In both of those cases, picking their own tone is exactly what
+  // they want, so the role gate has been removed.
+  const availableTones: ToneOption[] = (
+    await listTonesByOwner(profile.uid, { status: "active" })
+  )
+    .filter((t) => t.systemPrompt !== null && t.systemPrompt.length > 0)
+    .map((t) => ({ id: t.id, name: t.name }));
 
   return (
     <>
