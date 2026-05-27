@@ -23,9 +23,46 @@
  * Edit this file via PR — changes deploy with the next Vercel build.
  * Existing ContentJob docs are NOT affected (they snapshot the composed
  * prompt at submit time).
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * Iteration log
+ * ─────────────────────────────────────────────────────────────────
+ * v2 (2026-05-28): ลดความเข้มของ prompt — Gemini Flash ส่ง
+ *   MALFORMED_RESPONSE เพราะ prompt ยาว/เข้มเกินไป (18 บรรทัด +
+ *   ตัวอย่างถูก/ผิด) ใช้ thinking tokens หมดก่อน output จริง
+ *
+ *   ที่ตัดออก:
+ *   - ตัวอย่างถูก/ผิดยาวๆ (Flash พยายาม match pattern จนสับสน)
+ *   - "ห้ามข้ามลำดับชั้น" / "ห้าม **ตัวหนา**" (corner cases)
+ *   - "ห้าม ASCII art / box drawing" (ย้ายไปทำ sanitize ใน n8n
+ *     "สร้าง HTML" — defense-in-depth)
+ *   - เปลี่ยนน้ำเสียงจาก "ห้าม X" → positive framing
+ *
+ *   ถ้า v2 หย่อนจนโครงสร้าง markdown พัง → rollback ไป v1 โดย
+ *   เปลี่ยน export STRUCTURE_PROMPT ด้านล่างให้ชี้ที่ STRUCTURE_PROMPT_V1
+ *
+ * v1 (initial): เก็บไว้ที่ STRUCTURE_PROMPT_V1 ด้านล่าง
  */
 
-export const STRUCTURE_PROMPT = `## ภาษาเอาต์พุต
+export const STRUCTURE_PROMPT = `## รูปแบบเอาต์พุต
+
+- เขียนเป็นภาษาไทย (คำศัพท์เทคนิคและโค้ดคงเป็นภาษาอังกฤษได้)
+- ใช้ Markdown heading ตามลำดับชั้น: \`#\` ชื่อบท, \`##\` หัวข้อหลัก, \`###\` หัวข้อย่อย, \`####\` หัวข้อย่อยลึก
+- เขียนเฉพาะ "ชื่อหัวข้อ" — ระบบใส่ลำดับเลขให้อัตโนมัติ
+- ไม่ใช้ emoji ในเนื้อหา`;
+
+/**
+ * v1 — เวอร์ชันแรก เก็บไว้สำหรับ rollback
+ *
+ * วิธี rollback ถ้า v2 ทำโครงสร้างพังบ่อย:
+ *   เปลี่ยน export ด้านบน:
+ *     export const STRUCTURE_PROMPT = STRUCTURE_PROMPT_V1;
+ *
+ * ลักษณะของ v1: เข้มกว่า — ครอบคลุม edge case มากขึ้น (heading
+ * skipping, **bold** as heading, ASCII art) แต่ใช้ token เยอะ
+ * และ Flash model มี chance ตอบ MALFORMED
+ */
+export const STRUCTURE_PROMPT_V1 = `## ภาษาเอาต์พุต
 - เขียนเนื้อหาเป็นภาษาไทยทั้งหมด (ยกเว้นคำศัพท์เทคนิคและตัวอย่าง code)
 
 ## โครงสร้างหัวข้อ (Heading Hierarchy)
