@@ -555,6 +555,11 @@ function ConfirmDeleteModal({
   const completedCount = job.chapters.filter(
     (c) => c.status === "done",
   ).length;
+  // In-flight (job ยังไม่จบ) — n8n ยังรัน background → ลบตอนนี้แปลว่า
+  // เรื่องที่เหลือใน loop n8n ยังเรียก Gemini ต่อไปจนครบ → user เสีย
+  // token cost ที่ Gemini แม้ไม่ได้เก็บผลลัพธ์
+  const isInFlight = job.status === "pending" || job.status === "generating";
+  const remainingChapters = job.totalChapters - completedCount - job.failedChapters;
 
   return (
     <div
@@ -568,6 +573,27 @@ function ConfirmDeleteModal({
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
           ลบเนื้อหาที่สร้าง?
         </h2>
+
+        {/* Extra warning ถ้า job ยังรันอยู่ — frontend ลบได้ แต่ backend
+            ไม่หยุด ทำให้ user เสีย AI cost บทที่เหลือเปล่า ๆ. ข้อความ
+            หลีกเลี่ยงศัพท์เทคนิค (Vercel/n8n/Gemini/LLM) ให้ user ทั่วไป
+            อ่านเข้าใจง่าย */}
+        {isInFlight && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            <p className="font-semibold">
+              ⚠️ AI กำลังทำงานอยู่ ({remainingChapters} บทยังไม่เสร็จ)
+            </p>
+            <p className="mt-1 text-xs">
+              การลบจะหยุดเฉพาะฝั่ง <strong>Frontend</strong> ส่วน{" "}
+              <strong>Backend</strong> ยังจะเรียก AI ต่อจนครบ
+              <br />
+              จะเสียค่าใช้จ่ายในบทที่เหลือโดยไม่ได้ผลลัพธ์
+              <br />
+              แนะนำให้รอจนจบก่อนค่อยลบ
+            </p>
+          </div>
+        )}
+
         <div className="mt-3 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
           <p>การลบจะทำให้:</p>
           <ul className="ml-4 list-disc space-y-1">
