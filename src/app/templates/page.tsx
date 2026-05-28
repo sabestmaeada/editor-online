@@ -40,17 +40,62 @@ export default async function TemplatesListPage({
     redirect("/templates");
   }
 
-  const templates =
-    view === "all" && isAdmin
-      ? await listAllTemplates({ status: null }) // admin sees archived too
-      : await listTemplatesForEditor(profile.uid);
+  const isAllView = view === "all" && isAdmin;
+
+  const templates = isAllView
+    ? await listAllTemplates({ status: null }) // admin sees archived too
+    : await listTemplatesForEditor(profile.uid);
 
   // Group by scope first (shared on top), then by category for visual order
   const shared = templates.filter((t) => t.scope === "shared");
   const personal = templates.filter((t) => t.scope === "personal");
 
+  // P2-S76: in view=all the personal section mixes admin's own + others'
+  // — re-sort so admin's own bubble up first (then preserve the existing
+  // updatedAt-desc order within each group). Without this admins had to
+  // scan the whole list to find their own templates.
+  if (isAllView) {
+    personal.sort((a, b) => {
+      const aIsSelf = a.ownerUid === profile.uid ? 0 : 1;
+      const bIsSelf = b.ownerUid === profile.uid ? 0 : 1;
+      if (aIsSelf !== bIsSelf) return aIsSelf - bIsSelf;
+      // listAllTemplates already returns updatedAt desc — fall back to it
+      return b.updatedAt.toMillis() - a.updatedAt.toMillis();
+    });
+  }
+
   const canCreate = canCreatePersonalTemplate(profile);
   const canCreateShared = canCreateSharedTemplate(profile);
+
+  // P2-S76: section copy depends on view mode. In view=all the page is
+  // a management view (admin sees everyone's templates), in default
+  // view it's the personal "what I can pick in the content form" view.
+  const sharedSectionTitle = isAllView
+    ? "🌐 Shared templates (ทั้งระบบ)"
+    : "🌐 Shared templates (จาก admin)";
+  const sharedSectionDescription = isAllView
+    ? "เห็นได้ทุก editor — admin แก้/archive/ลบได้"
+    : "ใช้ได้กับทุก editor — แก้/ลบได้เฉพาะ admin";
+  const sharedEmptyHint = canCreateShared
+    ? "ยังไม่มี shared template — สร้างอันแรกผ่านปุ่มด้านบน"
+    : "ยังไม่มี shared template ที่ admin จัดไว้";
+
+  // Personal section: in view=all this lists ALL users' personals, in
+  // default view it's only the caller's own.
+  const ownPersonalCount = isAllView
+    ? personal.filter((t) => t.ownerUid === profile.uid).length
+    : personal.length;
+  const personalSectionTitle = isAllView
+    ? `👤 Personal templates (จากทุก user · ${personal.length} รายการ)`
+    : "👤 Personal templates (ของคุณ)";
+  const personalSectionDescription = isAllView
+    ? `Personal templates ของทุก user รวมกัน — ของคุณ ${ownPersonalCount} อัน · admin จัดการ archive/แก้/ลบได้`
+    : "ใช้ในฟอร์มสร้างเนื้อหาของคุณเอง — แก้/ลบได้";
+  const personalEmptyHint = isAllView
+    ? "ยังไม่มี personal template จาก user ใดๆ ในระบบ"
+    : canCreate
+      ? "ยังไม่มี template ส่วนตัว — สร้างเองได้สูงสุด 50 อัน"
+      : "ยังไม่มี template ส่วนตัว";
 
   return (
     <>
@@ -112,30 +157,22 @@ export default async function TemplatesListPage({
 
           {/* Shared section */}
           <Section
-            title="🌐 Shared templates (จาก admin)"
-            description="ใช้ได้กับทุก editor — แก้/ลบได้เฉพาะ admin"
+            title={sharedSectionTitle}
+            description={sharedSectionDescription}
             templates={shared}
             isAdmin={isAdmin}
             currentUid={profile.uid}
-            emptyHint={
-              canCreateShared
-                ? "ยังไม่มี shared template — สร้างอันแรกผ่านปุ่มด้านบน"
-                : "ยังไม่มี shared template ที่ admin จัดไว้"
-            }
+            emptyHint={sharedEmptyHint}
           />
 
           {/* Personal section */}
           <Section
-            title="👤 Personal templates (ของคุณ)"
-            description="ใช้ในฟอร์มสร้างเนื้อหาของคุณเอง — แก้/ลบได้"
+            title={personalSectionTitle}
+            description={personalSectionDescription}
             templates={personal}
             isAdmin={isAdmin}
             currentUid={profile.uid}
-            emptyHint={
-              canCreate
-                ? "ยังไม่มี template ส่วนตัว — สร้างเองได้สูงสุด 50 อัน"
-                : "ยังไม่มี template ส่วนตัว"
-            }
+            emptyHint={personalEmptyHint}
           />
         </div>
       </main>
