@@ -167,7 +167,11 @@ function updateUserBadge() {
     nameEl.textContent = currentUser.name;
     dot.style.background = currentUser.color;
     badge.style.borderColor = currentUser.color;
-    badge.style.color = '#fff';
+    // P2-S75: was hardcoded '#fff' — broke in light theme (white-on-white)
+    // after editor reskin (P2-S73). Use --shell-text so the name follows
+    // the active theme: zinc-900 on light surface, zinc-50 on dark.
+    // The badge identity is still carried by the colored border + dot.
+    badge.style.color = 'var(--shell-text)';
   } else {
     nameEl.textContent = 'ตั้งชื่อ';
     dot.style.background = 'var(--shell-text-dim)';
