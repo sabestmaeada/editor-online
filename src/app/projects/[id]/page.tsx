@@ -10,6 +10,7 @@ import { listProjectFiles } from "@/lib/r2/download";
 import { Nav } from "@/components/nav";
 import { ProjectTokenCard } from "./project-token-card";
 import { ProjectPagePoller } from "./project-page-poller";
+import { CoverThumbnail } from "./cover-thumbnail";
 import { formatTimestamp, formatRelative } from "@/lib/format";
 import {
   DeleteProjectButton,
@@ -136,24 +137,17 @@ export default async function ProjectDetailPage({
 
         {/* Header */}
         <header className="mt-2 flex flex-wrap items-start gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
-          {/* Cover thumbnail */}
-          <div className="size-24 sm:size-32 flex-shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
-            {project.coverKey ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={`/api/projects/${project.id}/cover?v=${project.coverUpdatedAt?.toMillis() ?? 0}`}
-                alt={`Cover of ${project.title}`}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src="/cover-placeholder.svg"
-                alt=""
-                className="h-full w-full object-cover opacity-80"
-              />
-            )}
-          </div>
+          {/* Cover thumbnail — P2-S74: FB-style click-to-upload for users
+              with canEdit. Read-only view for everyone else (admin
+              viewing other users' projects, reviewer, viewer). */}
+          <CoverThumbnail
+            projectId={project.id}
+            title={project.title}
+            hasCover={Boolean(project.coverKey)}
+            initialVersion={project.coverUpdatedAt?.toMillis() ?? 0}
+            canEdit={access.canEdit}
+          />
+
 
           <div className="grow">
             <div className="flex items-center gap-3">
