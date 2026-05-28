@@ -16,6 +16,7 @@ import {
   PROMPT_TEMPLATE_CATEGORY_LABELS,
   type PromptTemplate,
 } from "@/lib/types";
+import { FilterPill } from "@/components/filter-pill";
 
 export const dynamic = "force-dynamic";
 
@@ -80,18 +81,12 @@ export default async function TemplatesListPage({
             {isAdmin && (
               <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-zinc-500">แสดง:</span>
-                <Link
-                  href="/templates"
-                  className={filterPill(view !== "all")}
-                >
+                <FilterPill href="/templates" active={view !== "all"}>
                   ของฉัน + Shared
-                </Link>
-                <Link
-                  href="/templates?view=all"
-                  className={filterPill(view === "all")}
-                >
+                </FilterPill>
+                <FilterPill href="/templates?view=all" active={view === "all"}>
                   ทุก user (admin)
-                </Link>
+                </FilterPill>
               </div>
             )}
 
@@ -217,11 +212,7 @@ function Section({
   );
 }
 
-function filterPill(active: boolean): string {
-  return (
-    "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
-    (active
-      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-      : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800")
-  );
-}
+// (helper `filterPill` removed in P2-S72 — replaced by the shared
+//  <FilterPill> from @/components/filter-pill, which carries the
+//  same styling plus a useLinkStatus pending spinner for click
+//  feedback during query-only navigation.)

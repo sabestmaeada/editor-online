@@ -12,7 +12,7 @@ import {
 import { Nav } from "@/components/nav";
 import { formatRelative } from "@/lib/format";
 import type { ToneStyle } from "@/lib/types";
-import { FilterPill } from "./filter-pill";
+import { FilterPill } from "@/components/filter-pill";
 
 export const dynamic = "force-dynamic";
 

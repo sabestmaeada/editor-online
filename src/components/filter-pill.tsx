@@ -5,19 +5,26 @@ import { useLinkStatus } from "next/link";
 import { InlineSpinner } from "@/components/inline-spinner";
 
 /**
- * Filter pill for the admin tone-library view-switcher.
+ * Shared admin filter pill — used by view-switcher rows that flip
+ * between "own data" and "all users" via query params (?user=all,
+ * ?view=all, etc).
  *
- * Plain `<Link>` won't trigger /tones/loading.tsx when only the
- * query string changes (Next.js App Router skips loading.tsx on
- * pure searchParams navigation). Without any visible feedback the
+ * Background: plain `<Link>` won't trigger loading.tsx when only
+ * the query string changes (Next.js App Router skips loading.tsx
+ * on pure searchParams navigation). Without visible feedback the
  * admin can't tell the click registered until the server finishes
- * the listAllTones() round-trip — which felt broken in P2-S67's
- * post-mortem.
+ * its round-trip — surfaced in P2-S67's post-mortem.
  *
- * `useLinkStatus` (Next.js 15.3+) gives us a tiny client-side hook
+ * `useLinkStatus` (Next.js 15.3+) gives a tiny client-side hook
  * that flips `pending=true` while the enclosing <Link> is mid-
  * navigation. We surface an InlineSpinner inside the pill so the
  * user sees the click landed.
+ *
+ * Lives in src/components/ (not co-located) because two unrelated
+ * pages reuse it verbatim (P2-S69 /tones, P2-S72 /templates).
+ * Sibling components for tab- and chip-shaped filters are kept
+ * inside their respective page folders since they carry per-page
+ * styling concerns (count badges, event-type colour codes).
  *
  * The hook MUST be read from a descendant of <Link> (not the
  * <Link> itself) — that's why the spinner lives in its own
