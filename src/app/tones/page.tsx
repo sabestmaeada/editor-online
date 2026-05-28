@@ -12,6 +12,7 @@ import {
 import { Nav } from "@/components/nav";
 import { formatRelative } from "@/lib/format";
 import type { ToneStyle } from "@/lib/types";
+import { FilterPill } from "./filter-pill";
 
 export const dynamic = "force-dynamic";
 
@@ -63,18 +64,18 @@ export default async function TonesListPage({ searchParams }: PageProps) {
           {isAdmin && (
             <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
               <span className="text-zinc-500">แสดง:</span>
-              <Link
+              <FilterPill
                 href="/tones"
-                className={filterPill(!filter || filter === profile.uid)}
+                active={!filter || filter === profile.uid}
               >
                 ของฉัน
-              </Link>
-              <Link
+              </FilterPill>
+              <FilterPill
                 href="/tones?user=all"
-                className={filterPill(filter === "all")}
+                active={filter === "all"}
               >
                 ทุก user (admin)
-              </Link>
+              </FilterPill>
               <span className="ml-2 text-xs text-zinc-400">
                 ปัจจุบัน: {viewLabel}
               </span>
@@ -196,11 +197,6 @@ export default async function TonesListPage({ searchParams }: PageProps) {
   );
 }
 
-function filterPill(active: boolean): string {
-  return (
-    "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
-    (active
-      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-      : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800")
-  );
-}
+// (helper `filterPill` removed in P2-S69 — replaced by <FilterPill> component
+//  in ./filter-pill.tsx, which carries the same styling plus a useLinkStatus
+//  pending spinner for click feedback during query-only navigation.)
