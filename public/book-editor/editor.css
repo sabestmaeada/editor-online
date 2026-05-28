@@ -2,25 +2,63 @@
    Book Editor — CSS
    ============================================== */
 
-/* ===== CSS VARIABLES ===== */
+/* ===== CSS VARIABLES =====
+ * P2-S73: reskin from hardcoded dark + green accent to the app's
+ * zinc-based palette. Light theme is the default; dark theme is
+ * picked up automatically via @media (prefers-color-scheme: dark)
+ * — mirrors the strategy in src/app/globals.css so the editor
+ * theme tracks the rest of the app (tones / projects / admin).
+ *
+ * Colour map ≈ Tailwind zinc:
+ *   bg          50 / 950
+ *   surface     white / 900
+ *   border      200 / 800
+ *   text        900 / 50
+ *   text-dim    500 / 400
+ *   accent      900 / 50    ← matches `bg-zinc-900 text-white`
+ *                              primary buttons used app-wide
+ *   accent-fg   white / 900 ← text that sits on accent backgrounds;
+ *                              flips with the accent itself so
+ *                              contrast is preserved in both themes
+ *   accent-lt   100 / 800   ← hover wash
+ *   toolbar-bg  100 / 900
+ */
 :root {
-  --shell-bg: #16171B;
-  --shell-surface: #1E1F24;
-  --shell-border: #2A2B31;
-  --shell-text: #C8C9CE;
-  --shell-text-dim: #6B6D75;
-  --shell-accent: #1A6B52;
-  --shell-accent-hover: #22896A;
-  --shell-accent-lt: rgba(26,107,82,.15);
-  --shell-danger: #E55353;
-  --shell-warning: #F5C842;
-  --shell-toolbar-bg: #22232A;
+  --shell-bg: #FAFAFA;
+  --shell-surface: #FFFFFF;
+  --shell-border: #E4E4E7;
+  --shell-text: #18181B;
+  --shell-text-dim: #71717A;
+  --shell-accent: #18181B;
+  --shell-accent-fg: #FFFFFF;
+  --shell-accent-hover: #3F3F46;
+  --shell-accent-lt: #F4F4F5;
+  --shell-danger: #DC2626;
+  --shell-warning: #D97706;
+  --shell-toolbar-bg: #F4F4F5;
   --shell-sidebar-w: 260px;
   --shell-toolbar-h: 44px;
   --shell-topbar-h: 48px;
   --hd: 'IBM Plex Sans Thai', sans-serif;
   --bd: 'Sarabun', sans-serif;
   --cd: 'JetBrains Mono', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --shell-bg: #09090B;
+    --shell-surface: #18181B;
+    --shell-border: #27272A;
+    --shell-text: #FAFAFA;
+    --shell-text-dim: #A1A1AA;
+    --shell-accent: #FAFAFA;
+    --shell-accent-fg: #18181B;
+    --shell-accent-hover: #D4D4D8;
+    --shell-accent-lt: #27272A;
+    --shell-danger: #F87171;
+    --shell-warning: #FBBF24;
+    --shell-toolbar-bg: #18181B;
+  }
 }
 
 /* ===== RESET ===== */
@@ -174,7 +212,7 @@ body {
 
 .btn-primary {
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-accent-fg);
 }
 .btn-primary:hover { background: var(--shell-accent-hover); }
 
@@ -310,7 +348,7 @@ body {
   position: relative;
 }
 .tb-btn:hover { background: var(--shell-accent-lt); color: var(--shell-accent); }
-.tb-btn.active { background: var(--shell-accent); color: #fff; }
+.tb-btn.active { background: var(--shell-accent); color: var(--shell-accent-fg); }
 .tb-btn svg { width: 16px; height: 16px; }
 
 .tb-sep {
@@ -520,7 +558,7 @@ body {
   bottom: 40px;
   right: 20px;
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-accent-fg);
   font-family: var(--hd);
   font-size: 13px;
   font-weight: 500;
@@ -588,7 +626,7 @@ body {
 .endmark-preview {
   text-align: center;
   font-size: 20px;
-  color: #C8C5BB;
+  color: var(--shell-text-dim);
   padding: 20px;
   margin-bottom: 14px;
   border: 1px solid var(--shell-border);
@@ -627,7 +665,7 @@ body {
 .quick-insert-btn.show { opacity: 1; pointer-events: auto; }
 .quick-insert-btn:hover, .quick-insert-btn.active {
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-accent-fg);
   border-color: var(--shell-accent);
 }
 
