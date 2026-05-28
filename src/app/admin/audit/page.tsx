@@ -13,6 +13,7 @@ import {
   parseAuditSearchParams,
   type AuditFilters,
 } from "./filters";
+import { FilterChip } from "./filter-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -366,34 +367,11 @@ export default async function AdminAuditPage({
   );
 }
 
-function FilterChip({
-  href,
-  active,
-  label,
-  badge,
-}: {
-  href: string;
-  active: boolean;
-  label: string;
-  badge?: string;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={
-        "rounded-full px-3 py-1 text-xs font-medium transition-colors " +
-        (active
-          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-          : badge
-            ? `${badge} hover:opacity-80`
-            : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700")
-      }
-    >
-      {label}
-    </Link>
-  );
-}
+// (inline `FilterChip` removed in P2-S71 — replaced by the imported
+//  <FilterChip> from ./filter-chip.tsx, which carries the same
+//  styling plus a useLinkStatus pending spinner for click feedback
+//  during query-only navigation. The 40+ event-type chips each get
+//  their own per-click spinner state automatically.)
 
 function EventRow({ event: e }: { event: AuthEvent }) {
   const userDisplay =

@@ -6,6 +6,7 @@ import { formatRelative } from "@/lib/format";
 import { USER_STATUSES, type UserProfile, type UserStatus } from "@/lib/types";
 import { RoleSelector } from "./role-selector";
 import { PendingActions, RejectedActions } from "./status-actions";
+import { FilterTab } from "./filter-tab";
 
 export const dynamic = "force-dynamic";
 
@@ -99,33 +100,33 @@ export default async function AdminUsersPage({
           aria-label="Filter by status"
           className="mt-6 flex flex-wrap items-center gap-2"
         >
-          <Tab
+          <FilterTab
             href="/admin/users"
             active={filter === "all"}
             label="All"
             count={allUsers.length}
           />
-          <Tab
+          <FilterTab
             href="/admin/users?status=active"
             active={filter === "active"}
             label="Active"
             count={counts.active}
           />
-          <Tab
+          <FilterTab
             href="/admin/users?status=pending"
             active={filter === "pending"}
             label="Pending"
             count={counts.pending}
             highlight={counts.pending > 0}
           />
-          <Tab
+          <FilterTab
             href="/admin/users?status=rejected"
             active={filter === "rejected"}
             label="Rejected"
             count={counts.rejected}
           />
           {counts.disabled > 0 && (
-            <Tab
+            <FilterTab
               href="/admin/users?status=disabled"
               active={filter === "disabled"}
               label="Disabled"
@@ -252,43 +253,7 @@ function countByStatus(users: UserProfile[]): Record<UserStatus, number> {
   return out;
 }
 
-function Tab({
-  href,
-  active,
-  label,
-  count,
-  highlight,
-}: {
-  href: string;
-  active: boolean;
-  label: string;
-  count: number;
-  highlight?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={
-        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors " +
-        (active
-          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-          : highlight
-            ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900"
-            : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700")
-      }
-    >
-      {label}
-      <span
-        className={
-          "rounded-full px-1.5 text-[10px] " +
-          (active
-            ? "bg-white/20"
-            : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300")
-        }
-      >
-        {count}
-      </span>
-    </Link>
-  );
-}
+// (inline `Tab` removed in P2-S70 — replaced by <FilterTab> in
+//  ./filter-tab.tsx, which carries the same styling plus a
+//  useLinkStatus pending spinner for click feedback during
+//  query-only navigation.)
