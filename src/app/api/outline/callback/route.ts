@@ -118,6 +118,27 @@ export async function POST(req: NextRequest) {
       success: false,
       errorCode: "N8N_FAILED",
     });
+
+    // P2-S78: even on failed callbacks, Gemini may have consumed tokens
+    // before the failure (e.g. list step succeeded, details step
+    // crashed). The n8n outline workflow stashes them in staticData and
+    // sends them in the failed callback's tokenUsage[] (P2-S77). Mirror
+    // the same parse + record path used in the "done" branch below so
+    // partial billing is still tracked. Fire-and-forget, same as "done".
+    const failedRawTokens =
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>).tokenUsage
+        : undefined;
+    const failedEvents = parseTokenUsageArray(failedRawTokens, {
+      source: "outline",
+      jobId: null,
+      projectId,
+      chapterFallback: null,
+    });
+    if (failedEvents.length > 0) {
+      void recordTokenUsage(existing.createdBy, failedEvents);
+    }
+
     return NextResponse.json({ ok: true, applied: true, status: "failed" });
   }
 
