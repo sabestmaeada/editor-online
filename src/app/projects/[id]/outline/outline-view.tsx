@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   type DragEndEvent,
@@ -45,6 +45,11 @@ type Props = {
 // per-depth below (depth * INDENT_PX).
 const INDENT_PX = 28;
 
+// Max undo snapshots kept in memory. Each snapshot is a shallow array
+// of flat items (~50 bytes each); 50 steps for a big outline is still
+// well under a megabyte and covers any realistic editing session.
+const MAX_HISTORY = 50;
+
 /**
  * Outline editor with drag-drop tree.
  *
@@ -74,6 +79,106 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // ── Undo / redo (P2-S80) ────────────────────────────────────
+  // past[]   = older snapshots (top = most recent before now)
+  // future[] = snapshots undone (for redo)
+  // Every structural mutation snapshots `items` into past via commit();
+  // text edits coalesce per-field via commitText() so a typing burst
+  // collapses into one undo step.
+  const [past, setPast] = useState<FlatTreeItem[][]>([]);
+  const [future, setFuture] = useState<FlatTreeItem[][]>([]);
+  // Tracks the field id of the current typing session — when it changes
+  // (or a structural op happens) we know to start a fresh undo step.
+  const textSessionRef = useRef<string | null>(null);
+
+  function pushHistory() {
+    setPast((p) => {
+      const nextPast = [...p, items];
+      return nextPast.length > MAX_HISTORY
+        ? nextPast.slice(nextPast.length - MAX_HISTORY)
+        : nextPast;
+    });
+    setFuture([]);
+  }
+
+  /** Structural change → discrete undo step. */
+  function commit(next: FlatTreeItem[]) {
+    textSessionRef.current = null;
+    pushHistory();
+    setItems(next);
+    setDirty(true);
+  }
+
+  /** Text change → coalesced per field id (one undo step per session). */
+  function commitText(id: string, next: FlatTreeItem[]) {
+    if (textSessionRef.current !== id) {
+      pushHistory();
+      textSessionRef.current = id;
+    }
+    setItems(next);
+    setDirty(true);
+  }
+
+  function undo() {
+    if (past.length === 0) return;
+    const prev = past[past.length - 1];
+    setPast(past.slice(0, -1));
+    setFuture([items, ...future]);
+    setItems(prev);
+    setDirty(true);
+    textSessionRef.current = null;
+  }
+
+  function redo() {
+    if (future.length === 0) return;
+    const nxt = future[0];
+    setFuture(future.slice(1));
+    setPast([...past, items]);
+    setItems(nxt);
+    setDirty(true);
+    textSessionRef.current = null;
+  }
+
+  // Keep the keydown handler pointed at the freshest undo/redo without
+  // re-binding the window listener on every render. Updating the ref in
+  // an effect (not during render) keeps react-hooks/refs happy.
+  const handlersRef = useRef({ undo, redo });
+  useEffect(() => {
+    handlersRef.current = { undo, redo };
+  });
+
+  useEffect(() => {
+    if (!canEdit) return;
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      // While typing in a field, let the browser's native input undo
+      // handle Cmd/Ctrl+Z — don't hijack it. Our shortcut covers the
+      // structural case (after a drag the focus is on a button, not an
+      // input). The toolbar buttons cover undo while focused in a field.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) handlersRef.current.redo();
+        else handlersRef.current.undo();
+      } else if (key === "y") {
+        e.preventDefault();
+        handlersRef.current.redo();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEdit]);
 
   // Drag state
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -161,8 +266,7 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
         ...shiftedBlock,
         ...items.slice(blockEnd),
       ];
-      setItems(recomputeParents(updated, activeIdx, desc));
-      setDirty(true);
+      commit(recomputeParents(updated, activeIdx, desc));
       return;
     }
 
@@ -188,8 +292,7 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
 
     // ── Rebind descendant parentIds against the new contiguous block.
     const movedIdx = next.findIndex((i) => i.id === activeId);
-    setItems(recomputeParents(next, movedIdx, desc));
-    setDirty(true);
+    commit(recomputeParents(next, movedIdx, desc));
   }
 
   function handleDragCancel() {
@@ -200,19 +303,19 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
   /* ─── Imperative ops (buttons) ─── */
 
   function updateText(id: string, text: string) {
-    setItems((curr) => curr.map((it) => (it.id === id ? { ...it, text } : it)));
-    setDirty(true);
+    const next = items.map((it) => (it.id === id ? { ...it, text } : it));
+    commitText(id, next);
   }
 
   function updateType(id: string, type: OutlineNodeType) {
-    setItems((curr) => curr.map((it) => (it.id === id ? { ...it, type } : it)));
-    setDirty(true);
+    const next = items.map((it) => (it.id === id ? { ...it, type } : it));
+    commit(next);
   }
 
   function deleteItem(id: string) {
     const desc = getDescendantIds(items, id);
-    setItems((curr) => curr.filter((it) => it.id !== id && !desc.has(it.id)));
-    setDirty(true);
+    const next = items.filter((it) => it.id !== id && !desc.has(it.id));
+    commit(next);
   }
 
   function addChild(parentId: string) {
@@ -237,19 +340,17 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
     while (insertAt < items.length && desc.has(items[insertAt].id)) {
       insertAt++;
     }
-    setItems((curr) => {
-      const next = curr.slice();
-      next.splice(insertAt, 0, newItem);
-      return next.map((it) =>
-        it.id === parentId ? { ...it, hasChildren: true } : it,
-      );
-    });
-    setDirty(true);
+    const withNew = items.slice();
+    withNew.splice(insertAt, 0, newItem);
+    const next = withNew.map((it) =>
+      it.id === parentId ? { ...it, hasChildren: true } : it,
+    );
+    commit(next);
   }
 
   function addRootChapter() {
-    setItems((curr) => [
-      ...curr,
+    const next: FlatTreeItem[] = [
+      ...items,
       {
         id: makeId(),
         type: "chapter",
@@ -258,8 +359,8 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
         parentId: null,
         hasChildren: false,
       },
-    ]);
-    setDirty(true);
+    ];
+    commit(next);
   }
 
   /* ─── Save ─── */
@@ -316,6 +417,28 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
             <span className="text-sm text-emerald-600 dark:text-emerald-400">
               {message}
             </span>
+          )}
+          {canEdit && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={undo}
+                disabled={past.length === 0}
+                title="ย้อนกลับ (Cmd/Ctrl+Z)"
+                aria-label="Undo"
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                ↶ Undo
+              </button>
+              <button
+                onClick={redo}
+                disabled={future.length === 0}
+                title="ทำซ้ำ (Cmd/Ctrl+Shift+Z)"
+                aria-label="Redo"
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                ↷ Redo
+              </button>
+            </div>
           )}
           {canEdit && (
             <button
