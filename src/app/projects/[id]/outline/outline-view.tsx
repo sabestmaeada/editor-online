@@ -16,7 +16,6 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
-  arrayMove,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
@@ -121,44 +120,75 @@ export function OutlineView({ projectId, initialNodes, canEdit }: Props) {
   }
 
   function handleDragEnd(e: DragEndEvent) {
+    // Capture projection from this render before the state resets null it.
+    const proj = projection;
+    const activeId = String(e.active.id);
+    const overId = e.over ? String(e.over.id) : null;
+
     setActiveId(null);
     setOverId(null);
-    if (!e.over || !projection) return;
+    if (!overId || !proj) return;
 
-    // Apply the move: reorder in flat list + apply new depth/parentId
-    // to the dragged subtree.
-    const activeIdx = items.findIndex((i) => i.id === String(e.active.id));
-    const overIdx = items.findIndex((i) => i.id === String(e.over!.id));
-    if (activeIdx === -1 || overIdx === -1) return;
+    const activeIdx = items.findIndex((i) => i.id === activeId);
+    if (activeIdx === -1) return;
 
-    const next = arrayMove(items, activeIdx, overIdx);
+    // ── Collect the contiguous subtree BLOCK (parent + descendants).
+    // flattenTree keeps DFS order, so a node's descendants immediately
+    // follow it until we hit an item that isn't a descendant. Moving the
+    // whole block (not just the parent) is what makes children follow.
+    const desc = getDescendantIds(items, activeId);
+    let blockEnd = activeIdx + 1;
+    while (blockEnd < items.length && desc.has(items[blockEnd].id)) {
+      blockEnd++;
+    }
+    const block = items.slice(activeIdx, blockEnd);
 
-    // Apply new depth/parentId to the active item, then shift its
-    // descendants by the depth delta so the subtree shape is preserved.
-    const oldDepth = items[activeIdx].depth;
-    const depthDelta = projection.depth - oldDepth;
+    // ── Shift the whole block's depth by the same delta so the internal
+    // subtree shape is preserved; the parent (block[0]) also gets the
+    // projected parentId.
+    const oldDepth = block[0].depth;
+    const depthDelta = proj.depth - oldDepth;
+    const shiftedBlock = block.map((it, i) =>
+      i === 0
+        ? { ...it, depth: proj.depth, parentId: proj.parentId }
+        : { ...it, depth: it.depth + depthDelta },
+    );
 
-    const desc = getDescendantIds(items, String(e.active.id));
-    const movedIdx = next.findIndex((i) => i.id === String(e.active.id));
-    const updated = next.map((it) => {
-      if (it.id === String(e.active.id)) {
-        return { ...it, depth: projection.depth, parentId: projection.parentId };
-      }
-      if (desc.has(it.id)) {
-        return { ...it, depth: it.depth + depthDelta };
-      }
-      // Items that were children of the active item via parentId stay
-      // pointing at the active id — depth update above keeps the
-      // hierarchy visually consistent.
-      return it;
-    });
+    // ── Dropped on itself → pure re-parent / depth change, no reorder.
+    if (overId === activeId) {
+      const updated = [
+        ...items.slice(0, activeIdx),
+        ...shiftedBlock,
+        ...items.slice(blockEnd),
+      ];
+      setItems(recomputeParents(updated, activeIdx, desc));
+      setDirty(true);
+      return;
+    }
 
-    // After all depth shifts, recompute parentId for moved descendants
-    // based on the new contiguous block. This keeps parentId correct
-    // when the depthDelta changed.
-    const finalItems = recomputeParents(updated, movedIdx, desc);
+    // ── Remove the block, then reinsert next to the `over` item.
+    const without = [
+      ...items.slice(0, activeIdx),
+      ...items.slice(blockEnd),
+    ];
+    const originalOverIdx = items.findIndex((i) => i.id === overId);
+    const overIdxInWithout = without.findIndex((i) => i.id === overId);
+    if (overIdxInWithout === -1) return; // over was inside the block — ignore
 
-    setItems(finalItems);
+    // Mirror arrayMove's convention: dragging DOWN drops the block AFTER
+    // the over item; dragging UP drops it BEFORE.
+    const movingDown = activeIdx < originalOverIdx;
+    const insertAt = movingDown ? overIdxInWithout + 1 : overIdxInWithout;
+
+    const next = [
+      ...without.slice(0, insertAt),
+      ...shiftedBlock,
+      ...without.slice(insertAt),
+    ];
+
+    // ── Rebind descendant parentIds against the new contiguous block.
+    const movedIdx = next.findIndex((i) => i.id === activeId);
+    setItems(recomputeParents(next, movedIdx, desc));
     setDirty(true);
   }
 
