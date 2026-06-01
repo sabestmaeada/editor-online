@@ -1636,7 +1636,15 @@ td.table-cell-targeted, th.table-cell-targeted {
 }
 /* annotate mode — frame interactive, markers grabbable */
 .img-frame.annotating { cursor: crosshair; outline: 2px solid #1A6B52; outline-offset: 2px; }
-.img-frame.annotating .img-markers { pointer-events: auto; }
+/* The <img> itself sets cursor:pointer (a directly-applied rule beats the
+   inherited crosshair), so re-assert crosshair on the image while annotating
+   — otherwise hovering the picture never shows the "place here" cue. */
+.img-frame.annotating img { cursor: crosshair; }
+/* P2-S90 — annotations are interactive ALWAYS (hover = hand cursor, and
+   double-click selects them even when idle). The overlay CONTAINER stays
+   pointer-events:none, so empty image areas still pass clicks through to
+   the image; only the items themselves capture events. */
+.img-marker, .img-rect, .img-textbox { pointer-events: auto; cursor: pointer; }
 .img-frame.annotating .img-marker { cursor: grab; }
 .img-frame.annotating .img-marker.dragging { cursor: grabbing; }
 .img-frame.annotating .img-marker.selected { box-shadow: 0 0 0 3px rgba(229,83,83,.6); }
@@ -1685,10 +1693,12 @@ td.table-cell-targeted, th.table-cell-targeted {
   pointer-events: none;
   overflow: visible;
 }
-.img-frame.annotating.tool-line .img-lines { pointer-events: auto; }
 .img-frame.annotating.tool-line { cursor: crosshair; }
-/* fat transparent stroke = easy click/drag target for a thin line */
-.img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: move; }
+/* fat transparent stroke = easy click/drag target for a thin line. It is
+   clickable ALWAYS (P2-S90) so a line can be double-clicked even when idle;
+   the SVG container stays pointer-events:none so empty areas pass through. */
+.img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: pointer; }
+.img-frame.annotating.tool-line .img-line-hit { cursor: move; }
 /* the visible stroke + halo + caps never intercept — hit path owns clicks */
 .img-line-main, .img-line-halo, .img-line-cap { pointer-events: none; }
 /* endpoint handles (transient, only while selected): a HOLLOW ring sitting
@@ -1744,6 +1754,7 @@ ${bodyContent}
     bindRectEvents(doc);     // P2-S86 — highlight-rectangle tool
     bindLineEvents(doc);     // P2-S87 — leader-line tool
     bindTextEvents(doc);     // P2-S88 — text / callout box tool
+    bindAnnotationDblclick(doc); // P2-S90 — dblclick any item → edit it
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
@@ -2922,21 +2933,9 @@ function ensureImageFrame(img) {
 /** Enter annotate mode on the selected image with the given tool, or just
  *  switch the tool if a frame is already being annotated (P2-S86). Returns
  *  true if a frame is now active. */
-function enterAnnotate(tool) {
-  const doc = getDoc();
-  if (!annotatingFrame) {
-    const img =
-      doc.querySelector('img.img-selected') ||
-      doc.querySelector('img.img-editing');
-    if (!img) {
-      showToast('เลือกรูปก่อน แล้วกดปุ่มเครื่องมือ');
-      return false;
-    }
-    const frame = ensureImageFrame(img);
-    frame.classList.add('annotating');
-    annotatingFrame = frame;
-    setDirty(true); // wrapping the img mutates the HTML
-  }
+/** Set the active tool on the current annotatingFrame + clear other tools'
+ *  selections + sync tool classes. (Shared by enterAnnotate/enterAnnotateOn.) */
+function applyAnnotateTool(tool) {
   annotateTool = tool;
   // Clear the other tools' selections so only the active tool shows handles.
   annotatingFrame
@@ -2956,7 +2955,38 @@ function enterAnnotate(tool) {
   annotatingFrame.classList.toggle('tool-text', tool === 'text');
   if (tool === 'line') ensureImageLines(annotatingFrame);
   updateMarkerMenuState();
+}
+
+function enterAnnotate(tool) {
+  const doc = getDoc();
+  if (!annotatingFrame) {
+    const img =
+      doc.querySelector('img.img-selected') ||
+      doc.querySelector('img.img-editing');
+    if (!img) {
+      showToast('เลือกรูปก่อน แล้วกดปุ่มเครื่องมือ');
+      return false;
+    }
+    const frame = ensureImageFrame(img);
+    frame.classList.add('annotating');
+    annotatingFrame = frame;
+    setDirty(true); // wrapping the img mutates the HTML
+  }
+  applyAnnotateTool(tool);
   return true;
+}
+
+/** P2-S90 — enter annotate mode for a SPECIFIC frame (used by the
+ *  double-click-to-select flow, which can fire even when idle). Switches
+ *  frames if a different one was active. */
+function enterAnnotateOn(frame, tool) {
+  if (!frame) return;
+  if (annotatingFrame && annotatingFrame !== frame) exitAnnotateMode();
+  if (annotatingFrame !== frame) {
+    frame.classList.add('annotating');
+    annotatingFrame = frame;
+  }
+  applyAnnotateTool(tool);
 }
 
 /** Toolbar: toggle the number-marker tool. */
@@ -3391,6 +3421,8 @@ function bindMarkerEvents(doc) {
     }
 
     if (e.target.closest('.img-marker')) return; // clicked a marker → not place
+    // don't drop a marker on top of another annotation — let dblclick switch
+    if (e.target.closest('.img-rect, .img-line, .img-textbox')) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = frame.getBoundingClientRect();
@@ -3423,15 +3455,8 @@ function bindMarkerEvents(doc) {
     dragRect = annotatingFrame.getBoundingClientRect();
   }, true);
 
-  // Double-click a marker → open the start-number dialog for this image.
-  doc.body.addEventListener('dblclick', (e) => {
-    if (!annotatingFrame || annotateTool !== 'marker') return;
-    const marker = e.target.closest && e.target.closest('.img-marker');
-    if (!marker || marker.closest('.img-frame') !== annotatingFrame) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openMarkerStartDialog(annotatingFrame, marker);
-  }, true);
+  // (Double-click handling for ALL annotation types is unified in
+  //  bindAnnotationDblclick — P2-S90.)
 
   doc.body.addEventListener('mousemove', (e) => {
     if (!dragMarker || !dragRect) return;
@@ -3576,6 +3601,8 @@ function bindRectEvents(doc) {
       mode = 'move'; active = rectEl; orig = rectGeo(rectEl);
       startX = p.x; startY = p.y;
     } else {
+      // don't start a rect on top of another annotation — let dblclick switch
+      if (e.target.closest('.img-line, .img-textbox, .img-marker')) return;
       deselectAllRects();
       const r = doc.createElement('span');
       r.className = 'img-rect drawing' + (rectRounded ? ' rounded' : '');
@@ -3939,6 +3966,8 @@ function bindLineEvents(doc) {
     } else if (g) {
       selectLine(g); mode = 'move'; activeG = g; orig = lineEnds(g); startX = p.x; startY = p.y;
     } else {
+      // don't start a line on top of another annotation — let dblclick switch
+      if (e.target.closest('.img-rect, .img-textbox, .img-marker')) return;
       deselectAllLines();
       const ng = svgEl('g', {
         class: 'img-line',
@@ -4222,6 +4251,8 @@ function bindTextEvents(doc) {
       startX = (e.clientX - frameRect.left) / frameRect.width * 100;
       startY = (e.clientY - frameRect.top) / frameRect.height * 100;
     } else {
+      // don't create a box on top of another annotation — let dblclick switch
+      if (e.target.closest('.img-rect, .img-line, .img-marker')) return;
       const x = clampPct((e.clientX - frameRect.left) / frameRect.width * 100);
       const y = clampPct((e.clientY - frameRect.top) / frameRect.height * 100);
       const nb = doc.createElement('div');
@@ -4263,15 +4294,7 @@ function bindTextEvents(doc) {
     mode = null; box = null; orig = null; frameRect = null;
   }, true);
 
-  doc.body.addEventListener('dblclick', (e) => {
-    if (!annotatingFrame || annotateTool !== 'text') return;
-    const tb = e.target.closest('.img-textbox');
-    if (!tb || tb.closest('.img-frame') !== annotatingFrame) return;
-    e.preventDefault();
-    e.stopPropagation();
-    selectTextbox(tb);
-    enterTextEdit(tb);
-  }, true);
+  // (Double-click to edit is handled by the unified bindAnnotationDblclick.)
 
   doc.body.addEventListener('keydown', (e) => {
     if (!annotatingFrame || annotateTool !== 'text') return;
@@ -4402,6 +4425,36 @@ function textMenuAction(action, arg) {
     if (s) { s.remove(); setDirty(true); }
     hideTextMenu();
   }
+}
+
+/* ── Direct-manipulation: double-click any annotation to edit it (P2-S90)
+ * Works whether or not annotate mode is already on. Double-clicking an item
+ * switches to that item's tool + selects it (markers open the number dialog,
+ * text boxes enter edit). Double-clicking empty space falls through to the
+ * image (its own dblclick opens the image modal). Items are pointer-events
+ * :auto always (see CSS), so e.target lands on the item even when idle. */
+function bindAnnotationDblclick(doc) {
+  if (!doc.body || doc.body._annoDblBound) return;
+  doc.body._annoDblBound = true;
+
+  doc.body.addEventListener('dblclick', (e) => {
+    const tb = e.target.closest && e.target.closest('.img-textbox');
+    // already editing this box → let the browser select a word, don't re-enter
+    if (tb && tb.classList.contains('editing')) return;
+    const rect = e.target.closest && e.target.closest('.img-rect');
+    const lineG = e.target.closest && e.target.closest('.img-line');
+    const marker = e.target.closest && e.target.closest('.img-marker');
+    const item = tb || rect || lineG || marker;
+    if (!item) return; // empty/image → bindImageClicks' dblclick handles it
+    const frame = item.closest('.img-frame');
+    if (!frame) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (tb) { enterAnnotateOn(frame, 'text'); selectTextbox(tb); enterTextEdit(tb); }
+    else if (rect) { enterAnnotateOn(frame, 'rect'); selectRect(rect); }
+    else if (lineG) { enterAnnotateOn(frame, 'line'); selectLine(lineG); }
+    else if (marker) { enterAnnotateOn(frame, 'marker'); openMarkerStartDialog(frame, marker); }
+  }, true);
 }
 
 /* ── Layer ordering for annotations (P2-S89) ────────────────────
