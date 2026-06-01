@@ -1638,6 +1638,7 @@ ${bodyContent}
     bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
     bindImageClicks(doc);
     bindAnchorClicks(doc);
+    bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
     buildSidebar(doc);
     bindHoverInsert(doc);
     bindTableContextMenu(doc);
@@ -2733,6 +2734,11 @@ function exitAnnotateMode() {
   }
   annotatingFrame = null;
   updateMarkerMenuState();
+  // Drop the marker button's keyboard focus ring — exiting via Esc counts
+  // as a keyboard interaction, which would otherwise leave a blue ring on
+  // the main toggle button (same reasoning as hideAlignMenu's blur).
+  const btn = document.getElementById('markerMenuBtn');
+  if (btn) btn.blur();
 }
 
 /** P2-S81 (option A) — switch annotate mode straight to another image
@@ -2751,6 +2757,89 @@ function switchAnnotateTo(img) {
   updateMarkerMenuState();
   setDirty(true); // ensureImageFrame may have wrapped a fresh image
   showToast('สลับมาที่รูปนี้ — วาง marker ต่อได้เลย');
+}
+
+/* ── Text-align split-button (P2-S83) — group the four paragraph
+ *    alignment commands into one split button. The main button applies
+ *    the currently-selected alignment; the caret opens a dropdown to
+ *    pick another, which then becomes the main button's default. */
+const ALIGN_DEFS = {
+  justifyLeft: {
+    tip: 'ชิดซ้าย',
+    svg: '<line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/>',
+  },
+  justifyCenter: {
+    tip: 'จัดกึ่งกลาง',
+    svg: '<line x1="21" y1="6" x2="3" y2="6"/><line x1="19" y1="12" x2="5" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/>',
+  },
+  justifyRight: {
+    tip: 'ชิดขวา',
+    svg: '<line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="18" x2="7" y2="18"/>',
+  },
+  justifyFull: {
+    tip: 'กระจายเต็มบรรทัด',
+    svg: '<line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/>',
+  },
+};
+// Which alignment the main split button currently represents/repeats.
+let currentAlign = 'justifyLeft';
+
+/** Main-button click: apply whatever alignment is currently shown. */
+function applyCurrentAlign() {
+  execCmd(currentAlign);
+}
+
+/** Pick an alignment from the dropdown — apply it AND make it the
+ *  main button's new default (icon + tooltip), so the next main-button
+ *  click repeats it. */
+function setAlign(cmd) {
+  const def = ALIGN_DEFS[cmd];
+  if (!def) return;
+  currentAlign = cmd;
+  const icon = document.getElementById('alignMainIcon');
+  if (icon) icon.innerHTML = def.svg;
+  const main = document.getElementById('alignMainBtn');
+  if (main) main.setAttribute('data-tip', def.tip);
+  updateAlignMenuState();
+  hideAlignMenu();
+  execCmd(cmd);
+}
+
+/** Highlight the active row in the align dropdown. */
+function updateAlignMenuState() {
+  const menu = document.getElementById('alignMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.qi-item').forEach((item) => {
+    item.classList.toggle(
+      'is-active',
+      item.getAttribute('data-align') === currentAlign,
+    );
+  });
+}
+
+function toggleAlignMenu(evt) {
+  const menu = document.getElementById('alignMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideAlignMenu(); return; }
+  // Align the dropdown under the whole split (main button's left edge).
+  const anchor = document.getElementById('alignMainBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateAlignMenuState();
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+function hideAlignMenu() {
+  const menu = document.getElementById('alignMenu');
+  if (menu) menu.classList.remove('show');
+  // Drop the caret's keyboard focus ring — closing via Esc counts as a
+  // keyboard interaction, which would otherwise leave a blue focus ring.
+  const caret = document.getElementById('alignCaretBtn');
+  if (caret) caret.blur();
 }
 
 /* ── Marker split-button (P2-S81) — main button toggles annotate mode;
@@ -2784,6 +2873,9 @@ function toggleMarkerMenu(evt) {
 function hideMarkerMenu() {
   const menu = document.getElementById('markerMenu');
   if (menu) menu.classList.remove('show');
+  // Drop the caret's keyboard focus ring (same reason as hideAlignMenu).
+  const caret = document.getElementById('markerCaretBtn');
+  if (caret) caret.blur();
 }
 
 function updateContinuousMenuLabel() {
@@ -3084,6 +3176,29 @@ function bindMarkerEvents(doc) {
     e.stopPropagation();
     sel.remove();
     setDirty(true);
+  }, true);
+}
+
+/* Close the text-align submenu when the user clicks or presses Esc INSIDE
+ * the editor iframe (P2-S83). Parent-document handlers can't see events
+ * that happen inside the iframe, so the menu would otherwise stay open
+ * after clicking into the document or pressing Esc there. */
+function bindToolbarMenuDismiss(doc) {
+  if (!doc.body || doc.body._tbMenuDismissBound) return;
+  doc.body._tbMenuDismissBound = true;
+
+  doc.addEventListener('mousedown', () => {
+    const am = document.getElementById('alignMenu');
+    if (am && am.classList.contains('show')) hideAlignMenu();
+  }, true);
+
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const am = document.getElementById('alignMenu');
+    if (am && am.classList.contains('show')) {
+      hideAlignMenu();
+      e.stopPropagation();
+    }
   }, true);
 }
 
@@ -3904,6 +4019,16 @@ document.addEventListener('click', (e) => {
     hideMarkerMenu();
   }
 
+  // Close text-align submenu on outside click (P2-S83). Same pattern as
+  // the marker submenu: the caret trigger stops propagation on open.
+  const alignMenu = document.getElementById('alignMenu');
+  const alignCaret = document.getElementById('alignCaretBtn');
+  if (alignMenu && alignMenu.classList.contains('show')
+      && !alignMenu.contains(e.target)
+      && (!alignCaret || !alignCaret.contains(e.target))) {
+    hideAlignMenu();
+  }
+
   // Close table context menu on outside click (any click that's not
   // inside the menu itself closes it — including a click that triggered
   // a different right-click somewhere else).
@@ -3930,6 +4055,12 @@ document.addEventListener('keydown', (e) => {
   const picker = document.getElementById('tableGridPicker');
   if (picker && picker.classList.contains('show')) {
     hideTableGridPicker();
+    e.stopPropagation();
+    return;
+  }
+  const alignMenu = document.getElementById('alignMenu');
+  if (alignMenu && alignMenu.classList.contains('show')) {
+    hideAlignMenu();
     e.stopPropagation();
     return;
   }

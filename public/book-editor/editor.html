@@ -109,18 +109,14 @@
 
       <div class="tb-sep"></div>
 
-      <button class="tb-btn" data-tip="ชิดซ้าย" onclick="execCmd('justifyLeft')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
-      </button>
-      <button class="tb-btn" data-tip="จัดกึ่งกลาง" onclick="execCmd('justifyCenter')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="19" y1="12" x2="5" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
-      </button>
-      <button class="tb-btn" data-tip="ชิดขวา" onclick="execCmd('justifyRight')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="18" x2="7" y2="18"/></svg>
-      </button>
-      <button class="tb-btn" data-tip="กระจายเต็มบรรทัด" onclick="execCmd('justifyFull')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
-      </button>
+      <div class="tb-split" id="alignSplit">
+        <button class="tb-btn tb-split-main" id="alignMainBtn" data-tip="ชิดซ้าย" onclick="applyCurrentAlign()">
+          <svg id="alignMainIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+        </button>
+        <button class="tb-btn tb-split-caret" id="alignCaretBtn" data-tip="ตัวเลือกการจัดข้อความ" onclick="toggleAlignMenu(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
       <div class="tb-sep"></div>
 
       <button class="tb-btn" data-tip="แทรกลิงก์" onclick="showLinkModal()">
@@ -401,6 +397,27 @@
       <button class="btn btn-ghost" onclick="cancelCloseProject()">ยกเลิก</button>
       <button class="btn btn-primary" onclick="saveAndClose()">บันทึกแล้วปิด</button>
     </div>
+  </div>
+</div>
+
+<!-- Text-align Dropdown (popover) — group of paragraph alignment actions.
+     Mirrors the marker dropdown; reuses .marker-menu styling via .align-menu. -->
+<div id="alignMenu" class="marker-menu align-menu" role="menu" aria-label="ตัวเลือกการจัดข้อความ">
+  <div class="qi-item" data-align="justifyLeft" onclick="setAlign('justifyLeft')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+    ชิดซ้าย
+  </div>
+  <div class="qi-item" data-align="justifyCenter" onclick="setAlign('justifyCenter')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="19" y1="12" x2="5" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+    จัดกึ่งกลาง
+  </div>
+  <div class="qi-item" data-align="justifyRight" onclick="setAlign('justifyRight')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="18" x2="7" y2="18"/></svg>
+    ชิดขวา
+  </div>
+  <div class="qi-item" data-align="justifyFull" onclick="setAlign('justifyFull')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+    กระจายเต็มบรรทัด
   </div>
 </div>
 
