@@ -16,6 +16,10 @@ let trackingEnabled = false;
 const trackUndoStack = [];
 const trackRedoStack = [];
 const TRACK_UNDO_LIMIT = 50;
+// P2-S91 — annotation undo: baseline of the last-captured clean HTML +
+// a debounce timer so a burst of annotation edits coalesces into one step.
+let annoLastClean = null;
+let annoCheckpointTimer = null;
 const USER_STORAGE_KEY = 'bookEditor.user';
 const TRACK_COLORS = [
   '#E55353', '#F5A623', '#F5C842', '#7CB342',
@@ -53,6 +57,11 @@ function setDirty(dirty) {
   if (titleEl) titleEl.textContent = dirty ? '● ' + cleanTitle : cleanTitle;
   const dot = document.querySelector('.statusbar-dot');
   if (dot) dot.style.background = dirty ? '#E67E50' : '';
+  // P2-S91 — while annotating, capture annotation edits into the undo stack
+  // (debounced so a drag / burst of tweaks becomes a single undo step).
+  if (dirty && typeof annotatingFrame !== 'undefined' && annotatingFrame) {
+    scheduleAnnoCheckpoint();
+  }
 }
 
 // ==============================================
@@ -1004,6 +1013,7 @@ function trackUndo() {
   const cur = captureUndoSnapshot();
   if (cur) trackRedoStack.push(cur);
   restoreSnapshot(trackUndoStack.pop());
+  repairMarkerState(getDoc());   // P2-S91 — clean annotation transient + resync baseline
   setDirty(true);
   updateStatus();
   return true;
@@ -1014,10 +1024,55 @@ function trackRedo() {
   const cur = captureUndoSnapshot();
   if (cur) trackUndoStack.push(cur);
   restoreSnapshot(trackRedoStack.pop());
+  repairMarkerState(getDoc());   // P2-S91
   setDirty(true);
   updateStatus();
   return true;
 }
+
+/* ── Annotation undo (P2-S91) ───────────────────────────────────
+ * Annotation edits mutate the DOM directly (not via execCommand), so the
+ * browser undo stack misses them. We snapshot the cleaned body HTML and
+ * push the PRE-edit state onto the existing trackUndoStack (debounced), so
+ * the toolbar Undo / Ctrl+Z already route through trackUndo and revert them. */
+function annoCleanHtml() {
+  const doc = getDoc();
+  if (!doc || !doc.body) return '';
+  const clone = doc.body.cloneNode(true);
+  clone.querySelectorAll('.img-frame.annotating').forEach((f) => f.classList.remove('annotating', 'tool-line', 'tool-text'));
+  clone.querySelectorAll('.img-marker.selected, .img-marker.dragging').forEach((m) => m.classList.remove('selected', 'dragging'));
+  clone.querySelectorAll('.img-rect.selected, .img-rect.drawing').forEach((r) => r.classList.remove('selected', 'drawing'));
+  clone.querySelectorAll('.img-rect-handle').forEach((h) => h.remove());
+  clone.querySelectorAll('.img-line.selected').forEach((g) => g.classList.remove('selected'));
+  clone.querySelectorAll('.img-line-handle').forEach((h) => h.remove());
+  clone.querySelectorAll('.img-textbox.selected, .img-textbox.editing').forEach((b) => b.classList.remove('selected', 'editing'));
+  clone.querySelectorAll('.img-textbox').forEach((b) => b.setAttribute('contenteditable', 'false'));
+  clone.querySelectorAll('.img-textbox-handle').forEach((h) => h.remove());
+  clone.querySelectorAll('.img-frame[data-next-n]').forEach((f) => f.removeAttribute('data-next-n'));
+  return clone.innerHTML;
+}
+function scheduleAnnoCheckpoint() {
+  if (annoCheckpointTimer) clearTimeout(annoCheckpointTimer);
+  annoCheckpointTimer = setTimeout(annoCheckpoint, 350);
+}
+function annoCheckpoint() {
+  annoCheckpointTimer = null;
+  const cur = annoCleanHtml();
+  if (annoLastClean !== null && cur !== annoLastClean) {
+    trackUndoStack.push({ html: annoLastClean, cursor: null });
+    trackRedoStack.length = 0;
+    if (trackUndoStack.length > TRACK_UNDO_LIMIT) trackUndoStack.shift();
+  }
+  annoLastClean = cur;
+}
+/** Run a pending checkpoint NOW (before an undo) so the latest edit is on
+ *  the stack. Safe before redo too: no-op when nothing changed. */
+function flushAnnoCheckpoint() {
+  if (annoCheckpointTimer) { clearTimeout(annoCheckpointTimer); annoCheckpointTimer = null; annoCheckpoint(); }
+}
+/** Reset the undo baseline to the current clean state (after load/restore
+ *  or when entering annotate mode). */
+function resetAnnoBaseline() { annoLastClean = annoCleanHtml(); }
 
 // ===== FILE SYSTEM API & IMAGE STATE =====
 let projectDirHandle = null;
@@ -1844,6 +1899,9 @@ function toggleSidebar() {
 // ==============================================
 
 function execCmd(cmd, value) {
+  // P2-S91 — commit any pending annotation edit before undo/redo so the very
+  // last change is on the stack (no-op for redo when nothing is pending).
+  if (cmd === 'undo' || cmd === 'redo') flushAnnoCheckpoint();
   // Track Changes มี undo stack ของตัวเอง — ใช้ก่อนถ้ามี snapshot
   if (cmd === 'undo' && trackUndoStack.length > 0) { trackUndo(); return; }
   if (cmd === 'redo' && trackRedoStack.length > 0) { trackRedo(); return; }
@@ -2909,6 +2967,7 @@ function repairMarkerState(doc) {
       .forEach((f) => f.classList.remove('tool-text'));
   }
   updateMarkerMenuState();
+  resetAnnoBaseline();   // P2-S91 — fresh undo baseline after load / restore
 }
 
 /** Wrap an <img> (inside figure.book-img) in .img-frame + .img-markers
@@ -2973,6 +3032,7 @@ function enterAnnotate(tool) {
     setDirty(true); // wrapping the img mutates the HTML
   }
   applyAnnotateTool(tool);
+  resetAnnoBaseline();   // P2-S91 — baseline excludes the frame-wrap itself
   return true;
 }
 
@@ -2987,6 +3047,7 @@ function enterAnnotateOn(frame, tool) {
     annotatingFrame = frame;
   }
   applyAnnotateTool(tool);
+  resetAnnoBaseline();   // P2-S91
 }
 
 /** Toolbar: toggle the number-marker tool. */
