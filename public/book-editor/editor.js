@@ -2831,6 +2831,16 @@ try {
   markerContinuous = localStorage.getItem('bookEditor_markerContinuous') === '1';
 } catch (e) { /* localStorage may be blocked */ }
 
+// P2-S92 — marker background colour. Default green (#1A6B52) renders via CSS
+// with NO inline style; other colours are written inline so they persist.
+const MARKER_COLORS = ['#1A6B52', '#E5534B', '#E08A1E', '#2D6CDF', '#18181B'];
+const MARKER_DEFAULT_COLOR = '#1A6B52';
+let markerColor = MARKER_DEFAULT_COLOR;
+try {
+  const c = localStorage.getItem('bookEditor_markerColor');
+  if (MARKER_COLORS.includes(c)) markerColor = c;
+} catch (e) { /* localStorage may be blocked */ }
+
 // P2-S86 — which annotate tool is active while a frame is in annotate mode.
 // 'marker' = numbered circles (P2-S81); 'rect' = highlight rectangles.
 let annotateTool = 'marker';
@@ -3247,8 +3257,34 @@ function toggleMarkerMenu(evt) {
     menu.style.left = `${rect.left}px`;
   }
   updateContinuousMenuLabel(); // reflect current numbering mode
+  updateMarkerColorSwatches(); // highlight the active background colour
   menu.classList.add('show');
   if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+/** Highlight the active background-colour swatch in the marker menu. */
+function updateMarkerColorSwatches() {
+  const menu = document.getElementById('markerMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.marker-swatch').forEach((s) =>
+    s.classList.toggle('active', s.getAttribute('data-color') === markerColor));
+}
+
+/** Pick a marker background colour — applies to ALL markers on the current
+ *  image (markers are a numbered set, usually one colour) AND becomes the
+ *  default for new markers (P2-S92). */
+function setMarkerColor(c) {
+  if (!MARKER_COLORS.includes(c)) return;
+  markerColor = c;
+  try { localStorage.setItem('bookEditor_markerColor', c); } catch (e) { /* ignore */ }
+  if (annotatingFrame) {
+    annotatingFrame.querySelectorAll('.img-marker').forEach((m) => {
+      if (c === MARKER_DEFAULT_COLOR) m.style.removeProperty('background');
+      else m.style.background = c;
+    });
+    setDirty(true);
+  }
+  updateMarkerColorSwatches();
 }
 
 function hideMarkerMenu() {
@@ -3497,6 +3533,7 @@ function bindMarkerEvents(doc) {
     m.textContent = n;
     m.style.left = x.toFixed(1) + '%';
     m.style.top = y.toFixed(1) + '%';
+    if (markerColor !== MARKER_DEFAULT_COLOR) m.style.background = markerColor;
     markers.appendChild(m);
     setDirty(true);
   }, true);
