@@ -7,6 +7,8 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { r2, R2_BUCKET, projectSourceKey } from "./client";
+import { mdToChapters } from "@/lib/content/md-to-book-html";
+import { assembleBook } from "@/lib/content/assemble-book";
 
 // Some entry filenames inside ZIPs should be skipped:
 // - macOS resource forks (__MACOSX/, .DS_Store)
@@ -153,5 +155,84 @@ export async function processStagedUpload(
       .catch(() => {});
   }
   return result;
+}
+
+/**
+ * Fetch a staged Markdown file from R2, convert it into chapters, run them
+ * through the SAME assembleBook() the AI pipeline uses (so the structure —
+ * cover / copyright / TOC / chapters — is identical), and write the
+ * resulting book.html + style.css into the project's source/ prefix.
+ * Deletes the staging object after processing (best-effort). (P2-S85)
+ *
+ * The staging object is named `*.zip` (keys are minted that way) but here
+ * its body is plain Markdown text — `sourceType: "markdown"` on the create
+ * request is what routes us here instead of the unzip path.
+ */
+export async function processStagedMarkdown(
+  projectId: string,
+  stagingKey: string,
+  meta: {
+    title: string;
+    customer?: string | null;
+    author?: string | null;
+    edition?: string | null;
+    isbn?: string | null;
+    pages?: number | null;
+  },
+): Promise<UploadResult> {
+  const get = await r2().send(
+    new GetObjectCommand({ Bucket: R2_BUCKET, Key: stagingKey }),
+  );
+  if (!get.Body) {
+    throw new Error("Staging object has no body");
+  }
+
+  try {
+    const markdown = await get.Body.transformToString("utf-8");
+    const chapters = mdToChapters(markdown, { fallbackTitle: meta.title });
+    const assembled = assembleBook({
+      bookMeta: {
+        title: meta.title,
+        customer: meta.customer ?? null,
+        author: meta.author ?? null,
+        edition: meta.edition ?? null,
+        isbn: meta.isbn ?? null,
+        pages: meta.pages ?? null,
+      },
+      chapters,
+    });
+
+    const htmlBuf = Buffer.from(assembled.bookHtml, "utf-8");
+    const cssBuf = Buffer.from(assembled.bookCss, "utf-8");
+
+    await r2().send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: projectSourceKey(projectId, "index.html"),
+        Body: htmlBuf,
+        ContentType: "text/html; charset=utf-8",
+        ContentLength: htmlBuf.length,
+      }),
+    );
+    await r2().send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: projectSourceKey(projectId, "style.css"),
+        Body: cssBuf,
+        ContentType: "text/css; charset=utf-8",
+        ContentLength: cssBuf.length,
+      }),
+    );
+
+    return {
+      fileCount: 2,
+      totalSize: htmlBuf.length + cssBuf.length,
+      skipped: 0,
+    };
+  } finally {
+    await r2()
+      .send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: stagingKey }))
+      .catch(() => {});
+  }
 }
 

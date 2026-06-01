@@ -7,7 +7,7 @@ import {
 } from "@/lib/firebase/projects";
 import { addProjectMember } from "@/lib/firebase/project-members";
 import { listProjectsForUser } from "@/lib/firebase/list-my-projects";
-import { processStagedUpload } from "@/lib/r2/upload";
+import { processStagedUpload, processStagedMarkdown } from "@/lib/r2/upload";
 import { deleteProjectFiles } from "@/lib/r2/download";
 import { isValidStagingKey } from "@/lib/r2/presigned";
 import { logAuthEvent } from "@/lib/firebase/auth-events";
@@ -48,6 +48,9 @@ type CreatePayload = {
     edition?: unknown;
   };
   uploadKey?: unknown;
+  /** "zip" (default) unzips into source/; "markdown" converts a .md upload
+   *  into a book HTML document + standard style.css. */
+  sourceType?: unknown;
 };
 
 function asStr(v: unknown): string | null {
@@ -77,6 +80,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as CreatePayload;
   const metadata = body.metadata ?? {};
   const uploadKey = typeof body.uploadKey === "string" ? body.uploadKey : "";
+  const isMarkdown = body.sourceType === "markdown";
 
   // ZIP upload is OPTIONAL in v2 — Phase 2 generates HTML via AI so
   // most users won't need to import legacy files. Empty uploadKey →
@@ -123,7 +127,16 @@ export async function POST(req: NextRequest) {
   let uploadResult: { fileCount: number; totalSize: number } | null = null;
   if (hasUpload) {
     try {
-      uploadResult = await processStagedUpload(project.id, uploadKey);
+      uploadResult = isMarkdown
+        ? await processStagedMarkdown(project.id, uploadKey, {
+            title,
+            customer,
+            author: asStr(metadata.author),
+            edition: asStr(metadata.edition),
+            isbn: asStr(metadata.isbn),
+            pages,
+          })
+        : await processStagedUpload(project.id, uploadKey);
     } catch (err) {
       // Roll back: delete project doc + any R2 objects already written
       await Promise.allSettled([

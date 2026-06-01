@@ -8,17 +8,23 @@ import {
 } from "@/lib/upload-via-presigned";
 import { LoadingOverlay } from "@/components/loading-overlay";
 
-type CreateMode = "empty" | "zip";
+type CreateMode = "empty" | "zip" | "md";
 
 export function ProjectUploadForm() {
   const router = useRouter();
   const [status, setStatus] = useState<UploadStatus>({ stage: "idle" });
   const [zipFile, setZipFile] = useState<File | null>(null);
+  const [mdFile, setMdFile] = useState<File | null>(null);
   const [mode, setMode] = useState<CreateMode>("empty");
 
   function handleZipChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setZipFile(f);
+  }
+
+  function handleMdChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setMdFile(f);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -33,6 +39,18 @@ export function ProjectUploadForm() {
       }
       if (!/\.zip$/i.test(zipFile.name)) {
         setStatus({ stage: "error", message: "ไฟล์ต้องเป็น .zip" });
+        return;
+      }
+    }
+
+    // Markdown file is only required when mode === "md"
+    if (mode === "md") {
+      if (!mdFile) {
+        setStatus({ stage: "error", message: "กรุณาเลือกไฟล์ .md" });
+        return;
+      }
+      if (!/\.(md|markdown)$/i.test(mdFile.name)) {
+        setStatus({ stage: "error", message: "ไฟล์ต้องเป็น .md" });
         return;
       }
     }
@@ -52,10 +70,14 @@ export function ProjectUploadForm() {
     try {
       let uploadKey: string | undefined;
 
-      // Mode "zip" — upload ZIP first, then create project with uploadKey
-      if (mode === "zip" && zipFile) {
+      // Mode "zip" / "md" — upload the file first, then create project.
+      // Both reuse the same presigned-staging path; the server decides how
+      // to process it based on `sourceType`.
+      const fileToUpload =
+        mode === "zip" ? zipFile : mode === "md" ? mdFile : null;
+      if (fileToUpload) {
         const result = await uploadFileToR2({
-          file: zipFile,
+          file: fileToUpload,
           purpose: "create",
           onStatus: setStatus,
         });
@@ -70,6 +92,7 @@ export function ProjectUploadForm() {
         body: JSON.stringify({
           metadata,
           ...(uploadKey ? { uploadKey } : {}),
+          ...(mode === "md" ? { sourceType: "markdown" } : {}),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -180,6 +203,25 @@ export function ProjectUploadForm() {
             </div>
           </div>
         </label>
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-zinc-200 bg-white p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+          <input
+            type="radio"
+            name="createMode"
+            value="md"
+            checked={mode === "md"}
+            onChange={() => setMode("md")}
+            disabled={isBusy}
+            className="mt-0.5"
+          />
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              อัปโหลด Markdown (.md)
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              แปลงไฟล์ .md เป็นหนังสือ HTML อัตโนมัติ (ใช้สไตล์มาตรฐาน)
+            </div>
+          </div>
+        </label>
       </fieldset>
 
       {/* ZIP file — shown only when mode is "zip" */}
@@ -204,6 +246,37 @@ export function ProjectUploadForm() {
             <p className="mt-2 text-xs text-zinc-500">
               Selected: <span className="font-medium">{zipFile.name}</span> (
               {formatBytes(zipFile.size)})
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Markdown file — shown only when mode is "md" */}
+      {mode === "md" && (
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            ไฟล์ Markdown (.md) *
+          </label>
+          <p className="mt-1 text-xs text-zinc-500">
+            ไฟล์ .md หนึ่งไฟล์ (รองรับหัวข้อ # ## ### ####, รายการ, **ตัวหนา**,
+            code, อ้างอิง และ Note ด้วย{" "}
+            <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+              &gt; [!NOTE]
+            </code>
+            ) — รูปภาพค่อยเพิ่มใน editor ภายหลัง
+          </p>
+          <input
+            type="file"
+            accept=".md,.markdown,text/markdown,text/plain"
+            onChange={handleMdChange}
+            required
+            disabled={isBusy}
+            className="mt-2 block w-full cursor-pointer rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:file:bg-zinc-800 dark:hover:bg-zinc-800"
+          />
+          {mdFile && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Selected: <span className="font-medium">{mdFile.name}</span> (
+              {formatBytes(mdFile.size)})
             </p>
           )}
         </div>
