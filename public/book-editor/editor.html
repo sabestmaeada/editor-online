@@ -453,6 +453,14 @@
   <div class="qi-item" onclick="markerMenuAction('smaller')">➖ ย่อตัวชี้</div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" id="markerContinuousItem" onclick="markerMenuAction('continuous')">☐ นับต่อเนื่องข้ามรูป</div>
+  <div class="marker-menu-sep"></div>
+  <div class="line-menu-label">ลำดับเลเยอร์</div>
+  <div class="line-cap-row">
+    <button type="button" title="ส่งไปหลังสุด" onclick="reorderSelected('back')">⤓ หลัง</button>
+    <button type="button" title="ถอยหลัง 1 ชั้น" onclick="reorderSelected('backward')">↓</button>
+    <button type="button" title="เลื่อนหน้า 1 ชั้น" onclick="reorderSelected('forward')">↑</button>
+    <button type="button" title="นำมาหน้าสุด" onclick="reorderSelected('front')">⤒ หน้า</button>
+  </div>
 </div>
 
 <!-- Highlight-rectangle Dropdown (popover) — colour + corner + delete (P2-S86) -->
@@ -468,6 +476,14 @@
   <div class="qi-item" onclick="rectMenuAction('thinner')">➖ เส้นบางลง</div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" id="rectCornerItem" onclick="rectMenuAction('corner')">☐ มุมโค้ง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="line-menu-label">ลำดับเลเยอร์</div>
+  <div class="line-cap-row">
+    <button type="button" title="ส่งไปหลังสุด" onclick="reorderSelected('back')">⤓ หลัง</button>
+    <button type="button" title="ถอยหลัง 1 ชั้น" onclick="reorderSelected('backward')">↓</button>
+    <button type="button" title="เลื่อนหน้า 1 ชั้น" onclick="reorderSelected('forward')">↑</button>
+    <button type="button" title="นำมาหน้าสุด" onclick="reorderSelected('front')">⤒ หน้า</button>
+  </div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="rectMenuAction('delete')">🗑 ลบกรอบที่เลือก</div>
 </div>
@@ -519,6 +535,15 @@
   <div class="qi-item" onclick="lineMenuAction('halobigger')">➕ ขอบขาวหนาขึ้น</div>
   <div class="qi-item" onclick="lineMenuAction('halosmaller')">➖ ขอบขาวบางลง (0 = ปิด)</div>
   <div class="marker-menu-sep"></div>
+  <div class="line-menu-label">ลำดับเลเยอร์ (เส้นนี้)</div>
+  <div class="line-cap-row">
+    <button type="button" title="ส่งไปหลังสุด" onclick="reorderSelected('back')">⤓ หลัง</button>
+    <button type="button" title="ถอยหลัง 1 ชั้น" onclick="reorderSelected('backward')">↓</button>
+    <button type="button" title="เลื่อนหน้า 1 ชั้น" onclick="reorderSelected('forward')">↑</button>
+    <button type="button" title="นำมาหน้าสุด" onclick="reorderSelected('front')">⤒ หน้า</button>
+  </div>
+  <div class="qi-item" onclick="toggleLinesLayer()">🔀 ชั้นเส้นทั้งหมด: สลับหน้า/หลัง</div>
+  <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="lineMenuAction('delete')">🗑 ลบเส้นที่เลือก</div>
 </div>
 
@@ -564,6 +589,14 @@
   <div class="marker-menu-sep"></div>
   <div class="qi-item" id="textFillItem" onclick="textMenuAction('fill')">☐ พื้นหลังขาว</div>
   <div class="qi-item" id="textRoundItem" onclick="textMenuAction('round')">☐ มุมโค้ง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="line-menu-label">ลำดับเลเยอร์</div>
+  <div class="line-cap-row">
+    <button type="button" title="ส่งไปหลังสุด" onclick="reorderSelected('back')">⤓ หลัง</button>
+    <button type="button" title="ถอยหลัง 1 ชั้น" onclick="reorderSelected('backward')">↓</button>
+    <button type="button" title="เลื่อนหน้า 1 ชั้น" onclick="reorderSelected('forward')">↑</button>
+    <button type="button" title="นำมาหน้าสุด" onclick="reorderSelected('front')">⤒ หน้า</button>
+  </div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="textMenuAction('delete')">🗑 ลบกล่องที่เลือก</div>
 </div>

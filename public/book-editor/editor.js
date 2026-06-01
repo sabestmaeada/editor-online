@@ -4244,11 +4244,17 @@ function bindTextEvents(doc) {
     if (mode === 'move') {
       const x = (e.clientX - frameRect.left) / frameRect.width * 100;
       const y = (e.clientY - frameRect.top) / frameRect.height * 100;
-      box.style.left = clampPct(orig.l + (x - startX)).toFixed(1) + '%';
-      box.style.top = clampPct(orig.t + (y - startY)).toFixed(1) + '%';
+      // keep the WHOLE box inside the image (account for its rendered size)
+      const wPct = box.offsetWidth / frameRect.width * 100;
+      const hPct = box.offsetHeight / frameRect.height * 100;
+      const nl = Math.max(0, Math.min(orig.l + (x - startX), Math.max(0, 100 - wPct)));
+      const nt = Math.max(0, Math.min(orig.t + (y - startY), Math.max(0, 100 - hPct)));
+      box.style.left = nl.toFixed(1) + '%';
+      box.style.top = nt.toFixed(1) + '%';
     } else if (mode === 'resize') {
       const dxPct = (e.clientX - startX) / frameRect.width * 100;
-      box.style.width = Math.max(8, Math.min(100, orig.w + dxPct)).toFixed(1) + '%';
+      const left = parseFloat(box.style.left) || 0;
+      box.style.width = Math.max(8, Math.min(100 - left, orig.w + dxPct)).toFixed(1) + '%';
     }
   }, true);
 
@@ -4396,6 +4402,46 @@ function textMenuAction(action, arg) {
     if (s) { s.remove(); setDirty(true); }
     hideTextMenu();
   }
+}
+
+/* ── Layer ordering for annotations (P2-S89) ────────────────────
+ * Reorder the SELECTED item of the active tool within its container
+ * (marker/rect/textbox live in .img-markers; lines in the .img-lines svg).
+ * Stacking = DOM order, so this persists in the saved HTML. */
+function reorderSelected(dir) {
+  if (!annotatingFrame) return;
+  let el = null;
+  if (annotateTool === 'marker') el = annotatingFrame.querySelector('.img-marker.selected');
+  else if (annotateTool === 'rect') el = annotatingFrame.querySelector('.img-rect.selected');
+  else if (annotateTool === 'line') el = annotatingFrame.querySelector('.img-line.selected');
+  else if (annotateTool === 'text') el = annotatingFrame.querySelector('.img-textbox.selected');
+  if (!el) { showToast('เลือกชิ้นที่จะจัดลำดับก่อน'); return; }
+  const parent = el.parentNode;
+  if (!parent) return;
+  if (dir === 'front') parent.appendChild(el);
+  else if (dir === 'back') parent.insertBefore(el, parent.firstElementChild);
+  else if (dir === 'forward') { const n = el.nextElementSibling; if (n) parent.insertBefore(n, el); }
+  else if (dir === 'backward') { const p = el.previousElementSibling; if (p) parent.insertBefore(el, p); }
+  setDirty(true);
+}
+
+/** Move the whole leader-line layer above or below the marker/rect/text
+ *  layer (P2-S89). Useful for callouts where the box should sit on the
+ *  line's end. */
+function toggleLinesLayer() {
+  if (!annotatingFrame) return;
+  const svg = annotatingFrame.querySelector('.img-lines');
+  const markers = annotatingFrame.querySelector('.img-markers');
+  if (!svg || !markers) { showToast('ยังไม่มีเส้นชี้ในรูปนี้'); return; }
+  const svgIsAfter = markers.compareDocumentPosition(svg) & Node.DOCUMENT_POSITION_FOLLOWING;
+  if (svgIsAfter) {
+    annotatingFrame.insertBefore(svg, markers);   // lines → behind
+    showToast('ชั้นเส้นชี้: อยู่ด้านหลัง');
+  } else {
+    annotatingFrame.appendChild(svg);             // lines → front
+    showToast('ชั้นเส้นชี้: อยู่ด้านหน้า');
+  }
+  setDirty(true);
 }
 
 /* Close the text-align submenu when the user clicks or presses Esc INSIDE
