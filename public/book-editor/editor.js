@@ -1689,10 +1689,13 @@ td.table-cell-targeted, th.table-cell-targeted {
 .img-frame.annotating.tool-line { cursor: crosshair; }
 /* fat transparent stroke = easy click/drag target for a thin line */
 .img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: move; }
-/* the visible stroke + caps never intercept — the hit path owns clicks */
-.img-line-main, .img-line-cap { pointer-events: none; }
-/* endpoint handles (transient, only while selected) */
-.img-line-handle { fill: #fff; stroke: #1A6B52; cursor: grab; }
+/* the visible stroke + halo + caps never intercept — hit path owns clicks */
+.img-line-main, .img-line-halo, .img-line-cap { pointer-events: none; }
+/* endpoint handles (transient, only while selected): a HOLLOW ring sitting
+   OUTSIDE the cap so the coloured dot/arrow stays visible inside it.
+   pointer-events:all keeps the whole disc grabbable despite the empty fill. */
+.img-line-handle { fill: none; stroke: #1A6B52; pointer-events: all; cursor: grab; }
+.img-line-handle.curve { fill: #1A6B52; stroke: #fff; }   /* mid-curve: solid */
 </style>
 </head>
 <body>
@@ -2748,15 +2751,21 @@ try {
 
 // P2-S87 — leader-line tool defaults (its own colour palette + thickness).
 const LINE_COLORS = ['#E5534B', '#E08A1E', '#2D6CDF', '#1A6B52'];
-const LINE_TYPES = ['straight', 'elbow', 'curved'];
+const LINE_TYPES = ['straight', 'elbow', 'elbow45', 'curved'];
 const LINE_CAPS = ['none', 'dot', 'arrow'];
 const LINE_MIN_LV = 1;       // thickness levels → strokeW = level * 0.3 (vb units)
 const LINE_MAX_LV = 6;
+const LINE_CAP_MIN_LV = 1;   // endpoint size levels → capScale = level * 0.5
+const LINE_CAP_MAX_LV = 6;
+const LINE_HALO_MIN_LV = 0;  // white-edge levels → haloW = level * 0.4 (0 = off)
+const LINE_HALO_MAX_LV = 5;
 let lineType = 'straight';
-let lineCap1 = 'none';       // start endpoint cap
-let lineCap2 = 'arrow';      // end endpoint cap (the "pointing" end)
+let lineCap1 = 'none';       // start endpoint cap (default: none)
+let lineCap2 = 'none';       // end endpoint cap (default: none)
 let lineColor = '#E5534B';
-let lineLevel = 2;           // thickness level
+let lineLevel = 1;           // line thickness level (default: thinnest)
+let lineCapLevel = 1;        // endpoint (dot/arrow) size level (default: smallest)
+let lineHaloLevel = 0;       // white-edge thickness level (default: off)
 try {
   const lt = localStorage.getItem('bookEditor_lineType');
   if (LINE_TYPES.includes(lt)) lineType = lt;
@@ -2768,6 +2777,10 @@ try {
   if (lc && LINE_COLORS.includes(lc)) lineColor = lc;
   const lv = parseInt(localStorage.getItem('bookEditor_lineLevel') || '', 10);
   if (Number.isFinite(lv) && lv >= LINE_MIN_LV && lv <= LINE_MAX_LV) lineLevel = lv;
+  const cv = parseInt(localStorage.getItem('bookEditor_lineCapLevel') || '', 10);
+  if (Number.isFinite(cv) && cv >= LINE_CAP_MIN_LV && cv <= LINE_CAP_MAX_LV) lineCapLevel = cv;
+  const hv = parseInt(localStorage.getItem('bookEditor_lineHaloLevel') || '', 10);
+  if (Number.isFinite(hv) && hv >= LINE_HALO_MIN_LV && hv <= LINE_HALO_MAX_LV) lineHaloLevel = hv;
 } catch (e) { /* localStorage may be blocked */ }
 
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
@@ -3632,7 +3645,9 @@ function svgEl(name, attrs) {
 }
 
 function r2(n) { return Math.round(n * 100) / 100; }
-function lineW() { return lineLevel * 0.3; }   // thickness level → vb stroke width
+function lineW() { return lineLevel * 0.3; }        // thickness level → vb stroke width
+function lineCapScale() { return lineCapLevel * 0.5; } // cap-size level → vb scale
+function lineHaloW() { return lineHaloLevel * 0.4; }   // white-edge width (0 = off)
 function lsPut(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
 function unitVec(x, y) { const m = Math.hypot(x, y) || 1; return { x: x / m, y: y / m }; }
 
@@ -3661,8 +3676,9 @@ function lineEnds(g) {
 }
 
 /** Build the SVG path `d` for a type + the outward unit vectors at each end. */
-function buildLinePath(type, x1, y1, x2, y2) {
-  const len = Math.hypot(x2 - x1, y2 - y1) || 0.0001;
+function buildLinePath(type, x1, y1, x2, y2, bow) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 0.0001;
   if (type === 'elbow') {
     const cx = x2, cy = y1;            // horizontal-first L, corner at (x2,y1)
     return {
@@ -3671,11 +3687,24 @@ function buildLinePath(type, x1, y1, x2, y2) {
       out2: unitVec(x2 - cx, y2 - cy),
     };
   }
+  if (type === 'elbow45') {
+    // One axis-aligned segment + one 45° diagonal segment.
+    const sx = Math.sign(dx) || 1, sy = Math.sign(dy) || 1;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    let cx, cy;
+    if (adx >= ady) { cx = x2 - sx * ady; cy = y1; }   // horizontal, then 45°
+    else { cx = x1; cy = y2 - sy * adx; }              // vertical, then 45°
+    return {
+      d: `M ${r2(x1)} ${r2(y1)} L ${r2(cx)} ${r2(cy)} L ${r2(x2)} ${r2(y2)}`,
+      out1: unitVec(x1 - cx, y1 - cy),
+      out2: unitVec(x2 - cx, y2 - cy),
+    };
+  }
   if (type === 'curved') {
+    const b = Number.isFinite(bow) ? bow : 0.22;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const px = -(y2 - y1) / len, py = (x2 - x1) / len;  // perpendicular unit
-    const off = 0.22 * len;
-    const cx = mx + px * off, cy = my + py * off;
+    const px = -dy / len, py = dx / len;               // perpendicular unit
+    const cx = mx + px * (b * len), cy = my + py * (b * len);
     return {
       d: `M ${r2(x1)} ${r2(y1)} Q ${r2(cx)} ${r2(cy)} ${r2(x2)} ${r2(y2)}`,
       out1: unitVec(x1 - cx, y1 - cy),
@@ -3689,22 +3718,36 @@ function buildLinePath(type, x1, y1, x2, y2) {
   };
 }
 
-/** Endpoint cap shapes (drawn explicitly — no <marker>, for WeasyPrint). */
-function capElements(x, y, dir, cap, color, w) {
+/** Position of the draggable middle handle for a curved line (the point on
+ *  the quadratic at t=0.5 = chord-mid offset by half the control offset). */
+function curveMid(x1, y1, x2, y2, bow) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 0.0001;
+  const b = Number.isFinite(bow) ? bow : 0.22;
+  const px = -dy / len, py = dx / len;
+  return { x: (x1 + x2) / 2 + px * (0.5 * b * len), y: (y1 + y2) / 2 + py * (0.5 * b * len) };
+}
+
+/** Endpoint cap shapes (drawn explicitly — no <marker>, for WeasyPrint).
+ *  `cs` = cap-size scale (independent of line width). `edge` = white outer
+ *  stroke width (vb); 0 disables it. The white edge keeps the cap readable
+ *  on dark AND light backgrounds, and its thickness is user-adjustable. */
+function capElements(x, y, dir, cap, color, cs, edge) {
+  const hasEdge = edge > 0;
   if (cap === 'dot') {
-    return [svgEl('circle', {
-      cx: r2(x), cy: r2(y), r: r2(Math.max(1.4, w * 1.8)),
-      fill: color, class: 'img-line-cap',
-    })];
+    const a = { cx: r2(x), cy: r2(y), r: r2(1.6 * cs), fill: color, class: 'img-line-cap' };
+    if (hasEdge) { a.stroke = '#ffffff'; a['stroke-width'] = r2(edge); }
+    return [svgEl('circle', a)];
   }
   if (cap === 'arrow') {
-    const len = Math.max(3, w * 3.4);
-    const half = Math.max(2, w * 2.2);
+    const len = 3.2 * cs, half = 2.2 * cs;
     const bx = x - dir.x * len, by = y - dir.y * len;
     const perp = { x: -dir.y, y: dir.x };
     const d = `M ${r2(x)} ${r2(y)} L ${r2(bx + perp.x * half)} ${r2(by + perp.y * half)} ` +
               `L ${r2(bx - perp.x * half)} ${r2(by - perp.y * half)} Z`;
-    return [svgEl('path', { d, fill: color, class: 'img-line-cap' })];
+    const a = { d, fill: color, 'stroke-linejoin': 'round', class: 'img-line-cap' };
+    if (hasEdge) { a.stroke = '#ffffff'; a['stroke-width'] = r2(edge); }
+    return [svgEl('path', a)];
   }
   return [];
 }
@@ -3717,29 +3760,47 @@ function renderLine(g) {
   const cap2 = LINE_CAPS.includes(g.dataset.cap2) ? g.dataset.cap2 : 'arrow';
   const color = g.dataset.color || '#E5534B';
   const w = parseFloat(g.dataset.w) || 0.6;
+  const cs = parseFloat(g.dataset.cs) || 1.5;
+  const bow = parseFloat(g.dataset.bow);
+  const halo = Number.isFinite(parseFloat(g.dataset.halo)) ? parseFloat(g.dataset.halo) : 0.8;
   // remove everything except handles (handles are re-stacked on top after)
   Array.from(g.childNodes).forEach((n) => {
     if (!(n.classList && n.classList.contains('img-line-handle'))) g.removeChild(n);
   });
-  const { d, out1, out2 } = buildLinePath(type, x1, y1, x2, y2);
-  g.appendChild(svgEl('path', { d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4)) }));
+  const { d, out1, out2 } = buildLinePath(type, x1, y1, x2, y2, bow);
+  // fat transparent hit target
+  g.appendChild(svgEl('path', { d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4 + cs * 2)) }));
+  // white halo underlay → line reads on dark/light backgrounds (skip if 0)
+  if (halo > 0) {
+    g.appendChild(svgEl('path', {
+      d, class: 'img-line-halo', fill: 'none', stroke: '#ffffff',
+      'stroke-width': r2(w + 2 * halo), 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    }));
+  }
   g.appendChild(svgEl('path', {
     d, class: 'img-line-main', fill: 'none', stroke: color,
     'stroke-width': r2(w), 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
   }));
-  capElements(x1, y1, out1, cap1, color, w).forEach((el) => g.appendChild(el));
-  capElements(x2, y2, out2, cap2, color, w).forEach((el) => g.appendChild(el));
+  capElements(x1, y1, out1, cap1, color, cs, halo).forEach((el) => g.appendChild(el));
+  capElements(x2, y2, out2, cap2, color, cs, halo).forEach((el) => g.appendChild(el));
   g.querySelectorAll('.img-line-handle').forEach((h) => g.appendChild(h)); // keep on top
 }
 
 function addLineHandles(g) {
   removeLineHandles(g);
   const { x1, y1, x2, y2 } = lineEnds(g);
-  const w = parseFloat(g.dataset.w) || 0.6;
-  const r = r2(Math.max(1.6, w * 2.2));
-  const sw = r2(Math.max(0.4, w * 0.8));
+  const cs = parseFloat(g.dataset.cs) || 1.5;
+  // endpoint ring sits just OUTSIDE the cap (cap dot r = 1.6*cs) so the
+  // coloured cap shows through the hollow handle.
+  const r = r2(Math.max(2.6, 1.6 * cs + 1.4));
+  const sw = 0.7;
   g.appendChild(svgEl('circle', { cx: r2(x1), cy: r2(y1), r, class: 'img-line-handle', 'data-end': '1', 'stroke-width': sw }));
   g.appendChild(svgEl('circle', { cx: r2(x2), cy: r2(y2), r, class: 'img-line-handle', 'data-end': '2', 'stroke-width': sw }));
+  // Curved lines get a small solid middle handle to drag the curvature.
+  if (g.dataset.type === 'curved') {
+    const m = curveMid(x1, y1, x2, y2, parseFloat(g.dataset.bow));
+    g.appendChild(svgEl('circle', { cx: r2(m.x), cy: r2(m.y), r: 2, class: 'img-line-handle curve', 'data-end': 'c', 'stroke-width': sw }));
+  }
 }
 function removeLineHandles(g) {
   g.querySelectorAll('.img-line-handle').forEach((h) => h.remove());
@@ -3792,6 +3853,8 @@ function bindLineEvents(doc) {
         class: 'img-line',
         'data-type': lineType, 'data-cap1': lineCap1, 'data-cap2': lineCap2,
         'data-color': lineColor, 'data-w': String(r2(lineW())),
+        'data-cs': String(r2(lineCapScale())), 'data-bow': '0.22',
+        'data-halo': String(r2(lineHaloW())),
         'data-x1': String(r2(p.x)), 'data-y1': String(r2(p.y)),
         'data-x2': String(r2(p.x)), 'data-y2': String(r2(p.y)),
       });
@@ -3808,8 +3871,21 @@ function bindLineEvents(doc) {
       activeG.dataset.x2 = String(r2(p.x)); activeG.dataset.y2 = String(r2(p.y));
       renderLine(activeG);
     } else if (mode === 'endpoint') {
-      activeG.dataset['x' + endpoint] = String(r2(p.x));
-      activeG.dataset['y' + endpoint] = String(r2(p.y));
+      if (endpoint === 'c') {
+        // Adjust curvature from the pointer's perpendicular offset to the chord.
+        const e3 = lineEnds(activeG);
+        const ddx = e3.x2 - e3.x1, ddy = e3.y2 - e3.y1;
+        const clen = Math.hypot(ddx, ddy) || 0.0001;
+        const mx = (e3.x1 + e3.x2) / 2, my = (e3.y1 + e3.y2) / 2;
+        const px = -ddy / clen, py = ddx / clen;
+        const hsigned = (p.x - mx) * px + (p.y - my) * py;
+        let bow = (2 * hsigned) / clen;
+        bow = Math.max(-1.2, Math.min(1.2, bow));
+        activeG.dataset.bow = String(r2(bow));
+      } else {
+        activeG.dataset['x' + endpoint] = String(r2(p.x));
+        activeG.dataset['y' + endpoint] = String(r2(p.y));
+      }
       renderLine(activeG); addLineHandles(activeG);
     } else if (mode === 'move') {
       const minx = Math.min(orig.x1, orig.x2), maxx = Math.max(orig.x1, orig.x2);
@@ -3916,12 +3992,34 @@ function changeLineThickness(delta) {
   if (sel) { sel.dataset.w = String(r2(lineW())); renderLine(sel); addLineHandles(sel); setDirty(true); }
   showToast('ความหนาเส้น: ' + lv + '/' + LINE_MAX_LV);
 }
+function changeLineCapSize(delta) {
+  const sel = selectedLine();
+  let lv = lineCapLevel;
+  if (sel) { const cs = parseFloat(sel.dataset.cs) || lineCapScale(); lv = Math.round(cs / 0.5); }
+  lv = Math.max(LINE_CAP_MIN_LV, Math.min(LINE_CAP_MAX_LV, lv + delta));
+  lineCapLevel = lv; lsPut('bookEditor_lineCapLevel', String(lv));
+  if (sel) { sel.dataset.cs = String(r2(lineCapScale())); renderLine(sel); addLineHandles(sel); setDirty(true); }
+  showToast('ขนาดปลายเส้น: ' + lv + '/' + LINE_CAP_MAX_LV);
+}
+function changeLineHalo(delta) {
+  const sel = selectedLine();
+  let lv = lineHaloLevel;
+  if (sel) { const hw = parseFloat(sel.dataset.halo); if (Number.isFinite(hw)) lv = Math.round(hw / 0.4); }
+  lv = Math.max(LINE_HALO_MIN_LV, Math.min(LINE_HALO_MAX_LV, lv + delta));
+  lineHaloLevel = lv; lsPut('bookEditor_lineHaloLevel', String(lv));
+  if (sel) { sel.dataset.halo = String(r2(lineHaloW())); renderLine(sel); addLineHandles(sel); setDirty(true); }
+  showToast(lv === 0 ? 'ขอบขาว: ปิด' : 'ความหนาขอบขาว: ' + lv + '/' + LINE_HALO_MAX_LV);
+}
 function lineMenuAction(action, arg) {
   if (action === 'type') setLineType(arg);
   else if (action === 'cap1') setLineCap(1, arg);
   else if (action === 'cap2') setLineCap(2, arg);
   else if (action === 'thicker') changeLineThickness(1);
   else if (action === 'thinner') changeLineThickness(-1);
+  else if (action === 'capbigger') changeLineCapSize(1);
+  else if (action === 'capsmaller') changeLineCapSize(-1);
+  else if (action === 'halobigger') changeLineHalo(1);
+  else if (action === 'halosmaller') changeLineHalo(-1);
   else if (action === 'delete') {
     const s = selectedLine();
     if (s) { s.remove(); setDirty(true); }

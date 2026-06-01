@@ -467,9 +467,20 @@
 <!-- Leader-line Dropdown (popover) — type + endpoint caps + colour + thickness (P2-S87) -->
 <div id="lineMenu" class="marker-menu" role="menu" aria-label="ตัวเลือกเส้นชี้">
   <div class="line-menu-label">รูปแบบเส้น</div>
-  <div class="qi-item" data-line-type="straight" onclick="lineMenuAction('type','straight')">╱ เส้นตรง</div>
-  <div class="qi-item" data-line-type="elbow" onclick="lineMenuAction('type','elbow')">⌐ เส้นหักมุม</div>
-  <div class="qi-item" data-line-type="curved" onclick="lineMenuAction('type','curved')">﹋ เส้นโค้ง</div>
+  <div class="line-type-row">
+    <button type="button" data-line-type="straight" title="เส้นตรง" onclick="lineMenuAction('type','straight')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="18" x2="19" y2="6"/></svg>
+    </button>
+    <button type="button" data-line-type="elbow" title="หักมุม 90°" onclick="lineMenuAction('type','elbow')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 6 5 18 19 18"/></svg>
+    </button>
+    <button type="button" data-line-type="elbow45" title="หักมุม 45°" onclick="lineMenuAction('type','elbow45')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 18 12 18 19 11"/></svg>
+    </button>
+    <button type="button" data-line-type="curved" title="เส้นโค้ง (ลากกลางปรับโค้ง)" onclick="lineMenuAction('type','curved')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 18 Q 7 6 19 9"/></svg>
+    </button>
+  </div>
   <div class="marker-menu-sep"></div>
   <div class="line-menu-label">ปลายต้น</div>
   <div class="line-cap-row">
@@ -493,6 +504,12 @@
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="lineMenuAction('thicker')">➕ เส้นหนาขึ้น</div>
   <div class="qi-item" onclick="lineMenuAction('thinner')">➖ เส้นบางลง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" onclick="lineMenuAction('capbigger')">➕ ปลายใหญ่ขึ้น</div>
+  <div class="qi-item" onclick="lineMenuAction('capsmaller')">➖ ปลายเล็กลง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" onclick="lineMenuAction('halobigger')">➕ ขอบขาวหนาขึ้น</div>
+  <div class="qi-item" onclick="lineMenuAction('halosmaller')">➖ ขอบขาวบางลง (0 = ปิด)</div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="lineMenuAction('delete')">🗑 ลบเส้นที่เลือก</div>
 </div>

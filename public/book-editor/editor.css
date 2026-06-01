@@ -790,6 +790,33 @@ body {
   border-color: var(--shell-accent);
 }
 
+/* Line-type picker — small icon segments on one row (P2-S87) */
+.marker-menu .line-type-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 4px;
+}
+.line-type-row button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.line-type-row button svg { width: 18px; height: 18px; }
+.line-type-row button:hover { background: var(--shell-accent-lt); }
+.line-type-row button.is-active {
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  border-color: var(--shell-accent);
+}
+
 /* Split button: main (toggle mode) + caret (open submenu) flush together */
 .tb-split { display: inline-flex; align-items: center; flex-shrink: 0; }
 .tb-split .tb-split-main { border-radius: 5px 0 0 5px; }
