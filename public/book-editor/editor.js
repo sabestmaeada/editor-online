@@ -1588,27 +1588,27 @@ td.table-cell-targeted, th.table-cell-targeted {
 .img-marker {
   position: absolute;
   box-sizing: border-box;
-  width: 24px; height: 24px;
-  margin-left: -12px; margin-top: -12px;   /* center on the anchor point */
+  width: 30px; height: 30px;               /* base = level 3 (default) */
+  margin-left: -15px; margin-top: -15px;   /* center on the anchor point */
   border-radius: 50%;
   border: 2px solid #fff;                  /* white ring → readable on dark bg */
   background: #1A6B52; color: #fff;
   font-family: var(--hd, sans-serif);
-  font-size: 12px; font-weight: 700;
-  line-height: 20px; text-align: center;   /* 24 - 2*2px border; center digit */
+  font-size: 15px; font-weight: 700;
+  line-height: 26px; text-align: center;   /* 30 - 2*2px border; center digit */
   box-shadow: 0 1px 4px rgba(0,0,0,.5);    /* drop shadow → readable on light bg */
   user-select: none; cursor: default;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 }
-/* marker size presets (per-image, class on .img-frame). base = M (no class). */
+/* marker size presets (per-image, class on .img-frame). base = level 3. */
 .img-frame.msize-1 .img-marker {
   width: 18px; height: 18px; margin-left: -9px; margin-top: -9px;
   border-width: 1.5px; line-height: 15px; font-size: 10px;
 }
-.img-frame.msize-3 .img-marker {
-  width: 30px; height: 30px; margin-left: -15px; margin-top: -15px;
-  line-height: 26px; font-size: 15px;
+.img-frame.msize-2 .img-marker {
+  width: 24px; height: 24px; margin-left: -12px; margin-top: -12px;
+  line-height: 20px; font-size: 12px;
 }
 .img-frame.msize-4 .img-marker {
   width: 38px; height: 38px; margin-left: -19px; margin-top: -19px;
@@ -2673,7 +2673,11 @@ function markerReadingOrder(a, b) {
  *  new session never thinks an old frame is still active. */
 function repairMarkerState(doc) {
   annotatingFrame = null;
+  markerNextOverride = null; // fresh running counter each load
   if (doc && doc.querySelectorAll) {
+    // drop any stale per-frame counters from the earlier per-frame design
+    doc.querySelectorAll('.img-frame[data-next-n]')
+      .forEach((f) => f.removeAttribute('data-next-n'));
     doc.querySelectorAll('.img-frame.annotating')
       .forEach((f) => f.classList.remove('annotating'));
     doc.querySelectorAll('.img-marker.selected, .img-marker.dragging')
@@ -2689,10 +2693,9 @@ function ensureImageFrame(img) {
   if (existing) return existing;
   const doc = getDoc();
   const frame = doc.createElement('span');
-  // New frames default to size level 3 (L). Existing frames keep their
-  // own size class; the base (no class) is still level 2 so older saved
-  // markers are unaffected.
-  frame.className = 'img-frame msize-3';
+  // Base (no msize class) = level 3 (default). All frames without an
+  // explicit size — new or older saved ones — render at level 3.
+  frame.className = 'img-frame';
   frame.setAttribute('contenteditable', 'false');
   img.parentNode.insertBefore(frame, img);
   frame.appendChild(img);
@@ -2753,8 +2756,13 @@ function switchAnnotateTo(img) {
 /* ── Marker split-button (P2-S81) — main button toggles annotate mode;
  *    the caret opens a submenu with renumber + size actions. */
 function updateMarkerMenuState() {
+  const active = !!annotatingFrame;
+  // Highlight BOTH halves of the split button so it reads as one active
+  // unit while annotate mode is on.
   const btn = document.getElementById('markerMenuBtn');
-  if (btn) btn.classList.toggle('active', !!annotatingFrame);
+  if (btn) btn.classList.toggle('active', active);
+  const caret = document.getElementById('markerCaretBtn');
+  if (caret) caret.classList.toggle('active', active);
 }
 
 function toggleMarkerMenu(evt) {
@@ -2826,27 +2834,32 @@ function nextMarkerNumber(markers) {
   return max + 1;
 }
 
-/* ── Per-frame "next number" override (P2-S81). Double-clicking a marker
- *    opens a dialog that sets data-next-n on the frame. New markers then
- *    start from that value (overriding per-image / continuous logic) and
- *    advance it. Existing markers are NOT relabeled. The attribute
- *    persists in the saved HTML so the continuation point survives. */
+/* ── "Next number" override (P2-S81). Double-clicking a marker opens a
+ *    dialog that relabels THAT marker to N and arms a shared running
+ *    counter (markerNextOverride = N+1). Every new marker after that —
+ *    on ANY image — consumes + advances the counter, so numbering
+ *    continues across images. Other existing markers are NOT relabeled.
+ *    The counter is session-only (resets on load). */
 let markerStartTargetFrame = null;
 let markerStartTargetMarker = null;
+// Global running override (P2-S81). Set via the double-click dialog; once
+// set, each new marker uses it then advances — a single counter that
+// carries across ALL images, regardless of per-image/continuous mode.
+// null = no override → fall back to normal logic. Session-only (the
+// markers themselves persist in HTML; this running pointer resets on load).
+let markerNextOverride = null;
 
 /** What the next marker number would be, without consuming the counter. */
 function peekNextMarkerNumber(frame) {
-  if (frame && frame.dataset && frame.dataset.nextN) {
-    return parseInt(frame.dataset.nextN, 10) || 1;
-  }
+  if (markerNextOverride != null) return markerNextOverride;
   return nextMarkerNumber(frame ? frame.querySelector('.img-markers') : null);
 }
 
-/** Number for a NEW marker — uses + advances the override if set. */
+/** Number for a NEW marker — uses + advances the shared override if set. */
 function computeNextMarkerNumber(frame) {
-  if (frame && frame.dataset && frame.dataset.nextN) {
-    const n = parseInt(frame.dataset.nextN, 10) || 1;
-    frame.dataset.nextN = String(n + 1); // consume + advance
+  if (markerNextOverride != null) {
+    const n = markerNextOverride;
+    markerNextOverride = n + 1; // advance the shared counter
     return n;
   }
   return nextMarkerNumber(frame.querySelector('.img-markers'));
@@ -2885,13 +2898,11 @@ function applyMarkerStart() {
     markerStartTargetMarker.setAttribute('data-n', String(n));
     markerStartTargetMarker.textContent = String(n);
   }
-  // …and continue future NEW markers from N+1. Other existing markers
-  // are left untouched.
-  if (markerStartTargetFrame) {
-    markerStartTargetFrame.dataset.nextN = String(n + 1);
-  }
+  // …and set the shared running counter so the NEXT marker (on ANY
+  // image) continues from N+1. Other existing markers are untouched.
+  markerNextOverride = n + 1;
   setDirty(true);
-  showToast('ตั้งตัวชี้นี้เป็นเลข ' + n + ' (ตัวถัดไปเริ่ม ' + (n + 1) + ')');
+  showToast('ตั้งตัวชี้นี้เป็นเลข ' + n + ' (ตัวถัดไปนับต่อ ' + (n + 1) + ' ข้ามรูปได้)');
   closeMarkerStartModal();
 }
 
@@ -2948,15 +2959,15 @@ function renumberAllContinuous() {
  * .img-frame. Size 2 (M) is the base style → no class. Size travels in
  * the saved HTML so it persists + can be mirrored in the book PDF CSS. */
 function getFrameSize(frame) {
-  for (const s of [1, 3, 4]) {
+  for (const s of [1, 2, 4]) {
     if (frame.classList.contains('msize-' + s)) return s;
   }
-  return 2; // default = base style
+  return 3; // base style (no class) = level 3 (default)
 }
 function setFrameSize(frame, size) {
   size = Math.max(1, Math.min(4, size));
   [1, 2, 3, 4].forEach((s) => frame.classList.remove('msize-' + s));
-  if (size !== 2) frame.classList.add('msize-' + size);
+  if (size !== 3) frame.classList.add('msize-' + size); // 3 = base, no class
   setDirty(true);
   return size;
 }
@@ -4119,6 +4130,9 @@ function buildSaveContent() {
     .forEach(m => m.classList.remove('selected', 'dragging'));
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
+  // drop the stale per-frame counter attr (now a global session counter)
+  cloneBody.querySelectorAll('.img-frame[data-next-n]')
+    .forEach(f => f.removeAttribute('data-next-n'));
   // (keep contenteditable="false" on .img-frame — it's part of the
   //  marker structure, not a transient state.)
 

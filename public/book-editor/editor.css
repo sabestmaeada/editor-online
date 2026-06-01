@@ -736,6 +736,9 @@ body {
   box-shadow: inset 1px 0 0 var(--shell-border);  /* divider line */
 }
 .tb-split .tb-split-caret svg { width: 11px; height: 11px; }
+/* When annotate mode is on, both halves share the accent bg — drop the
+   divider so the split reads as one solid active button. */
+.tb-split .tb-split-caret.active { box-shadow: none; }
 
 /* ==============================================
    TRACK CHANGES — HOVER TOOLTIP (JS-positioned)

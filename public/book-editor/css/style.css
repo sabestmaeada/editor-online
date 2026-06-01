@@ -726,26 +726,26 @@ tr:hover td {
 .img-marker {
   position: absolute;
   box-sizing: border-box;
-  width: 24px; height: 24px;
-  margin-left: -12px; margin-top: -12px;
+  width: 30px; height: 30px;               /* base = level 3 (default) */
+  margin-left: -15px; margin-top: -15px;
   border-radius: 50%;
   border: 2px solid #fff;                  /* white ring → readable on dark bg */
   background: #1A6B52; color: #fff;
   font-family: var(--hd);
-  font-size: 12px; font-weight: 700;
-  line-height: 20px; text-align: center;   /* 24 - 2*2px border */
+  font-size: 15px; font-weight: 700;
+  line-height: 26px; text-align: center;   /* 30 - 2*2px border */
   box-shadow: 0 1px 4px rgba(0, 0, 0, .5); /* drop shadow → readable on light bg */
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 }
-/* marker size presets (per-image, class on .img-frame). base = M (no class). */
+/* marker size presets (per-image, class on .img-frame). base = level 3. */
 .img-frame.msize-1 .img-marker {
   width: 18px; height: 18px; margin-left: -9px; margin-top: -9px;
   border-width: 1.5px; line-height: 15px; font-size: 10px;
 }
-.img-frame.msize-3 .img-marker {
-  width: 30px; height: 30px; margin-left: -15px; margin-top: -15px;
-  line-height: 26px; font-size: 15px;
+.img-frame.msize-2 .img-marker {
+  width: 24px; height: 24px; margin-left: -12px; margin-top: -12px;
+  line-height: 20px; font-size: 12px;
 }
 .img-frame.msize-4 .img-marker {
   width: 38px; height: 38px; margin-left: -19px; margin-top: -19px;
