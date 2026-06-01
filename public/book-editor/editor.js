@@ -1673,6 +1673,26 @@ td.table-cell-targeted, th.table-cell-targeted {
 .img-rect-handle.ne { right: -7px; top: -7px; cursor: nesw-resize; }
 .img-rect-handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
 .img-rect-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+
+/* ── Leader lines (P2-S87) ──────────────────────────────────────
+   SVG overlay sized to fill the image; viewBox aspect matches the image
+   so % coords map without distortion. Lives ABOVE .img-markers so the
+   line tool can own the pointer; pointer-events gated by .tool-line. */
+.img-lines {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.img-frame.annotating.tool-line .img-lines { pointer-events: auto; }
+.img-frame.annotating.tool-line { cursor: crosshair; }
+/* fat transparent stroke = easy click/drag target for a thin line */
+.img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: move; }
+/* the visible stroke + caps never intercept — the hit path owns clicks */
+.img-line-main, .img-line-cap { pointer-events: none; }
+/* endpoint handles (transient, only while selected) */
+.img-line-handle { fill: #fff; stroke: #1A6B52; cursor: grab; }
 </style>
 </head>
 <body>
@@ -1688,6 +1708,7 @@ ${bodyContent}
     repairMarkerState(doc);  // P2-S81 — fix files saved while annotating
     bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
     bindRectEvents(doc);     // P2-S86 — highlight-rectangle tool
+    bindLineEvents(doc);     // P2-S87 — leader-line tool
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
@@ -2725,6 +2746,30 @@ try {
   if (Number.isFinite(w) && w >= RECT_MIN_W && w <= RECT_MAX_W) rectThickness = w;
 } catch (e) { /* localStorage may be blocked */ }
 
+// P2-S87 — leader-line tool defaults (its own colour palette + thickness).
+const LINE_COLORS = ['#E5534B', '#E08A1E', '#2D6CDF', '#1A6B52'];
+const LINE_TYPES = ['straight', 'elbow', 'curved'];
+const LINE_CAPS = ['none', 'dot', 'arrow'];
+const LINE_MIN_LV = 1;       // thickness levels → strokeW = level * 0.3 (vb units)
+const LINE_MAX_LV = 6;
+let lineType = 'straight';
+let lineCap1 = 'none';       // start endpoint cap
+let lineCap2 = 'arrow';      // end endpoint cap (the "pointing" end)
+let lineColor = '#E5534B';
+let lineLevel = 2;           // thickness level
+try {
+  const lt = localStorage.getItem('bookEditor_lineType');
+  if (LINE_TYPES.includes(lt)) lineType = lt;
+  const c1 = localStorage.getItem('bookEditor_lineCap1');
+  if (LINE_CAPS.includes(c1)) lineCap1 = c1;
+  const c2 = localStorage.getItem('bookEditor_lineCap2');
+  if (LINE_CAPS.includes(c2)) lineCap2 = c2;
+  const lc = localStorage.getItem('bookEditor_lineColor');
+  if (lc && LINE_COLORS.includes(lc)) lineColor = lc;
+  const lv = parseInt(localStorage.getItem('bookEditor_lineLevel') || '', 10);
+  if (Number.isFinite(lv) && lv >= LINE_MIN_LV && lv <= LINE_MAX_LV) lineLevel = lv;
+} catch (e) { /* localStorage may be blocked */ }
+
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
 
 /** Reading-order comparator for markers: top→bottom, then left→right
@@ -2760,6 +2805,13 @@ function repairMarkerState(doc) {
     doc.querySelectorAll('.img-rect.selected, .img-rect.drawing')
       .forEach((r) => r.classList.remove('selected', 'drawing'));
     doc.querySelectorAll('.img-rect-handle').forEach((h) => h.remove());
+    // P2-S87 — strip transient line state (selection + endpoint handles) and
+    // the per-frame tool class.
+    doc.querySelectorAll('.img-line.selected')
+      .forEach((g) => g.classList.remove('selected'));
+    doc.querySelectorAll('.img-line-handle').forEach((h) => h.remove());
+    doc.querySelectorAll('.img-frame.tool-line')
+      .forEach((f) => f.classList.remove('tool-line'));
   }
   updateMarkerMenuState();
 }
@@ -2802,13 +2854,19 @@ function enterAnnotate(tool) {
     setDirty(true); // wrapping the img mutates the HTML
   }
   annotateTool = tool;
-  // Clear the other tool's selection so only the active tool shows handles.
+  // Clear the other tools' selections so only the active tool shows handles.
   annotatingFrame
     .querySelectorAll('.img-marker.selected')
     .forEach((m) => m.classList.remove('selected'));
   annotatingFrame
     .querySelectorAll('.img-rect.selected')
     .forEach((r) => deselectRect(r));
+  annotatingFrame
+    .querySelectorAll('.img-line.selected')
+    .forEach((g) => deselectLine(g));
+  // The line tool needs its SVG overlay + a class to claim pointer events.
+  annotatingFrame.classList.toggle('tool-line', tool === 'line');
+  if (tool === 'line') ensureImageLines(annotatingFrame);
   updateMarkerMenuState();
   return true;
 }
@@ -2829,26 +2887,34 @@ function toggleRectAnnotate() {
   }
 }
 
+/** Toolbar: toggle the leader-line tool (P2-S87). */
+function toggleLineAnnotate() {
+  if (annotatingFrame && annotateTool === 'line') { exitAnnotateMode(); return; }
+  if (enterAnnotate('line')) {
+    showToast('โหมดเส้นชี้: ลากจากต้นไปปลาย · ลากเส้นเพื่อย้าย · ลากปลายเพื่อปรับ · Delete เพื่อลบ');
+  }
+}
+
 function exitAnnotateMode() {
   if (annotatingFrame) {
-    annotatingFrame.classList.remove('annotating');
+    annotatingFrame.classList.remove('annotating', 'tool-line');
     annotatingFrame
       .querySelectorAll('.img-marker.selected')
       .forEach((m) => m.classList.remove('selected'));
     annotatingFrame
       .querySelectorAll('.img-rect.selected')
       .forEach((r) => deselectRect(r));
+    annotatingFrame
+      .querySelectorAll('.img-line.selected')
+      .forEach((g) => deselectLine(g));
   }
   annotatingFrame = null;
   annotateTool = 'marker';
   updateMarkerMenuState();
-  const rectBtn = document.getElementById('rectMenuBtn');
-  if (rectBtn) rectBtn.blur();
-  // Drop the marker button's keyboard focus ring — exiting via Esc counts
-  // as a keyboard interaction, which would otherwise leave a blue ring on
-  // the main toggle button (same reasoning as hideAlignMenu's blur).
-  const btn = document.getElementById('markerMenuBtn');
-  if (btn) btn.blur();
+  ['rectMenuBtn', 'lineMenuBtn', 'markerMenuBtn'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.blur(); // drop any keyboard focus ring left after Esc
+  });
 }
 
 /** P2-S81 (option A) — switch annotate mode straight to another image
@@ -2967,6 +3033,11 @@ function updateMarkerMenuState() {
   if (rb) rb.classList.toggle('active', rectActive);
   const rc = document.getElementById('rectCaretBtn');
   if (rc) rc.classList.toggle('active', rectActive);
+  const lineActive = !!annotatingFrame && annotateTool === 'line';
+  const lb = document.getElementById('lineMenuBtn');
+  if (lb) lb.classList.toggle('active', lineActive);
+  const lc = document.getElementById('lineCaretBtn');
+  if (lc) lc.classList.toggle('active', lineActive);
 }
 
 function toggleMarkerMenu(evt) {
@@ -3546,6 +3617,318 @@ function rectMenuAction(action) {
   }
 }
 
+/* ── Leader lines (P2-S87) ──────────────────────────────────────
+ * SVG-based. One <svg class="img-lines"> per frame (viewBox aspect = image
+ * aspect → % coords map without distortion, and the aspect is preserved in
+ * print so it round-trips to WeasyPrint). Each line is a <g class="img-line"
+ * data-x1/y1/x2/y2/type/cap1/cap2/color/w> re-rendered from its data attrs. */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(name, attrs) {
+  const el = getDoc().createElementNS(SVG_NS, name);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function r2(n) { return Math.round(n * 100) / 100; }
+function lineW() { return lineLevel * 0.3; }   // thickness level → vb stroke width
+function lsPut(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+function unitVec(x, y) { const m = Math.hypot(x, y) || 1; return { x: x / m, y: y / m }; }
+
+/** Get/create the per-frame SVG overlay (sits above .img-markers). viewBox
+ *  height is derived from the image aspect once, then persists. */
+function ensureImageLines(frame) {
+  let svg = frame.querySelector('.img-lines');
+  if (svg) return svg;
+  const rect = frame.getBoundingClientRect();
+  const H = rect.width > 0 ? (100 * rect.height / rect.width) : 100;
+  svg = svgEl('svg', {
+    class: 'img-lines',
+    viewBox: `0 0 100 ${r2(H)}`,
+    preserveAspectRatio: 'none',
+    'data-h': String(r2(H)),
+  });
+  frame.appendChild(svg);
+  return svg;
+}
+
+function lineEnds(g) {
+  return {
+    x1: parseFloat(g.dataset.x1), y1: parseFloat(g.dataset.y1),
+    x2: parseFloat(g.dataset.x2), y2: parseFloat(g.dataset.y2),
+  };
+}
+
+/** Build the SVG path `d` for a type + the outward unit vectors at each end. */
+function buildLinePath(type, x1, y1, x2, y2) {
+  const len = Math.hypot(x2 - x1, y2 - y1) || 0.0001;
+  if (type === 'elbow') {
+    const cx = x2, cy = y1;            // horizontal-first L, corner at (x2,y1)
+    return {
+      d: `M ${r2(x1)} ${r2(y1)} L ${r2(cx)} ${r2(cy)} L ${r2(x2)} ${r2(y2)}`,
+      out1: unitVec(x1 - cx, y1 - cy),
+      out2: unitVec(x2 - cx, y2 - cy),
+    };
+  }
+  if (type === 'curved') {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const px = -(y2 - y1) / len, py = (x2 - x1) / len;  // perpendicular unit
+    const off = 0.22 * len;
+    const cx = mx + px * off, cy = my + py * off;
+    return {
+      d: `M ${r2(x1)} ${r2(y1)} Q ${r2(cx)} ${r2(cy)} ${r2(x2)} ${r2(y2)}`,
+      out1: unitVec(x1 - cx, y1 - cy),
+      out2: unitVec(x2 - cx, y2 - cy),
+    };
+  }
+  return {
+    d: `M ${r2(x1)} ${r2(y1)} L ${r2(x2)} ${r2(y2)}`,
+    out1: unitVec(x1 - x2, y1 - y2),
+    out2: unitVec(x2 - x1, y2 - y1),
+  };
+}
+
+/** Endpoint cap shapes (drawn explicitly — no <marker>, for WeasyPrint). */
+function capElements(x, y, dir, cap, color, w) {
+  if (cap === 'dot') {
+    return [svgEl('circle', {
+      cx: r2(x), cy: r2(y), r: r2(Math.max(1.4, w * 1.8)),
+      fill: color, class: 'img-line-cap',
+    })];
+  }
+  if (cap === 'arrow') {
+    const len = Math.max(3, w * 3.4);
+    const half = Math.max(2, w * 2.2);
+    const bx = x - dir.x * len, by = y - dir.y * len;
+    const perp = { x: -dir.y, y: dir.x };
+    const d = `M ${r2(x)} ${r2(y)} L ${r2(bx + perp.x * half)} ${r2(by + perp.y * half)} ` +
+              `L ${r2(bx - perp.x * half)} ${r2(by - perp.y * half)} Z`;
+    return [svgEl('path', { d, fill: color, class: 'img-line-cap' })];
+  }
+  return [];
+}
+
+/** Rebuild a line's child elements from its data attributes. */
+function renderLine(g) {
+  const { x1, y1, x2, y2 } = lineEnds(g);
+  const type = LINE_TYPES.includes(g.dataset.type) ? g.dataset.type : 'straight';
+  const cap1 = LINE_CAPS.includes(g.dataset.cap1) ? g.dataset.cap1 : 'none';
+  const cap2 = LINE_CAPS.includes(g.dataset.cap2) ? g.dataset.cap2 : 'arrow';
+  const color = g.dataset.color || '#E5534B';
+  const w = parseFloat(g.dataset.w) || 0.6;
+  // remove everything except handles (handles are re-stacked on top after)
+  Array.from(g.childNodes).forEach((n) => {
+    if (!(n.classList && n.classList.contains('img-line-handle'))) g.removeChild(n);
+  });
+  const { d, out1, out2 } = buildLinePath(type, x1, y1, x2, y2);
+  g.appendChild(svgEl('path', { d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4)) }));
+  g.appendChild(svgEl('path', {
+    d, class: 'img-line-main', fill: 'none', stroke: color,
+    'stroke-width': r2(w), 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  }));
+  capElements(x1, y1, out1, cap1, color, w).forEach((el) => g.appendChild(el));
+  capElements(x2, y2, out2, cap2, color, w).forEach((el) => g.appendChild(el));
+  g.querySelectorAll('.img-line-handle').forEach((h) => g.appendChild(h)); // keep on top
+}
+
+function addLineHandles(g) {
+  removeLineHandles(g);
+  const { x1, y1, x2, y2 } = lineEnds(g);
+  const w = parseFloat(g.dataset.w) || 0.6;
+  const r = r2(Math.max(1.6, w * 2.2));
+  const sw = r2(Math.max(0.4, w * 0.8));
+  g.appendChild(svgEl('circle', { cx: r2(x1), cy: r2(y1), r, class: 'img-line-handle', 'data-end': '1', 'stroke-width': sw }));
+  g.appendChild(svgEl('circle', { cx: r2(x2), cy: r2(y2), r, class: 'img-line-handle', 'data-end': '2', 'stroke-width': sw }));
+}
+function removeLineHandles(g) {
+  g.querySelectorAll('.img-line-handle').forEach((h) => h.remove());
+}
+function selectLine(g) { deselectAllLines(); g.classList.add('selected'); addLineHandles(g); }
+function deselectLine(g) { g.classList.remove('selected'); removeLineHandles(g); }
+function deselectAllLines() {
+  if (!annotatingFrame) return;
+  annotatingFrame.querySelectorAll('.img-line.selected').forEach((g) => deselectLine(g));
+}
+function selectedLine() {
+  return annotatingFrame && annotatingFrame.querySelector('.img-line.selected');
+}
+
+/** Bind draw / move / endpoint / delete for the line tool (once). */
+function bindLineEvents(doc) {
+  if (!doc.body || doc.body._lineBound) return;
+  doc.body._lineBound = true;
+
+  let mode = null;       // 'draw' | 'move' | 'endpoint'
+  let activeG = null;
+  let svg = null, H = 100, frameRect = null;
+  let endpoint = null;   // '1' | '2'
+  let orig = null;
+  let startX = 0, startY = 0;
+
+  const pos = (e) => ({
+    x: clampPct(((e.clientX - frameRect.left) / frameRect.width) * 100),
+    y: Math.max(0, Math.min(H, ((e.clientY - frameRect.top) / frameRect.height) * H)),
+  });
+
+  doc.body.addEventListener('mousedown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'line') return;
+    if (e.target.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    svg = ensureImageLines(annotatingFrame);
+    H = parseFloat(svg.getAttribute('data-h')) || 100;
+    frameRect = annotatingFrame.getBoundingClientRect();
+    const p = pos(e);
+    const handle = e.target.closest('.img-line-handle');
+    const g = e.target.closest('.img-line');
+    if (handle && g) {
+      selectLine(g); mode = 'endpoint'; activeG = g; endpoint = handle.getAttribute('data-end');
+    } else if (g) {
+      selectLine(g); mode = 'move'; activeG = g; orig = lineEnds(g); startX = p.x; startY = p.y;
+    } else {
+      deselectAllLines();
+      const ng = svgEl('g', {
+        class: 'img-line',
+        'data-type': lineType, 'data-cap1': lineCap1, 'data-cap2': lineCap2,
+        'data-color': lineColor, 'data-w': String(r2(lineW())),
+        'data-x1': String(r2(p.x)), 'data-y1': String(r2(p.y)),
+        'data-x2': String(r2(p.x)), 'data-y2': String(r2(p.y)),
+      });
+      svg.appendChild(ng);
+      renderLine(ng);
+      mode = 'draw'; activeG = ng;
+    }
+  }, true);
+
+  doc.body.addEventListener('mousemove', (e) => {
+    if (!mode || !activeG) return;
+    const p = pos(e);
+    if (mode === 'draw') {
+      activeG.dataset.x2 = String(r2(p.x)); activeG.dataset.y2 = String(r2(p.y));
+      renderLine(activeG);
+    } else if (mode === 'endpoint') {
+      activeG.dataset['x' + endpoint] = String(r2(p.x));
+      activeG.dataset['y' + endpoint] = String(r2(p.y));
+      renderLine(activeG); addLineHandles(activeG);
+    } else if (mode === 'move') {
+      const minx = Math.min(orig.x1, orig.x2), maxx = Math.max(orig.x1, orig.x2);
+      const miny = Math.min(orig.y1, orig.y2), maxy = Math.max(orig.y1, orig.y2);
+      let dx = p.x - startX, dy = p.y - startY;
+      dx = Math.max(-minx, Math.min(100 - maxx, dx));
+      dy = Math.max(-miny, Math.min(H - maxy, dy));
+      activeG.dataset.x1 = String(r2(orig.x1 + dx)); activeG.dataset.y1 = String(r2(orig.y1 + dy));
+      activeG.dataset.x2 = String(r2(orig.x2 + dx)); activeG.dataset.y2 = String(r2(orig.y2 + dy));
+      renderLine(activeG); addLineHandles(activeG);
+    }
+  }, true);
+
+  doc.body.addEventListener('mouseup', () => {
+    if (mode === 'draw' && activeG) {
+      const e2 = lineEnds(activeG);
+      if (Math.hypot(e2.x2 - e2.x1, e2.y2 - e2.y1) < 3) { activeG.remove(); }
+      else { selectLine(activeG); setDirty(true); }
+    } else if ((mode === 'move' || mode === 'endpoint') && activeG) {
+      setDirty(true);
+    }
+    mode = null; activeG = null; orig = null; endpoint = null; frameRect = null;
+  }, true);
+
+  doc.body.addEventListener('keydown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'line') return;
+    if (e.key === 'Escape') {
+      const menu = document.getElementById('lineMenu');
+      if (menu && menu.classList.contains('show')) { hideLineMenu(); return; }
+      exitAnnotateMode();
+      return;
+    }
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const sel = selectedLine();
+    if (!sel) return;
+    e.preventDefault();
+    e.stopPropagation();
+    sel.remove();
+    setDirty(true);
+  }, true);
+}
+
+/* ── Line tool submenu (type + caps + colour + thickness) ── */
+function toggleLineMenu(evt) {
+  const menu = document.getElementById('lineMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideLineMenu(); return; }
+  const anchor = document.getElementById('lineMenuBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateLineMenuState();
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+function hideLineMenu() {
+  const menu = document.getElementById('lineMenu');
+  if (menu) menu.classList.remove('show');
+  const caret = document.getElementById('lineCaretBtn');
+  if (caret) caret.blur();
+}
+function updateLineMenuState() {
+  const menu = document.getElementById('lineMenu');
+  if (!menu) return;
+  menu.querySelectorAll('[data-line-type]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-line-type') === lineType));
+  menu.querySelectorAll('[data-cap1]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-cap1') === lineCap1));
+  menu.querySelectorAll('[data-cap2]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-cap2') === lineCap2));
+  menu.querySelectorAll('.line-swatch').forEach((s) =>
+    s.classList.toggle('active', s.getAttribute('data-color') === lineColor));
+}
+function setLineType(t) {
+  if (!LINE_TYPES.includes(t)) return;
+  lineType = t; lsPut('bookEditor_lineType', t);
+  const sel = selectedLine();
+  if (sel) { sel.dataset.type = t; renderLine(sel); addLineHandles(sel); setDirty(true); }
+  updateLineMenuState();
+}
+function setLineCap(which, cap) {
+  if (!LINE_CAPS.includes(cap)) return;
+  if (which === 1) { lineCap1 = cap; lsPut('bookEditor_lineCap1', cap); }
+  else { lineCap2 = cap; lsPut('bookEditor_lineCap2', cap); }
+  const sel = selectedLine();
+  if (sel) { sel.dataset['cap' + which] = cap; renderLine(sel); addLineHandles(sel); setDirty(true); }
+  updateLineMenuState();
+}
+function setLineColor(color) {
+  if (!LINE_COLORS.includes(color)) return;
+  lineColor = color; lsPut('bookEditor_lineColor', color);
+  const sel = selectedLine();
+  if (sel) { sel.dataset.color = color; renderLine(sel); addLineHandles(sel); setDirty(true); }
+  updateLineMenuState();
+}
+function changeLineThickness(delta) {
+  const sel = selectedLine();
+  let lv = lineLevel;
+  if (sel) { const w = parseFloat(sel.dataset.w) || lineW(); lv = Math.round(w / 0.3); }
+  lv = Math.max(LINE_MIN_LV, Math.min(LINE_MAX_LV, lv + delta));
+  lineLevel = lv; lsPut('bookEditor_lineLevel', String(lv));
+  if (sel) { sel.dataset.w = String(r2(lineW())); renderLine(sel); addLineHandles(sel); setDirty(true); }
+  showToast('ความหนาเส้น: ' + lv + '/' + LINE_MAX_LV);
+}
+function lineMenuAction(action, arg) {
+  if (action === 'type') setLineType(arg);
+  else if (action === 'cap1') setLineCap(1, arg);
+  else if (action === 'cap2') setLineCap(2, arg);
+  else if (action === 'thicker') changeLineThickness(1);
+  else if (action === 'thinner') changeLineThickness(-1);
+  else if (action === 'delete') {
+    const s = selectedLine();
+    if (s) { s.remove(); setDirty(true); }
+    hideLineMenu();
+  }
+}
+
 /* Close the text-align submenu when the user clicks or presses Esc INSIDE
  * the editor iframe (P2-S83). Parent-document handlers can't see events
  * that happen inside the iframe, so the menu would otherwise stay open
@@ -3557,9 +3940,11 @@ function bindToolbarMenuDismiss(doc) {
   doc.addEventListener('mousedown', () => {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) hideAlignMenu();
-    // P2-S86 — clicking into the canvas closes the rect submenu too.
+    // P2-S86/87 — clicking into the canvas closes the rect/line submenus too.
     const rm = document.getElementById('rectMenu');
     if (rm && rm.classList.contains('show')) hideRectMenu();
+    const lm = document.getElementById('lineMenu');
+    if (lm && lm.classList.contains('show')) hideLineMenu();
   }, true);
 
   doc.addEventListener('keydown', (e) => {
@@ -4347,6 +4732,8 @@ document.addEventListener('keydown', (e) => {
     if (mMenu && mMenu.classList.contains('show')) { hideMarkerMenu(); return; }
     const rMenu = document.getElementById('rectMenu');
     if (rMenu && rMenu.classList.contains('show')) { hideRectMenu(); return; }
+    const lMenu = document.getElementById('lineMenu');
+    if (lMenu && lMenu.classList.contains('show')) { hideLineMenu(); return; }
     // Otherwise exit annotate mode — but let an open modal own its Esc.
     if (annotatingFrame && !document.querySelector('.modal-overlay.show')) {
       exitAnnotateMode();
@@ -4363,7 +4750,9 @@ document.addEventListener('keydown', (e) => {
   // Delete the selected annotation of the active tool.
   const sel = annotateTool === 'rect'
     ? annotatingFrame.querySelector('.img-rect.selected')
-    : annotatingFrame.querySelector('.img-marker.selected');
+    : annotateTool === 'line'
+      ? annotatingFrame.querySelector('.img-line.selected')
+      : annotatingFrame.querySelector('.img-marker.selected');
   if (!sel) return;
   e.preventDefault();
   sel.remove();
@@ -4408,6 +4797,15 @@ document.addEventListener('click', (e) => {
       && !rectMenu.contains(e.target)
       && (!rectCaret || !rectCaret.contains(e.target))) {
     hideRectMenu();
+  }
+
+  // Close line submenu on outside click (P2-S87), same pattern.
+  const lineMenu = document.getElementById('lineMenu');
+  const lineCaret = document.getElementById('lineCaretBtn');
+  if (lineMenu && lineMenu.classList.contains('show')
+      && !lineMenu.contains(e.target)
+      && (!lineCaret || !lineCaret.contains(e.target))) {
+    hideLineMenu();
   }
 
   // Close text-align submenu on outside click (P2-S83). Same pattern as
@@ -4654,6 +5052,12 @@ function buildSaveContent() {
   cloneBody.querySelectorAll('.img-rect.selected, .img-rect.drawing')
     .forEach(r => r.classList.remove('selected', 'drawing'));
   cloneBody.querySelectorAll('.img-rect-handle').forEach(h => h.remove());
+  // P2-S87 — strip line selection + endpoint handles + per-frame tool class
+  cloneBody.querySelectorAll('.img-line.selected')
+    .forEach(g => g.classList.remove('selected'));
+  cloneBody.querySelectorAll('.img-line-handle').forEach(h => h.remove());
+  cloneBody.querySelectorAll('.img-frame.tool-line')
+    .forEach(f => f.classList.remove('tool-line'));
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
   // drop the stale per-frame counter attr (now a global session counter)

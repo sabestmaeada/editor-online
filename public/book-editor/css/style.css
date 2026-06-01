@@ -765,6 +765,18 @@ tr:hover td {
 }
 .img-rect.rounded { border-radius: 12px; }
 
+/* ── Leader lines (P2-S87) — fallback / standalone ──
+   SVG overlay; stroke/fill are inline on each line. Book PDF (book-dev)
+   carries the equivalent rules. */
+.img-lines {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.img-line-hit { stroke: transparent; fill: none; }
+
 .img-placeholder {
   background: linear-gradient(135deg, #f0f4ff, #e8ecf8);
   border: 2px dashed #7C8DB5;

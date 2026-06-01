@@ -710,6 +710,8 @@ body {
   border-radius: 8px;
   padding: 6px;
   width: 200px;
+  max-height: 78vh;
+  overflow-y: auto;
   box-shadow: 0 10px 30px rgba(0,0,0,0.3);
   z-index: 1000;
   display: none;
@@ -752,6 +754,40 @@ body {
 .rect-swatch.active {
   border-color: var(--shell-text);
   box-shadow: 0 0 0 2px var(--shell-surface) inset;
+}
+
+/* Line tool submenu (P2-S87) — section labels + endpoint-cap segmented rows */
+.marker-menu .line-menu-label {
+  font-family: var(--hd);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--shell-text-dim);
+  padding: 6px 8px 2px;
+}
+.marker-menu .line-cap-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 4px;
+}
+.line-cap-row button {
+  flex: 1;
+  font-family: var(--hd);
+  font-size: 12px;
+  padding: 5px 4px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.line-cap-row button:hover { background: var(--shell-accent-lt); }
+.line-cap-row button.is-active {
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  border-color: var(--shell-accent);
 }
 
 /* Split button: main (toggle mode) + caret (open submenu) flush together */

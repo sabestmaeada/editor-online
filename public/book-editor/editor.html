@@ -141,6 +141,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
+      <div class="tb-split">
+        <button class="tb-btn tb-split-main" id="lineMenuBtn" data-tip="เปิด/ปิดโหมดเส้นชี้ (เลือกรูปก่อน)" onclick="toggleLineAnnotate()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="20" x2="20" y2="4"/><polyline points="13 4 20 4 20 11"/></svg>
+        </button>
+        <button class="tb-btn tb-split-caret" id="lineCaretBtn" data-tip="ตัวเลือกเส้นชี้ (รูปแบบ/ปลาย/สี)" onclick="toggleLineMenu(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
       <button class="tb-btn" data-tip="เส้นคั่น (HR)" onclick="insertHR()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>
       </button>
@@ -454,6 +462,39 @@
   <div class="qi-item" id="rectCornerItem" onclick="rectMenuAction('corner')">☐ มุมโค้ง</div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="rectMenuAction('delete')">🗑 ลบกรอบที่เลือก</div>
+</div>
+
+<!-- Leader-line Dropdown (popover) — type + endpoint caps + colour + thickness (P2-S87) -->
+<div id="lineMenu" class="marker-menu" role="menu" aria-label="ตัวเลือกเส้นชี้">
+  <div class="line-menu-label">รูปแบบเส้น</div>
+  <div class="qi-item" data-line-type="straight" onclick="lineMenuAction('type','straight')">╱ เส้นตรง</div>
+  <div class="qi-item" data-line-type="elbow" onclick="lineMenuAction('type','elbow')">⌐ เส้นหักมุม</div>
+  <div class="qi-item" data-line-type="curved" onclick="lineMenuAction('type','curved')">﹋ เส้นโค้ง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="line-menu-label">ปลายต้น</div>
+  <div class="line-cap-row">
+    <button type="button" data-cap1="none" onclick="lineMenuAction('cap1','none')">ไม่มี</button>
+    <button type="button" data-cap1="dot" onclick="lineMenuAction('cap1','dot')">จุด</button>
+    <button type="button" data-cap1="arrow" onclick="lineMenuAction('cap1','arrow')">ลูกศร</button>
+  </div>
+  <div class="line-menu-label">ปลายปลาย</div>
+  <div class="line-cap-row">
+    <button type="button" data-cap2="none" onclick="lineMenuAction('cap2','none')">ไม่มี</button>
+    <button type="button" data-cap2="dot" onclick="lineMenuAction('cap2','dot')">จุด</button>
+    <button type="button" data-cap2="arrow" onclick="lineMenuAction('cap2','arrow')">ลูกศร</button>
+  </div>
+  <div class="marker-menu-sep"></div>
+  <div class="rect-swatch-row">
+    <button type="button" class="rect-swatch line-swatch" data-color="#E5534B" style="background:#E5534B" title="แดง" onclick="setLineColor('#E5534B')"></button>
+    <button type="button" class="rect-swatch line-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setLineColor('#E08A1E')"></button>
+    <button type="button" class="rect-swatch line-swatch" data-color="#2D6CDF" style="background:#2D6CDF" title="น้ำเงิน" onclick="setLineColor('#2D6CDF')"></button>
+    <button type="button" class="rect-swatch line-swatch" data-color="#1A6B52" style="background:#1A6B52" title="เขียว" onclick="setLineColor('#1A6B52')"></button>
+  </div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" onclick="lineMenuAction('thicker')">➕ เส้นหนาขึ้น</div>
+  <div class="qi-item" onclick="lineMenuAction('thinner')">➖ เส้นบางลง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" onclick="lineMenuAction('delete')">🗑 ลบเส้นที่เลือก</div>
 </div>
 
 <!-- Table Grid Picker (popover) — show grid of cells, hover to choose size, click to insert -->
