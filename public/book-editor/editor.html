@@ -133,6 +133,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
+      <div class="tb-split">
+        <button class="tb-btn tb-split-main" id="rectMenuBtn" data-tip="เปิด/ปิดโหมดกรอบเน้น (เลือกรูปก่อน)" onclick="toggleRectAnnotate()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/></svg>
+        </button>
+        <button class="tb-btn tb-split-caret" id="rectCaretBtn" data-tip="ตัวเลือกกรอบเน้น (สี/มุม)" onclick="toggleRectMenu(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
       <button class="tb-btn" data-tip="เส้นคั่น (HR)" onclick="insertHR()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>
       </button>
@@ -429,6 +437,20 @@
   <div class="qi-item" onclick="markerMenuAction('smaller')">➖ ย่อตัวชี้</div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" id="markerContinuousItem" onclick="markerMenuAction('continuous')">☐ นับต่อเนื่องข้ามรูป</div>
+</div>
+
+<!-- Highlight-rectangle Dropdown (popover) — colour + corner + delete (P2-S86) -->
+<div id="rectMenu" class="marker-menu" role="menu" aria-label="ตัวเลือกกรอบเน้น">
+  <div class="rect-swatch-row">
+    <button type="button" class="rect-swatch" data-color="#E5534B" style="background:#E5534B" title="แดง" onclick="setRectColor('#E5534B')"></button>
+    <button type="button" class="rect-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setRectColor('#E08A1E')"></button>
+    <button type="button" class="rect-swatch" data-color="#2D6CDF" style="background:#2D6CDF" title="น้ำเงิน" onclick="setRectColor('#2D6CDF')"></button>
+    <button type="button" class="rect-swatch" data-color="#1A6B52" style="background:#1A6B52" title="เขียว" onclick="setRectColor('#1A6B52')"></button>
+  </div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" id="rectCornerItem" onclick="rectMenuAction('corner')">☐ มุมโค้ง</div>
+  <div class="marker-menu-sep"></div>
+  <div class="qi-item" onclick="rectMenuAction('delete')">🗑 ลบกรอบที่เลือก</div>
 </div>
 
 <!-- Table Grid Picker (popover) — show grid of cells, hover to choose size, click to insert -->

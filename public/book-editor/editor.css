@@ -733,6 +733,27 @@ body {
   flex-shrink: 0;
 }
 
+/* Rect tool submenu — colour swatch row (P2-S86) */
+.marker-menu .rect-swatch-row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 4px 4px;
+}
+.rect-swatch {
+  flex: 1;
+  height: 24px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.rect-swatch:hover { transform: scale(1.06); }
+.rect-swatch.active {
+  border-color: var(--shell-text);
+  box-shadow: 0 0 0 2px var(--shell-surface) inset;
+}
+
 /* Split button: main (toggle mode) + caret (open submenu) flush together */
 .tb-split { display: inline-flex; align-items: center; flex-shrink: 0; }
 .tb-split .tb-split-main { border-radius: 5px 0 0 5px; }

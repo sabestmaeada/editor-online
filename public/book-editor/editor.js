@@ -1642,6 +1642,37 @@ td.table-cell-targeted, th.table-cell-targeted {
 .img-frame.annotating .img-marker.selected { box-shadow: 0 0 0 3px rgba(229,83,83,.6); }
 /* suppress the "double-click to edit" hover hint while annotating */
 .book-img:has(.img-frame.annotating):hover::before { display: none; }
+
+/* ── Highlight rectangles (P2-S86) ──────────────────────────────
+   Border-only boxes anchored to the image by % (left/top/width/height),
+   living in the same .img-markers overlay so they share the pointer-events
+   gating. Border colour is set inline per box; .rounded toggles corners.
+   px units here are for screen editing; the book PDF carries pt-unit
+   equivalents (book-dev repo). */
+.img-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid #E5534B;   /* colour overridden inline per box */
+  background: transparent;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.img-rect.rounded { border-radius: 12px; }
+.img-frame.annotating .img-rect { cursor: move; }
+.img-frame.annotating .img-rect.selected { box-shadow: 0 0 0 1px rgba(255,255,255,.9); }
+/* corner resize handles — only present (as child spans) while selected */
+.img-rect-handle {
+  position: absolute;
+  width: 12px; height: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 2px solid #1A6B52;
+  border-radius: 2px;
+}
+.img-rect-handle.nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.img-rect-handle.ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.img-rect-handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.img-rect-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
 </style>
 </head>
 <body>
@@ -1656,6 +1687,7 @@ ${bodyContent}
     doc.addEventListener('keydown', handleEditorKeys);
     repairMarkerState(doc);  // P2-S81 — fix files saved while annotating
     bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
+    bindRectEvents(doc);     // P2-S86 — highlight-rectangle tool
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
@@ -2674,6 +2706,20 @@ try {
   markerContinuous = localStorage.getItem('bookEditor_markerContinuous') === '1';
 } catch (e) { /* localStorage may be blocked */ }
 
+// P2-S86 — which annotate tool is active while a frame is in annotate mode.
+// 'marker' = numbered circles (P2-S81); 'rect' = highlight rectangles.
+let annotateTool = 'marker';
+
+// Highlight-rectangle defaults (persisted as UI prefs).
+const RECT_COLORS = ['#E5534B', '#E08A1E', '#2D6CDF', '#1A6B52'];
+let rectColor = '#E5534B';   // default = red (emphasis)
+let rectRounded = false;     // square by default; toggle for rounded corners
+try {
+  const c = localStorage.getItem('bookEditor_rectColor');
+  if (c && RECT_COLORS.includes(c)) rectColor = c;
+  rectRounded = localStorage.getItem('bookEditor_rectRounded') === '1';
+} catch (e) { /* localStorage may be blocked */ }
+
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
 
 /** Reading-order comparator for markers: top→bottom, then left→right
@@ -2694,6 +2740,7 @@ function markerReadingOrder(a, b) {
  *  new session never thinks an old frame is still active. */
 function repairMarkerState(doc) {
   annotatingFrame = null;
+  annotateTool = 'marker';
   markerNextOverride = null; // fresh running counter each load
   if (doc && doc.querySelectorAll) {
     // drop any stale per-frame counters from the earlier per-frame design
@@ -2703,6 +2750,11 @@ function repairMarkerState(doc) {
       .forEach((f) => f.classList.remove('annotating'));
     doc.querySelectorAll('.img-marker.selected, .img-marker.dragging')
       .forEach((m) => m.classList.remove('selected', 'dragging'));
+    // P2-S86 — strip transient rect state (selection + in-progress draw +
+    // resize handles) so a file saved mid-edit reopens clean.
+    doc.querySelectorAll('.img-rect.selected, .img-rect.drawing')
+      .forEach((r) => r.classList.remove('selected', 'drawing'));
+    doc.querySelectorAll('.img-rect-handle').forEach((h) => h.remove());
   }
   updateMarkerMenuState();
 }
@@ -2726,23 +2778,50 @@ function ensureImageFrame(img) {
   return frame;
 }
 
-/** Toolbar: toggle annotate mode for the currently selected image. */
-function toggleImageAnnotate() {
-  if (annotatingFrame) { exitAnnotateMode(); return; }
+/** Enter annotate mode on the selected image with the given tool, or just
+ *  switch the tool if a frame is already being annotated (P2-S86). Returns
+ *  true if a frame is now active. */
+function enterAnnotate(tool) {
   const doc = getDoc();
-  const img =
-    doc.querySelector('img.img-selected') ||
-    doc.querySelector('img.img-editing');
-  if (!img) {
-    showToast('เลือกรูปก่อน แล้วกดปุ่มใส่ตัวชี้');
-    return;
+  if (!annotatingFrame) {
+    const img =
+      doc.querySelector('img.img-selected') ||
+      doc.querySelector('img.img-editing');
+    if (!img) {
+      showToast('เลือกรูปก่อน แล้วกดปุ่มเครื่องมือ');
+      return false;
+    }
+    const frame = ensureImageFrame(img);
+    frame.classList.add('annotating');
+    annotatingFrame = frame;
+    setDirty(true); // wrapping the img mutates the HTML
   }
-  const frame = ensureImageFrame(img);
-  frame.classList.add('annotating');
-  annotatingFrame = frame;
+  annotateTool = tool;
+  // Clear the other tool's selection so only the active tool shows handles.
+  annotatingFrame
+    .querySelectorAll('.img-marker.selected')
+    .forEach((m) => m.classList.remove('selected'));
+  annotatingFrame
+    .querySelectorAll('.img-rect.selected')
+    .forEach((r) => deselectRect(r));
   updateMarkerMenuState();
-  setDirty(true); // wrapping the img mutates the HTML
-  showToast('โหมดใส่ตัวชี้: คลิกบนรูปเพื่อวางเลข · ลากเพื่อย้าย · เลือกแล้วกด Delete เพื่อลบ');
+  return true;
+}
+
+/** Toolbar: toggle the number-marker tool. */
+function toggleImageAnnotate() {
+  if (annotatingFrame && annotateTool === 'marker') { exitAnnotateMode(); return; }
+  if (enterAnnotate('marker')) {
+    showToast('โหมดใส่ตัวชี้: คลิกบนรูปเพื่อวางเลข · ลากเพื่อย้าย · เลือกแล้วกด Delete เพื่อลบ');
+  }
+}
+
+/** Toolbar: toggle the highlight-rectangle tool (P2-S86). */
+function toggleRectAnnotate() {
+  if (annotatingFrame && annotateTool === 'rect') { exitAnnotateMode(); return; }
+  if (enterAnnotate('rect')) {
+    showToast('โหมดกรอบเน้น: ลากบนรูปเพื่อวาดกรอบ · ลากกล่องเพื่อย้าย · ลากมุมเพื่อปรับขนาด · Delete เพื่อลบ');
+  }
 }
 
 function exitAnnotateMode() {
@@ -2751,9 +2830,15 @@ function exitAnnotateMode() {
     annotatingFrame
       .querySelectorAll('.img-marker.selected')
       .forEach((m) => m.classList.remove('selected'));
+    annotatingFrame
+      .querySelectorAll('.img-rect.selected')
+      .forEach((r) => deselectRect(r));
   }
   annotatingFrame = null;
+  annotateTool = 'marker';
   updateMarkerMenuState();
+  const rectBtn = document.getElementById('rectMenuBtn');
+  if (rectBtn) rectBtn.blur();
   // Drop the marker button's keyboard focus ring — exiting via Esc counts
   // as a keyboard interaction, which would otherwise leave a blue ring on
   // the main toggle button (same reasoning as hideAlignMenu's blur).
@@ -2865,13 +2950,18 @@ function hideAlignMenu() {
 /* ── Marker split-button (P2-S81) — main button toggles annotate mode;
  *    the caret opens a submenu with renumber + size actions. */
 function updateMarkerMenuState() {
-  const active = !!annotatingFrame;
-  // Highlight BOTH halves of the split button so it reads as one active
-  // unit while annotate mode is on.
-  const btn = document.getElementById('markerMenuBtn');
-  if (btn) btn.classList.toggle('active', active);
-  const caret = document.getElementById('markerCaretBtn');
-  if (caret) caret.classList.toggle('active', active);
+  // Each tool's split button lights up only when ITS tool is the active
+  // one — so the toolbar shows which annotate tool you're in (P2-S86).
+  const markerActive = !!annotatingFrame && annotateTool === 'marker';
+  const rectActive = !!annotatingFrame && annotateTool === 'rect';
+  const mb = document.getElementById('markerMenuBtn');
+  if (mb) mb.classList.toggle('active', markerActive);
+  const mc = document.getElementById('markerCaretBtn');
+  if (mc) mc.classList.toggle('active', markerActive);
+  const rb = document.getElementById('rectMenuBtn');
+  if (rb) rb.classList.toggle('active', rectActive);
+  const rc = document.getElementById('rectCaretBtn');
+  if (rc) rc.classList.toggle('active', rectActive);
 }
 
 function toggleMarkerMenu(evt) {
@@ -3101,7 +3191,7 @@ function bindMarkerEvents(doc) {
 
   // Place a marker: click on the annotating frame (not on a marker)
   doc.body.addEventListener('click', (e) => {
-    if (!annotatingFrame) return;
+    if (!annotatingFrame || annotateTool !== 'marker') return;
     const frame = e.target.closest && e.target.closest('.img-frame');
 
     // Clicked outside the current frame. If it landed on ANOTHER book
@@ -3140,7 +3230,7 @@ function bindMarkerEvents(doc) {
 
   // Select + start dragging a marker
   doc.body.addEventListener('mousedown', (e) => {
-    if (!annotatingFrame) return;
+    if (!annotatingFrame || annotateTool !== 'marker') return;
     const marker = e.target.closest && e.target.closest('.img-marker');
     if (!marker || marker.closest('.img-frame') !== annotatingFrame) return;
     e.preventDefault();
@@ -3155,7 +3245,7 @@ function bindMarkerEvents(doc) {
 
   // Double-click a marker → open the start-number dialog for this image.
   doc.body.addEventListener('dblclick', (e) => {
-    if (!annotatingFrame) return;
+    if (!annotatingFrame || annotateTool !== 'marker') return;
     const marker = e.target.closest && e.target.closest('.img-marker');
     if (!marker || marker.closest('.img-frame') !== annotatingFrame) return;
     e.preventDefault();
@@ -3182,13 +3272,13 @@ function bindMarkerEvents(doc) {
 
   // Delete selected marker / Esc to close submenu or exit mode
   doc.body.addEventListener('keydown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'marker') return; // rect mode → bindRectEvents owns it
     if (e.key === 'Escape') {
       const menu = document.getElementById('markerMenu');
       if (menu && menu.classList.contains('show')) { hideMarkerMenu(); return; }
-      if (annotatingFrame) exitAnnotateMode();
+      exitAnnotateMode();
       return;
     }
-    if (!annotatingFrame) return;
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     const sel = annotatingFrame.querySelector('.img-marker.selected');
     if (!sel) return;
@@ -3197,6 +3287,240 @@ function bindMarkerEvents(doc) {
     sel.remove();
     setDirty(true);
   }, true);
+}
+
+/* ── Highlight rectangles (P2-S86) ──────────────────────────────
+ * Reuses the .img-frame + .img-markers overlay from markers. A rect is a
+ * <span class="img-rect" style="left/top/width/height (%); border-color">
+ * (+ .rounded). Drawing = rubber-band drag; move = drag body; resize = drag
+ * a corner handle. Geometry is stored in % so it tracks the scaled image. */
+
+/** Read a rect's geometry as % numbers. */
+function rectGeo(rect) {
+  return {
+    l: parseFloat(rect.style.left) || 0,
+    t: parseFloat(rect.style.top) || 0,
+    w: parseFloat(rect.style.width) || 0,
+    h: parseFloat(rect.style.height) || 0,
+  };
+}
+
+/** Write a rect's geometry (clamped to the image box). */
+function setRectGeo(rect, l, t, w, h) {
+  rect.style.left = clampPct(l).toFixed(1) + '%';
+  rect.style.top = clampPct(t).toFixed(1) + '%';
+  rect.style.width = Math.max(0, Math.min(100, w)).toFixed(1) + '%';
+  rect.style.height = Math.max(0, Math.min(100, h)).toFixed(1) + '%';
+}
+
+/** Resize keeping the corner opposite `corner` fixed. */
+function resizeRectGeo(rect, corner, g, px, py) {
+  const MIN = 2;
+  const right = g.l + g.w;
+  const bottom = g.t + g.h;
+  px = clampPct(px);
+  py = clampPct(py);
+  let l = g.l, t = g.t, w = g.w, h = g.h;
+  if (corner === 'nw') { l = Math.min(px, right - MIN); t = Math.min(py, bottom - MIN); w = right - l; h = bottom - t; }
+  else if (corner === 'ne') { t = Math.min(py, bottom - MIN); l = g.l; w = Math.max(MIN, px - g.l); h = bottom - t; }
+  else if (corner === 'sw') { l = Math.min(px, right - MIN); t = g.t; w = right - l; h = Math.max(MIN, py - g.t); }
+  else { l = g.l; t = g.t; w = Math.max(MIN, px - g.l); h = Math.max(MIN, py - g.t); } // se
+  setRectGeo(rect, l, t, w, h);
+}
+
+function addRectHandles(rect) {
+  removeRectHandles(rect);
+  const doc = getDoc();
+  ['nw', 'ne', 'sw', 'se'].forEach((c) => {
+    const h = doc.createElement('span');
+    h.className = 'img-rect-handle ' + c;
+    h.setAttribute('data-corner', c);
+    rect.appendChild(h);
+  });
+}
+
+function removeRectHandles(rect) {
+  rect.querySelectorAll('.img-rect-handle').forEach((h) => h.remove());
+}
+
+function selectRect(rect) {
+  deselectAllRects();
+  rect.classList.add('selected');
+  addRectHandles(rect);
+}
+
+function deselectRect(rect) {
+  rect.classList.remove('selected');
+  removeRectHandles(rect);
+}
+
+function deselectAllRects() {
+  if (!annotatingFrame) return;
+  annotatingFrame
+    .querySelectorAll('.img-rect.selected')
+    .forEach((r) => deselectRect(r));
+}
+
+/** Bind draw / move / resize / delete handlers for the rect tool (once). */
+function bindRectEvents(doc) {
+  if (!doc.body || doc.body._rectBound) return;
+  doc.body._rectBound = true;
+
+  let mode = null;        // 'draw' | 'move' | 'resize'
+  let active = null;      // the rect being acted on
+  let frameRect = null;   // frame bounding box for % math
+  let corner = null;      // resize corner
+  let orig = null;        // geometry at gesture start
+  let startX = 0, startY = 0; // pointer % at gesture start
+
+  const pct = (e) => ({
+    x: clampPct(((e.clientX - frameRect.left) / frameRect.width) * 100),
+    y: clampPct(((e.clientY - frameRect.top) / frameRect.height) * 100),
+  });
+
+  doc.body.addEventListener('mousedown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'rect') return;
+    if (e.target.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    frameRect = annotatingFrame.getBoundingClientRect();
+    const handle = e.target.closest('.img-rect-handle');
+    const rectEl = e.target.closest('.img-rect');
+    const p = pct(e);
+    if (handle && rectEl) {
+      selectRect(rectEl);
+      mode = 'resize'; active = rectEl; corner = handle.getAttribute('data-corner');
+      orig = rectGeo(rectEl);
+    } else if (rectEl) {
+      selectRect(rectEl);
+      mode = 'move'; active = rectEl; orig = rectGeo(rectEl);
+      startX = p.x; startY = p.y;
+    } else {
+      deselectAllRects();
+      const r = doc.createElement('span');
+      r.className = 'img-rect drawing' + (rectRounded ? ' rounded' : '');
+      r.style.borderColor = rectColor;
+      r.style.left = p.x.toFixed(1) + '%';
+      r.style.top = p.y.toFixed(1) + '%';
+      r.style.width = '0%';
+      r.style.height = '0%';
+      annotatingFrame.querySelector('.img-markers').appendChild(r);
+      mode = 'draw'; active = r; startX = p.x; startY = p.y;
+    }
+  }, true);
+
+  doc.body.addEventListener('mousemove', (e) => {
+    if (!mode || !active) return;
+    const p = pct(e);
+    if (mode === 'draw') {
+      setRectGeo(active, Math.min(startX, p.x), Math.min(startY, p.y),
+        Math.abs(p.x - startX), Math.abs(p.y - startY));
+    } else if (mode === 'move') {
+      let l = orig.l + (p.x - startX);
+      let t = orig.t + (p.y - startY);
+      l = Math.max(0, Math.min(l, 100 - orig.w));
+      t = Math.max(0, Math.min(t, 100 - orig.h));
+      setRectGeo(active, l, t, orig.w, orig.h);
+    } else if (mode === 'resize') {
+      resizeRectGeo(active, corner, orig, p.x, p.y);
+    }
+  }, true);
+
+  doc.body.addEventListener('mouseup', () => {
+    if (mode === 'draw' && active) {
+      active.classList.remove('drawing');
+      const g = rectGeo(active);
+      if (g.w < 2 || g.h < 2) { active.remove(); }
+      else { selectRect(active); setDirty(true); }
+    } else if ((mode === 'move' || mode === 'resize') && active) {
+      setDirty(true);
+    }
+    mode = null; active = null; orig = null; corner = null; frameRect = null;
+  }, true);
+
+  doc.body.addEventListener('keydown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'rect') return;
+    if (e.key === 'Escape') {
+      const menu = document.getElementById('rectMenu');
+      if (menu && menu.classList.contains('show')) { hideRectMenu(); return; }
+      exitAnnotateMode();
+      return;
+    }
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const sel = annotatingFrame.querySelector('.img-rect.selected');
+    if (!sel) return;
+    e.preventDefault();
+    e.stopPropagation();
+    sel.remove();
+    setDirty(true);
+  }, true);
+}
+
+/* ── Rect tool submenu (colour + corner + delete) ── */
+function toggleRectMenu(evt) {
+  const menu = document.getElementById('rectMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideRectMenu(); return; }
+  const anchor = document.getElementById('rectMenuBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateRectMenuState();
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+function hideRectMenu() {
+  const menu = document.getElementById('rectMenu');
+  if (menu) menu.classList.remove('show');
+  const caret = document.getElementById('rectCaretBtn');
+  if (caret) caret.blur();
+}
+
+/** Reflect current default colour + corner mode in the submenu. */
+function updateRectMenuState() {
+  const menu = document.getElementById('rectMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.rect-swatch').forEach((s) => {
+    s.classList.toggle('active', s.getAttribute('data-color') === rectColor);
+  });
+  const item = document.getElementById('rectCornerItem');
+  if (item) {
+    item.textContent = (rectRounded ? '✓ ' : '☐ ') + 'มุมโค้ง';
+    item.classList.toggle('is-active', rectRounded);
+  }
+}
+
+/** Pick a border colour — applies to the selected rect AND becomes the
+ *  default for new rects. */
+function setRectColor(color) {
+  if (!RECT_COLORS.includes(color)) return;
+  rectColor = color;
+  try { localStorage.setItem('bookEditor_rectColor', color); } catch (e) { /* ignore */ }
+  const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
+  if (sel) { sel.style.borderColor = color; setDirty(true); }
+  updateRectMenuState();
+}
+
+/** Toggle square / rounded — applies to the selected rect AND new rects. */
+function toggleRectRounded() {
+  rectRounded = !rectRounded;
+  try { localStorage.setItem('bookEditor_rectRounded', rectRounded ? '1' : '0'); } catch (e) { /* ignore */ }
+  const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
+  if (sel) { sel.classList.toggle('rounded', rectRounded); setDirty(true); }
+  updateRectMenuState();
+  showToast(rectRounded ? 'มุมกรอบ: โค้ง' : 'มุมกรอบ: เหลี่ยม');
+}
+
+function rectMenuAction(action) {
+  if (action === 'corner') { toggleRectRounded(); }
+  else if (action === 'delete') {
+    const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
+    if (sel) { sel.remove(); setDirty(true); }
+    hideRectMenu();
+  }
 }
 
 /* Close the text-align submenu when the user clicks or presses Esc INSIDE
@@ -3210,6 +3534,9 @@ function bindToolbarMenuDismiss(doc) {
   doc.addEventListener('mousedown', () => {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) hideAlignMenu();
+    // P2-S86 — clicking into the canvas closes the rect submenu too.
+    const rm = document.getElementById('rectMenu');
+    if (rm && rm.classList.contains('show')) hideRectMenu();
   }, true);
 
   doc.addEventListener('keydown', (e) => {
@@ -3992,9 +4319,11 @@ function closeQuickMenu() {
 // instead. Handling them here makes Delete work regardless of focus.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    // Esc closes the marker submenu first (if open), regardless of mode.
-    const menu = document.getElementById('markerMenu');
-    if (menu && menu.classList.contains('show')) { hideMarkerMenu(); return; }
+    // Esc closes whichever annotate submenu is open first (P2-S86).
+    const mMenu = document.getElementById('markerMenu');
+    if (mMenu && mMenu.classList.contains('show')) { hideMarkerMenu(); return; }
+    const rMenu = document.getElementById('rectMenu');
+    if (rMenu && rMenu.classList.contains('show')) { hideRectMenu(); return; }
     // Otherwise exit annotate mode — but let an open modal own its Esc.
     if (annotatingFrame && !document.querySelector('.modal-overlay.show')) {
       exitAnnotateMode();
@@ -4008,7 +4337,10 @@ document.addEventListener('keydown', (e) => {
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
     return;
   }
-  const sel = annotatingFrame.querySelector('.img-marker.selected');
+  // Delete the selected annotation of the active tool.
+  const sel = annotateTool === 'rect'
+    ? annotatingFrame.querySelector('.img-rect.selected')
+    : annotatingFrame.querySelector('.img-marker.selected');
   if (!sel) return;
   e.preventDefault();
   sel.remove();
@@ -4044,6 +4376,15 @@ document.addEventListener('click', (e) => {
       && !markerMenu.contains(e.target)
       && (!markerCaret || !markerCaret.contains(e.target))) {
     hideMarkerMenu();
+  }
+
+  // Close rect submenu on outside click (P2-S86), same pattern.
+  const rectMenu = document.getElementById('rectMenu');
+  const rectCaret = document.getElementById('rectCaretBtn');
+  if (rectMenu && rectMenu.classList.contains('show')
+      && !rectMenu.contains(e.target)
+      && (!rectCaret || !rectCaret.contains(e.target))) {
+    hideRectMenu();
   }
 
   // Close text-align submenu on outside click (P2-S83). Same pattern as
@@ -4286,6 +4627,10 @@ function buildSaveContent() {
     .forEach(f => f.classList.remove('annotating'));
   cloneBody.querySelectorAll('.img-marker.selected, .img-marker.dragging')
     .forEach(m => m.classList.remove('selected', 'dragging'));
+  // P2-S86 — strip rect selection / in-progress draw + remove resize handles
+  cloneBody.querySelectorAll('.img-rect.selected, .img-rect.drawing')
+    .forEach(r => r.classList.remove('selected', 'drawing'));
+  cloneBody.querySelectorAll('.img-rect-handle').forEach(h => h.remove());
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
   // drop the stale per-frame counter attr (now a global session counter)

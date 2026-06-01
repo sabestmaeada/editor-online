@@ -752,6 +752,19 @@ tr:hover td {
   border-width: 2.5px; line-height: 33px; font-size: 18px;
 }
 
+/* ── Highlight rectangles (P2-S86) — fallback / standalone (px) ──
+   Border-only boxes anchored to the image by %. Colour set inline per
+   box; .rounded toggles corners. Book PDF carries pt-unit equivalents. */
+.img-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid #E5534B;   /* colour overridden inline per box */
+  background: transparent;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.img-rect.rounded { border-radius: 12px; }
+
 .img-placeholder {
   background: linear-gradient(135deg, #f0f4ff, #e8ecf8);
   border: 2px dashed #7C8DB5;
