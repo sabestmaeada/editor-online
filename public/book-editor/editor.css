@@ -699,6 +699,45 @@ body {
 .qi-item:hover { background: var(--shell-accent-lt); color: var(--shell-accent); }
 
 /* ==============================================
+   IMAGE MARKER DROPDOWN (P2-S81)
+   Toolbar-triggered popover; reuses .qi-item rows.
+   JS positions it below the trigger (position:fixed).
+   ============================================== */
+.marker-menu {
+  position: fixed;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 6px;
+  width: 200px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+}
+.marker-menu.show { display: flex; }
+.marker-menu .marker-menu-sep {
+  height: 1px;
+  background: var(--shell-border);
+  margin: 4px 2px;
+}
+.marker-menu .qi-item.is-active {
+  background: var(--shell-accent-lt);
+  color: var(--shell-accent);
+  font-weight: 600;
+}
+
+/* Split button: main (toggle mode) + caret (open submenu) flush together */
+.tb-split { display: inline-flex; align-items: center; flex-shrink: 0; }
+.tb-split .tb-split-main { border-radius: 5px 0 0 5px; }
+.tb-split .tb-split-caret {
+  width: 18px; min-width: 18px;
+  border-radius: 0 5px 5px 0;
+  box-shadow: inset 1px 0 0 var(--shell-border);  /* divider line */
+}
+.tb-split .tb-split-caret svg { width: 11px; height: 11px; }
+
+/* ==============================================
    TRACK CHANGES — HOVER TOOLTIP (JS-positioned)
    ============================================== */
 .track-hover-tooltip {

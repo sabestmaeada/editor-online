@@ -1634,6 +1634,7 @@ ${bodyContent}
     doc.body.setAttribute('contenteditable', 'true');
     doc.body.addEventListener('input', () => { setDirty(true); updateStatus(); });
     doc.addEventListener('keydown', handleEditorKeys);
+    repairMarkerState(doc);  // P2-S81 — fix files saved while annotating
     bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
     bindImageClicks(doc);
     bindAnchorClicks(doc);
@@ -2644,7 +2645,42 @@ function bindImageClicks(doc) {
 
 let annotatingFrame = null;   // the .img-frame currently in annotate mode
 
+// P2-S81 — numbering mode. false = per-image (each figure starts at 1);
+// true = continuous across all images (figure A: 1,2 → figure B: 3,4...).
+// Persisted as a UI preference so it sticks across sessions.
+let markerContinuous = false;
+try {
+  markerContinuous = localStorage.getItem('bookEditor_markerContinuous') === '1';
+} catch (e) { /* localStorage may be blocked */ }
+
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
+
+/** Reading-order comparator for markers: top→bottom, then left→right
+ *  within ~4% rows. Shared by per-image and continuous renumber. */
+function markerReadingOrder(a, b) {
+  const ay = parseFloat(a.style.top) || 0;
+  const by = parseFloat(b.style.top) || 0;
+  if (Math.abs(ay - by) > 4) return ay - by;
+  const ax = parseFloat(a.style.left) || 0;
+  const bx = parseFloat(b.style.left) || 0;
+  return ax - bx;
+}
+
+/** P2-S81 — strip stray annotate-mode state when a document loads.
+ *  Repairs files saved (pre-fix) while annotate mode was active: the
+ *  persisted `.annotating` class left the marker overlay intercepting
+ *  clicks, locking image editing. Also resets the runtime pointer so a
+ *  new session never thinks an old frame is still active. */
+function repairMarkerState(doc) {
+  annotatingFrame = null;
+  if (doc && doc.querySelectorAll) {
+    doc.querySelectorAll('.img-frame.annotating')
+      .forEach((f) => f.classList.remove('annotating'));
+    doc.querySelectorAll('.img-marker.selected, .img-marker.dragging')
+      .forEach((m) => m.classList.remove('selected', 'dragging'));
+  }
+  updateMarkerMenuState();
+}
 
 /** Wrap an <img> (inside figure.book-img) in .img-frame + .img-markers
  *  if not already wrapped. Returns the .img-frame element. */
@@ -2653,7 +2689,10 @@ function ensureImageFrame(img) {
   if (existing) return existing;
   const doc = getDoc();
   const frame = doc.createElement('span');
-  frame.className = 'img-frame';
+  // New frames default to size level 3 (L). Existing frames keep their
+  // own size class; the base (no class) is still level 2 so older saved
+  // markers are unaffected.
+  frame.className = 'img-frame msize-3';
   frame.setAttribute('contenteditable', 'false');
   img.parentNode.insertBefore(frame, img);
   frame.appendChild(img);
@@ -2677,8 +2716,7 @@ function toggleImageAnnotate() {
   const frame = ensureImageFrame(img);
   frame.classList.add('annotating');
   annotatingFrame = frame;
-  const btn = document.getElementById('annotateBtn');
-  if (btn) btn.classList.add('active');
+  updateMarkerMenuState();
   setDirty(true); // wrapping the img mutates the HTML
   showToast('โหมดใส่ตัวชี้: คลิกบนรูปเพื่อวางเลข · ลากเพื่อย้าย · เลือกแล้วกด Delete เพื่อลบ');
 }
@@ -2691,35 +2729,113 @@ function exitAnnotateMode() {
       .forEach((m) => m.classList.remove('selected'));
   }
   annotatingFrame = null;
-  const btn = document.getElementById('annotateBtn');
-  if (btn) btn.classList.remove('active');
+  updateMarkerMenuState();
 }
 
-/** Next number for a frame = max existing data-n + 1 (per-image). */
+/** P2-S81 (option A) — switch annotate mode straight to another image
+ *  without leaving the mode. Called when the user clicks a different
+ *  book image while already annotating. */
+function switchAnnotateTo(img) {
+  if (annotatingFrame) {
+    annotatingFrame.classList.remove('annotating');
+    annotatingFrame
+      .querySelectorAll('.img-marker.selected, .img-marker.dragging')
+      .forEach((m) => m.classList.remove('selected', 'dragging'));
+  }
+  const frame = ensureImageFrame(img);
+  frame.classList.add('annotating');
+  annotatingFrame = frame;
+  updateMarkerMenuState();
+  setDirty(true); // ensureImageFrame may have wrapped a fresh image
+  showToast('สลับมาที่รูปนี้ — วาง marker ต่อได้เลย');
+}
+
+/* ── Marker split-button (P2-S81) — main button toggles annotate mode;
+ *    the caret opens a submenu with renumber + size actions. */
+function updateMarkerMenuState() {
+  const btn = document.getElementById('markerMenuBtn');
+  if (btn) btn.classList.toggle('active', !!annotatingFrame);
+}
+
+function toggleMarkerMenu(evt) {
+  const menu = document.getElementById('markerMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideMarkerMenu(); return; }
+  // Align the menu under the whole split (use the main button's left edge).
+  const anchor = document.getElementById('markerMenuBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateContinuousMenuLabel(); // reflect current numbering mode
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+function hideMarkerMenu() {
+  const menu = document.getElementById('markerMenu');
+  if (menu) menu.classList.remove('show');
+}
+
+function updateContinuousMenuLabel() {
+  const item = document.getElementById('markerContinuousItem');
+  if (item) {
+    item.textContent =
+      (markerContinuous ? '✓ ' : '☐ ') + 'นับต่อเนื่องข้ามรูป';
+    item.classList.toggle('is-active', markerContinuous);
+  }
+}
+
+function toggleContinuousMode() {
+  markerContinuous = !markerContinuous;
+  try {
+    localStorage.setItem(
+      'bookEditor_markerContinuous',
+      markerContinuous ? '1' : '0',
+    );
+  } catch (e) { /* ignore */ }
+  updateContinuousMenuLabel();
+  showToast(
+    markerContinuous
+      ? 'โหมดนับต่อเนื่องข้ามรูป: เปิด'
+      : 'โหมดนับแยกต่อรูป: เปิด',
+  );
+}
+
+function markerMenuAction(action) {
+  if (action === 'renumber') { renumberMarkers(); hideMarkerMenu(); }
+  // size + mode toggle keep the menu open so the user can keep tweaking
+  else if (action === 'bigger') { changeMarkerSize(1); }
+  else if (action === 'smaller') { changeMarkerSize(-1); }
+  else if (action === 'continuous') { toggleContinuousMode(); }
+}
+
+/** Next number for a new marker = max existing data-n + 1.
+ *  Per-image mode scopes to the current frame; continuous mode scopes
+ *  to the whole document so numbers carry across images. */
 function nextMarkerNumber(markers) {
+  const scope = markerContinuous ? getDoc().body : markers;
   let max = 0;
-  markers.querySelectorAll('.img-marker').forEach((m) => {
-    const n = parseInt(m.getAttribute('data-n') || '0', 10);
-    if (n > max) max = n;
-  });
+  if (scope) {
+    scope.querySelectorAll('.img-marker').forEach((m) => {
+      const n = parseInt(m.getAttribute('data-n') || '0', 10);
+      if (n > max) max = n;
+    });
+  }
   return max + 1;
 }
 
-/** Toolbar: renumber markers of the active frame in reading order
- *  (top → bottom, then left → right within ~4% rows). */
+/** Toolbar: renumber markers in reading order. Per-image mode renumbers
+ *  just the active frame (1..N); continuous mode renumbers every image
+ *  across the document with one running counter. */
 function renumberMarkers() {
+  if (markerContinuous) { renumberAllContinuous(); return; }
   if (!annotatingFrame) { showToast('เข้าโหมดใส่ตัวชี้ที่รูปก่อน'); return; }
   const markers = annotatingFrame.querySelector('.img-markers');
   if (!markers) return;
   const list = Array.from(markers.querySelectorAll('.img-marker'));
-  list.sort((a, b) => {
-    const ay = parseFloat(a.style.top) || 0;
-    const by = parseFloat(b.style.top) || 0;
-    if (Math.abs(ay - by) > 4) return ay - by; // 4% tolerance → same row
-    const ax = parseFloat(a.style.left) || 0;
-    const bx = parseFloat(b.style.left) || 0;
-    return ax - bx;
-  });
+  list.sort(markerReadingOrder);
   list.forEach((m, i) => {
     const n = String(i + 1);
     m.setAttribute('data-n', n);
@@ -2727,6 +2843,29 @@ function renumberMarkers() {
   });
   setDirty(true);
   showToast('เรียงเลขใหม่แล้ว');
+}
+
+/** Continuous renumber: walk every image's markers in document order
+ *  (figure order, then reading order within each) with one counter. */
+function renumberAllContinuous() {
+  const doc = getDoc();
+  const frames = Array.from(doc.querySelectorAll('figure.book-img .img-frame'));
+  let counter = 1;
+  let touched = 0;
+  frames.forEach((frame) => {
+    const markers = frame.querySelector('.img-markers');
+    if (!markers) return;
+    Array.from(markers.querySelectorAll('.img-marker'))
+      .sort(markerReadingOrder)
+      .forEach((m) => {
+        const n = String(counter++);
+        m.setAttribute('data-n', n);
+        m.textContent = n;
+        touched++;
+      });
+  });
+  if (touched > 0) setDirty(true);
+  showToast('เรียงเลขต่อเนื่องข้ามรูปแล้ว');
 }
 
 /* Marker size presets are per-image, stored as class msize-1..4 on the
@@ -2765,7 +2904,23 @@ function bindMarkerEvents(doc) {
   doc.body.addEventListener('click', (e) => {
     if (!annotatingFrame) return;
     const frame = e.target.closest && e.target.closest('.img-frame');
-    if (frame !== annotatingFrame) return;
+
+    // Clicked outside the current frame. If it landed on ANOTHER book
+    // image → switch annotate mode straight to it (P2-S81 option A), so
+    // the user doesn't have to exit + reselect. We require the click to
+    // be on the <img> itself (not caption/empty) to avoid accidental
+    // switches.
+    if (frame !== annotatingFrame) {
+      const otherImg =
+        e.target.closest && e.target.closest('figure.book-img img');
+      if (otherImg && !annotatingFrame.contains(otherImg)) {
+        e.preventDefault();
+        e.stopPropagation();
+        switchAnnotateTo(otherImg);
+      }
+      return; // switched, or clicked text/empty → never place here
+    }
+
     if (e.target.closest('.img-marker')) return; // clicked a marker → not place
     e.preventDefault();
     e.stopPropagation();
@@ -2816,10 +2971,15 @@ function bindMarkerEvents(doc) {
     dragRect = null;
   }, true);
 
-  // Delete selected marker / Esc to exit mode
+  // Delete selected marker / Esc to close submenu or exit mode
   doc.body.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const menu = document.getElementById('markerMenu');
+      if (menu && menu.classList.contains('show')) { hideMarkerMenu(); return; }
+      if (annotatingFrame) exitAnnotateMode();
+      return;
+    }
     if (!annotatingFrame) return;
-    if (e.key === 'Escape') { exitAnnotateMode(); return; }
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     const sel = annotatingFrame.querySelector('.img-marker.selected');
     if (!sel) return;
@@ -3585,6 +3745,37 @@ function closeQuickMenu() {
   isQuickMenuOpen = false;
 }
 
+// P2-S81 — parent-document keydown for marker delete / Esc. The iframe
+// already has its own handler (doc.body), but it only fires when the
+// iframe is focused. After entering annotate mode via the toolbar (a
+// parent button) — or after a marker mousedown calls preventDefault,
+// which suppresses iframe focus — keyboard events land on the PARENT
+// instead. Handling them here makes Delete work regardless of focus.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    // Esc closes the marker submenu first (if open), regardless of mode.
+    const menu = document.getElementById('markerMenu');
+    if (menu && menu.classList.contains('show')) { hideMarkerMenu(); return; }
+    // Otherwise exit annotate mode — but let an open modal own its Esc.
+    if (annotatingFrame && !document.querySelector('.modal-overlay.show')) {
+      exitAnnotateMode();
+    }
+    return;
+  }
+  if (!annotatingFrame) return;
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  // Don't hijack delete while typing in a real parent-UI field.
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+    return;
+  }
+  const sel = annotatingFrame.querySelector('.img-marker.selected');
+  if (!sel) return;
+  e.preventDefault();
+  sel.remove();
+  setDirty(true);
+});
+
 document.addEventListener('click', (e) => {
   const btn = document.getElementById('quickInsertBtn');
   const menu = document.getElementById('quickInsertMenu');
@@ -3602,6 +3793,18 @@ document.addEventListener('click', (e) => {
       && !picker.contains(e.target)
       && (!tableBtn || !tableBtn.contains(e.target))) {
     hideTableGridPicker();
+  }
+
+  // Close image-marker submenu on outside click (P2-S81). The caret
+  // trigger calls stopPropagation() so opening doesn't immediately
+  // close it; clicking the main toggle button also closes it (it's not
+  // the caret) which is the desired behaviour.
+  const markerMenu = document.getElementById('markerMenu');
+  const markerCaret = document.getElementById('markerCaretBtn');
+  if (markerMenu && markerMenu.classList.contains('show')
+      && !markerMenu.contains(e.target)
+      && (!markerCaret || !markerCaret.contains(e.target))) {
+    hideMarkerMenu();
   }
 
   // Close table context menu on outside click (any click that's not
@@ -3819,6 +4022,20 @@ function buildSaveContent() {
   });
   // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
   cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
+
+  // P2-S81: strip transient UI-only classes so annotate mode / selection
+  // never leak into the saved file. Without this, saving while annotate
+  // mode is on persisted `.annotating`, whose `pointer-events:auto`
+  // overlay then blocked image editing on the next open.
+  cloneBody.querySelectorAll('.img-frame.annotating')
+    .forEach(f => f.classList.remove('annotating'));
+  cloneBody.querySelectorAll('.img-marker.selected, .img-marker.dragging')
+    .forEach(m => m.classList.remove('selected', 'dragging'));
+  cloneBody.querySelectorAll('.img-selected, .img-editing')
+    .forEach(el => el.classList.remove('img-selected', 'img-editing'));
+  // (keep contenteditable="false" on .img-frame — it's part of the
+  //  marker structure, not a transient state.)
+
   let content = cloneBody.innerHTML;
   content = content.replace(/<b\b[^>]*>/gi, '<strong>').replace(/<\/b>/gi, '</strong>');
   content = content.replace(/​/g, ''); // strip zero-width space ที่อาจตกค้างจากการพิมพ์ใน track mode
