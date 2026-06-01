@@ -1114,6 +1114,26 @@ function generateEmbedFilename(dataUrl) {
   return `embed-${Date.now()}.${mimeToExt(mime)}`;
 }
 
+/* Sanitize an image filename so it's safe in URLs / file paths (P2-S84).
+ * Spaces and characters outside [A-Za-z0-9._-] (Thai, #, &, +, parentheses,
+ * etc.) are invalid in URLs and break path resolution in stricter renderers
+ * like WeasyPrint. Collapse them to hyphens, keep the extension, and fall
+ * back to a timestamp if the base name empties out (e.g. an all-Thai name). */
+function sanitizeImageFilename(name) {
+  const raw = String(name || '');
+  const dot = raw.lastIndexOf('.');
+  const clean = (s) => s
+    .normalize('NFC')
+    .replace(/\s+/g, '-')             // whitespace → hyphen
+    .replace(/[^A-Za-z0-9._-]/g, '-') // unsafe chars → hyphen
+    .replace(/-+/g, '-')              // collapse repeats
+    .replace(/^[-.]+|[-.]+$/g, '');   // trim leading/trailing - or .
+  let base = clean(dot > 0 ? raw.slice(0, dot) : raw);
+  const ext = clean(dot > 0 ? raw.slice(dot + 1) : '').toLowerCase();
+  if (!base) base = `image-${Date.now()}`;
+  return ext ? `${base}.${ext}` : base;
+}
+
 async function safeBlobToUrl(blobOrFile) {
   try {
     return URL.createObjectURL(blobOrFile);
@@ -3443,8 +3463,12 @@ async function processSelectedImage(file) {
     }
     try {
       showToast("กำลังเตรียมรูปภาพลงโปรเจกต์...");
+      // P2-S84: write + reference under a URL-safe name so paths with
+      // spaces / Thai / special chars don't break WeasyPrint later. The
+      // disk filename and the src use the SAME sanitized name → stay in sync.
+      const safeName = sanitizeImageFilename(file.name);
       const imgDirHandle = await projectDirHandle.getDirectoryHandle('images', { create: true });
-      const fileHandle = await imgDirHandle.getFileHandle(file.name, { create: true });
+      const fileHandle = await imgDirHandle.getFileHandle(safeName, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(file);
       await writable.close();
@@ -3456,9 +3480,12 @@ async function processSelectedImage(file) {
       currentBase64Data = null;
       document.getElementById('imgUrl').removeAttribute('readonly');
 
-      const relativePath = `./images/${file.name}`;
+      const relativePath = `./images/${safeName}`;
       projectImageCache.set(relativePath, freshFile);
       document.getElementById('imgUrl').value = relativePath;
+      if (safeName !== file.name) {
+        showToast(`เปลี่ยนชื่อไฟล์เป็น ${safeName} เพื่อให้พิมพ์ PDF ได้ถูกต้อง`);
+      }
 
       const objUrl = await safeBlobToUrl(freshFile);
       document.getElementById('imgPreviewSrc').src = objUrl;
