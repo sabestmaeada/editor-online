@@ -306,6 +306,26 @@
   </div>
 </div>
 
+<!-- Marker start-number dialog (P2-S81) — set where the NEXT marker's
+     numbering begins for this image. Does not relabel existing markers. -->
+<div class="modal-overlay" id="markerStartModal">
+  <div class="modal" style="min-width:320px;">
+    <h3>ตั้งเลขตัวชี้นี้</h3>
+    <p style="margin:-8px 0 14px;font-size:12px;color:var(--shell-text-dim);font-weight:400;">
+      ตัวชี้นี้จะเปลี่ยนเป็นเลขที่กรอก และตัวที่<strong>เพิ่มต่อไป</strong>นับต่อจากเลขนี้ — ตัวอื่นที่มีอยู่ไม่เปลี่ยน
+    </p>
+    <div class="modal-field">
+      <label>เลขของตัวชี้นี้</label>
+      <input type="number" id="markerStartInput" min="1" value="1" onkeydown="if(event.key==='Enter')applyMarkerStart();else if(event.key==='Escape')closeMarkerStartModal()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" style="margin-right:auto;" onclick="setMarkerStartValue(1)">เริ่มจาก 1</button>
+      <button class="btn btn-ghost" onclick="closeMarkerStartModal()">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="applyMarkerStart()">ตกลง</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="endMarkModal">
   <div class="modal">
     <h3>สัญลักษณ์จบบท</h3>

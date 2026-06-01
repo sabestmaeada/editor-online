@@ -2826,6 +2826,82 @@ function nextMarkerNumber(markers) {
   return max + 1;
 }
 
+/* ── Per-frame "next number" override (P2-S81). Double-clicking a marker
+ *    opens a dialog that sets data-next-n on the frame. New markers then
+ *    start from that value (overriding per-image / continuous logic) and
+ *    advance it. Existing markers are NOT relabeled. The attribute
+ *    persists in the saved HTML so the continuation point survives. */
+let markerStartTargetFrame = null;
+let markerStartTargetMarker = null;
+
+/** What the next marker number would be, without consuming the counter. */
+function peekNextMarkerNumber(frame) {
+  if (frame && frame.dataset && frame.dataset.nextN) {
+    return parseInt(frame.dataset.nextN, 10) || 1;
+  }
+  return nextMarkerNumber(frame ? frame.querySelector('.img-markers') : null);
+}
+
+/** Number for a NEW marker — uses + advances the override if set. */
+function computeNextMarkerNumber(frame) {
+  if (frame && frame.dataset && frame.dataset.nextN) {
+    const n = parseInt(frame.dataset.nextN, 10) || 1;
+    frame.dataset.nextN = String(n + 1); // consume + advance
+    return n;
+  }
+  return nextMarkerNumber(frame.querySelector('.img-markers'));
+}
+
+function openMarkerStartDialog(frame, marker) {
+  if (!frame) return;
+  markerStartTargetFrame = frame;
+  markerStartTargetMarker = marker || null;
+  const input = document.getElementById('markerStartInput');
+  if (input) {
+    // Prefill with the clicked marker's current number (the value being
+    // reassigned); fall back to the frame's next number.
+    const cur = marker
+      ? parseInt(marker.getAttribute('data-n') || '', 10)
+      : NaN;
+    input.value = String(
+      Number.isFinite(cur) ? cur : peekNextMarkerNumber(frame),
+    );
+  }
+  document.getElementById('markerStartModal').classList.add('show');
+  if (input) { input.focus(); input.select(); }
+}
+
+function setMarkerStartValue(n) {
+  const input = document.getElementById('markerStartInput');
+  if (input) input.value = String(n);
+}
+
+function applyMarkerStart() {
+  const input = document.getElementById('markerStartInput');
+  let n = parseInt(input && input.value, 10);
+  if (!Number.isFinite(n) || n < 1) n = 1;
+  // Relabel the double-clicked marker itself to N…
+  if (markerStartTargetMarker) {
+    markerStartTargetMarker.setAttribute('data-n', String(n));
+    markerStartTargetMarker.textContent = String(n);
+  }
+  // …and continue future NEW markers from N+1. Other existing markers
+  // are left untouched.
+  if (markerStartTargetFrame) {
+    markerStartTargetFrame.dataset.nextN = String(n + 1);
+  }
+  setDirty(true);
+  showToast('ตั้งตัวชี้นี้เป็นเลข ' + n + ' (ตัวถัดไปเริ่ม ' + (n + 1) + ')');
+  closeMarkerStartModal();
+}
+
+function closeMarkerStartModal() {
+  const modal = document.getElementById('markerStartModal');
+  if (modal) modal.classList.remove('show');
+  markerStartTargetFrame = null;
+  markerStartTargetMarker = null;
+}
+
 /** Toolbar: renumber markers in reading order. Per-image mode renumbers
  *  just the active frame (1..N); continuous mode renumbers every image
  *  across the document with one running counter. */
@@ -2928,7 +3004,7 @@ function bindMarkerEvents(doc) {
     const x = clampPct(((e.clientX - rect.left) / rect.width) * 100);
     const y = clampPct(((e.clientY - rect.top) / rect.height) * 100);
     const markers = frame.querySelector('.img-markers');
-    const n = String(nextMarkerNumber(markers));
+    const n = String(computeNextMarkerNumber(frame));
     const m = doc.createElement('span');
     m.className = 'img-marker';
     m.setAttribute('data-n', n);
@@ -2952,6 +3028,16 @@ function bindMarkerEvents(doc) {
     marker.classList.add('selected', 'dragging');
     dragMarker = marker;
     dragRect = annotatingFrame.getBoundingClientRect();
+  }, true);
+
+  // Double-click a marker → open the start-number dialog for this image.
+  doc.body.addEventListener('dblclick', (e) => {
+    if (!annotatingFrame) return;
+    const marker = e.target.closest && e.target.closest('.img-marker');
+    if (!marker || marker.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openMarkerStartDialog(annotatingFrame, marker);
   }, true);
 
   doc.body.addEventListener('mousemove', (e) => {
