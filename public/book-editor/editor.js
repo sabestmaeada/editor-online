@@ -1696,6 +1696,37 @@ td.table-cell-targeted, th.table-cell-targeted {
    pointer-events:all keeps the whole disc grabbable despite the empty fill. */
 .img-line-handle { fill: none; stroke: #1A6B52; pointer-events: all; cursor: grab; }
 .img-line-handle.curve { fill: #1A6B52; stroke: #fff; }   /* mid-curve: solid */
+
+/* ── Text / callout boxes (P2-S88) ──────────────────────────────
+   A positioned div with editable text; style carried inline per box so
+   it persists + prints. Used together with leader lines for callouts. */
+.img-textbox {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 26px;
+  padding: 4px 7px;
+  font-family: 'Prompt', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #18181B;
+  background: #ffffff;
+  border: 1px solid #2D6CDF;
+  border-radius: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.img-frame.annotating.tool-text .img-textbox { cursor: move; }
+.img-frame.annotating.tool-text .img-textbox.selected { box-shadow: 0 0 0 2px rgba(45,108,223,.55); }
+.img-textbox.editing { cursor: text; outline: none; box-shadow: 0 0 0 2px rgba(45,108,223,.55); }
+.img-textbox-handle {
+  position: absolute; right: -6px; top: 50%; margin-top: -6px;
+  width: 12px; height: 12px; box-sizing: border-box;
+  background: #fff; border: 2px solid #2D6CDF; border-radius: 2px;
+  cursor: ew-resize;
+}
 </style>
 </head>
 <body>
@@ -1712,6 +1743,7 @@ ${bodyContent}
     bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
     bindRectEvents(doc);     // P2-S86 — highlight-rectangle tool
     bindLineEvents(doc);     // P2-S87 — leader-line tool
+    bindTextEvents(doc);     // P2-S88 — text / callout box tool
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
@@ -2783,6 +2815,36 @@ try {
   if (Number.isFinite(hv) && hv >= LINE_HALO_MIN_LV && hv <= LINE_HALO_MAX_LV) lineHaloLevel = hv;
 } catch (e) { /* localStorage may be blocked */ }
 
+// P2-S88 — text / callout box tool defaults.
+const TEXT_FONTS = ['Prompt', 'Sarabun', 'IBM Plex Sans Thai', 'JetBrains Mono'];
+const TEXT_BORDER_STYLES = ['solid', 'dashed', 'dotted'];
+const TEXT_BORDER_COLORS = ['#2D6CDF', '#E5534B', '#E08A1E', '#1A6B52', '#18181B'];
+const TEXT_SIZE_MIN = 9, TEXT_SIZE_MAX = 48;
+const TEXT_BW_MIN = 0, TEXT_BW_MAX = 6;     // border width px (0 = no border)
+let textFont = 'Prompt';
+let textSize = 14;            // px
+let textColorDark = true;     // true = dark text, false = white text
+let textBorderColor = '#2D6CDF';
+let textBorderStyle = 'solid';
+let textBorderW = 1;          // px
+let textFill = true;          // white background on/off
+let textRounded = false;
+try {
+  const f = localStorage.getItem('bookEditor_textFont');
+  if (TEXT_FONTS.includes(f)) textFont = f;
+  const s = parseInt(localStorage.getItem('bookEditor_textSize') || '', 10);
+  if (Number.isFinite(s) && s >= TEXT_SIZE_MIN && s <= TEXT_SIZE_MAX) textSize = s;
+  if (localStorage.getItem('bookEditor_textColorDark') === '0') textColorDark = false;
+  const bc = localStorage.getItem('bookEditor_textBorderColor');
+  if (TEXT_BORDER_COLORS.includes(bc)) textBorderColor = bc;
+  const bs = localStorage.getItem('bookEditor_textBorderStyle');
+  if (TEXT_BORDER_STYLES.includes(bs)) textBorderStyle = bs;
+  const bw = parseInt(localStorage.getItem('bookEditor_textBorderW') || '', 10);
+  if (Number.isFinite(bw) && bw >= TEXT_BW_MIN && bw <= TEXT_BW_MAX) textBorderW = bw;
+  if (localStorage.getItem('bookEditor_textFill') === '0') textFill = false;
+  textRounded = localStorage.getItem('bookEditor_textRounded') === '1';
+} catch (e) { /* localStorage may be blocked */ }
+
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
 
 /** Reading-order comparator for markers: top→bottom, then left→right
@@ -2825,6 +2887,15 @@ function repairMarkerState(doc) {
     doc.querySelectorAll('.img-line-handle').forEach((h) => h.remove());
     doc.querySelectorAll('.img-frame.tool-line')
       .forEach((f) => f.classList.remove('tool-line'));
+    // P2-S88 — text boxes: back to non-editing/non-selected, drop handles,
+    // and ensure they're not contenteditable when idle.
+    doc.querySelectorAll('.img-textbox').forEach((b) => {
+      b.classList.remove('selected', 'editing');
+      b.setAttribute('contenteditable', 'false');
+    });
+    doc.querySelectorAll('.img-textbox-handle').forEach((h) => h.remove());
+    doc.querySelectorAll('.img-frame.tool-text')
+      .forEach((f) => f.classList.remove('tool-text'));
   }
   updateMarkerMenuState();
 }
@@ -2877,8 +2948,12 @@ function enterAnnotate(tool) {
   annotatingFrame
     .querySelectorAll('.img-line.selected')
     .forEach((g) => deselectLine(g));
+  annotatingFrame
+    .querySelectorAll('.img-textbox.selected, .img-textbox.editing')
+    .forEach((b) => deselectTextbox(b));
   // The line tool needs its SVG overlay + a class to claim pointer events.
   annotatingFrame.classList.toggle('tool-line', tool === 'line');
+  annotatingFrame.classList.toggle('tool-text', tool === 'text');
   if (tool === 'line') ensureImageLines(annotatingFrame);
   updateMarkerMenuState();
   return true;
@@ -2908,9 +2983,17 @@ function toggleLineAnnotate() {
   }
 }
 
+/** Toolbar: toggle the text / callout box tool (P2-S88). */
+function toggleTextAnnotate() {
+  if (annotatingFrame && annotateTool === 'text') { exitAnnotateMode(); return; }
+  if (enterAnnotate('text')) {
+    showToast('โหมดกล่องข้อความ: คลิกบนรูปเพื่อวางกล่อง · ดับเบิลคลิกเพื่อพิมพ์ · ลากเพื่อย้าย · Delete เพื่อลบ');
+  }
+}
+
 function exitAnnotateMode() {
   if (annotatingFrame) {
-    annotatingFrame.classList.remove('annotating', 'tool-line');
+    annotatingFrame.classList.remove('annotating', 'tool-line', 'tool-text');
     annotatingFrame
       .querySelectorAll('.img-marker.selected')
       .forEach((m) => m.classList.remove('selected'));
@@ -2920,11 +3003,14 @@ function exitAnnotateMode() {
     annotatingFrame
       .querySelectorAll('.img-line.selected')
       .forEach((g) => deselectLine(g));
+    annotatingFrame
+      .querySelectorAll('.img-textbox.selected, .img-textbox.editing')
+      .forEach((b) => deselectTextbox(b));
   }
   annotatingFrame = null;
   annotateTool = 'marker';
   updateMarkerMenuState();
-  ['rectMenuBtn', 'lineMenuBtn', 'markerMenuBtn'].forEach((id) => {
+  ['rectMenuBtn', 'lineMenuBtn', 'textMenuBtn', 'markerMenuBtn'].forEach((id) => {
     const b = document.getElementById(id);
     if (b) b.blur(); // drop any keyboard focus ring left after Esc
   });
@@ -3051,6 +3137,11 @@ function updateMarkerMenuState() {
   if (lb) lb.classList.toggle('active', lineActive);
   const lc = document.getElementById('lineCaretBtn');
   if (lc) lc.classList.toggle('active', lineActive);
+  const textActive = !!annotatingFrame && annotateTool === 'text';
+  const tb = document.getElementById('textMenuBtn');
+  if (tb) tb.classList.toggle('active', textActive);
+  const tc = document.getElementById('textCaretBtn');
+  if (tc) tc.classList.toggle('active', textActive);
 }
 
 function toggleMarkerMenu(evt) {
@@ -4027,6 +4118,286 @@ function lineMenuAction(action, arg) {
   }
 }
 
+/* ── Text / callout boxes (P2-S88) ──────────────────────────────
+ * A positioned <div class="img-textbox"> with editable text. Style is
+ * carried inline per box (font/size/colour/fill/border) so it persists and
+ * prints. contenteditable toggles only while editing (double-click). */
+
+function textColorHex() { return textColorDark ? '#18181B' : '#FFFFFF'; }
+
+/** Apply the current default style set to a box's inline styles. */
+function styleTextbox(box) {
+  box.style.fontFamily = `'${textFont}', sans-serif`;
+  box.style.fontSize = textSize + 'px';
+  box.style.color = textColorHex();
+  box.style.background = textFill ? '#ffffff' : 'transparent';
+  box.style.borderStyle = textBorderStyle;
+  box.style.borderWidth = textBorderW + 'px';
+  box.style.borderColor = textBorderColor;
+  box.style.borderRadius = textRounded ? '8px' : '0';
+}
+
+function selectedTextbox() {
+  return annotatingFrame && annotatingFrame.querySelector('.img-textbox.selected');
+}
+function addTextboxHandles(box) {
+  removeTextboxHandles(box);
+  const h = getDoc().createElement('span');
+  h.className = 'img-textbox-handle';
+  h.setAttribute('contenteditable', 'false');
+  box.appendChild(h);
+}
+function removeTextboxHandles(box) {
+  box.querySelectorAll('.img-textbox-handle').forEach((h) => h.remove());
+}
+function selectTextbox(box) {
+  deselectAllTextboxes();
+  box.classList.add('selected');
+  addTextboxHandles(box);
+}
+function deselectTextbox(box) {
+  exitTextEdit(box);
+  box.classList.remove('selected');
+  removeTextboxHandles(box);
+}
+function deselectAllTextboxes() {
+  if (!annotatingFrame) return;
+  annotatingFrame
+    .querySelectorAll('.img-textbox.selected, .img-textbox.editing')
+    .forEach((b) => { exitTextEdit(b); b.classList.remove('selected'); removeTextboxHandles(b); });
+}
+function enterTextEdit(box) {
+  removeTextboxHandles(box);  // handle would block the caret
+  box.setAttribute('contenteditable', 'true');
+  box.classList.add('editing');
+  box.focus();
+  try {
+    const range = getDoc().createRange();
+    range.selectNodeContents(box);
+    const sel = getWin().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch (e) { /* ignore */ }
+}
+function exitTextEdit(box) {
+  if (!box.classList.contains('editing')) return;
+  box.classList.remove('editing');
+  box.setAttribute('contenteditable', 'false');
+  if (!box.textContent.trim()) { box.remove(); return; } // drop empty strays
+  if (box.classList.contains('selected')) addTextboxHandles(box);
+  setDirty(true);
+}
+
+/** Bind create / select / move / resize / edit / delete for the text tool. */
+function bindTextEvents(doc) {
+  if (!doc.body || doc.body._textBound) return;
+  doc.body._textBound = true;
+
+  let mode = null;     // 'move' | 'resize'
+  let box = null;
+  let frameRect = null;
+  let orig = null;
+  let startX = 0, startY = 0;
+
+  doc.body.addEventListener('mousedown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'text') return;
+    const editing = annotatingFrame.querySelector('.img-textbox.editing');
+    const tb = e.target.closest('.img-textbox');
+    if (editing && tb === editing) return;   // click inside the editing box → caret
+    if (editing) exitTextEdit(editing);       // any other click exits edit first
+    if (e.target.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    frameRect = annotatingFrame.getBoundingClientRect();
+    const handle = e.target.closest('.img-textbox-handle');
+    if (handle && tb) {
+      selectTextbox(tb);
+      mode = 'resize'; box = tb;
+      orig = { w: parseFloat(tb.style.width) || 30 };
+      startX = e.clientX;
+    } else if (tb) {
+      selectTextbox(tb);
+      mode = 'move'; box = tb;
+      orig = { l: parseFloat(tb.style.left) || 0, t: parseFloat(tb.style.top) || 0 };
+      startX = (e.clientX - frameRect.left) / frameRect.width * 100;
+      startY = (e.clientY - frameRect.top) / frameRect.height * 100;
+    } else {
+      const x = clampPct((e.clientX - frameRect.left) / frameRect.width * 100);
+      const y = clampPct((e.clientY - frameRect.top) / frameRect.height * 100);
+      const nb = doc.createElement('div');
+      nb.className = 'img-textbox';
+      nb.setAttribute('contenteditable', 'false');
+      nb.style.left = x.toFixed(1) + '%';
+      nb.style.top = y.toFixed(1) + '%';
+      nb.style.width = '30%';
+      styleTextbox(nb);
+      nb.textContent = 'ข้อความ';
+      annotatingFrame.querySelector('.img-markers').appendChild(nb);
+      selectTextbox(nb);
+      enterTextEdit(nb);
+      setDirty(true);
+    }
+  }, true);
+
+  doc.body.addEventListener('mousemove', (e) => {
+    if (!mode || !box) return;
+    if (mode === 'move') {
+      const x = (e.clientX - frameRect.left) / frameRect.width * 100;
+      const y = (e.clientY - frameRect.top) / frameRect.height * 100;
+      box.style.left = clampPct(orig.l + (x - startX)).toFixed(1) + '%';
+      box.style.top = clampPct(orig.t + (y - startY)).toFixed(1) + '%';
+    } else if (mode === 'resize') {
+      const dxPct = (e.clientX - startX) / frameRect.width * 100;
+      box.style.width = Math.max(8, Math.min(100, orig.w + dxPct)).toFixed(1) + '%';
+    }
+  }, true);
+
+  doc.body.addEventListener('mouseup', () => {
+    if (mode && box) setDirty(true);
+    mode = null; box = null; orig = null; frameRect = null;
+  }, true);
+
+  doc.body.addEventListener('dblclick', (e) => {
+    if (!annotatingFrame || annotateTool !== 'text') return;
+    const tb = e.target.closest('.img-textbox');
+    if (!tb || tb.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selectTextbox(tb);
+    enterTextEdit(tb);
+  }, true);
+
+  doc.body.addEventListener('keydown', (e) => {
+    if (!annotatingFrame || annotateTool !== 'text') return;
+    const editing = annotatingFrame.querySelector('.img-textbox.editing');
+    if (e.key === 'Escape') {
+      const menu = document.getElementById('textMenu');
+      if (menu && menu.classList.contains('show')) { hideTextMenu(); return; }
+      if (editing) { exitTextEdit(editing); return; }
+      exitAnnotateMode();
+      return;
+    }
+    if (editing) return;   // typing is handled natively while editing
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const sel = selectedTextbox();
+    if (!sel) return;
+    e.preventDefault();
+    e.stopPropagation();
+    sel.remove();
+    setDirty(true);
+  }, true);
+}
+
+/* ── Text tool submenu (font / size / colour / border / fill) ── */
+function toggleTextMenu(evt) {
+  const menu = document.getElementById('textMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideTextMenu(); return; }
+  const anchor = document.getElementById('textMenuBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateTextMenuState();
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+function hideTextMenu() {
+  const menu = document.getElementById('textMenu');
+  if (menu) menu.classList.remove('show');
+  const caret = document.getElementById('textCaretBtn');
+  if (caret) caret.blur();
+}
+function updateTextMenuState() {
+  const menu = document.getElementById('textMenu');
+  if (!menu) return;
+  menu.querySelectorAll('[data-font]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-font') === textFont));
+  menu.querySelectorAll('[data-bstyle]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-bstyle') === textBorderStyle));
+  menu.querySelectorAll('[data-tcolor]').forEach((el) =>
+    el.classList.toggle('is-active', el.getAttribute('data-tcolor') === (textColorDark ? 'dark' : 'light')));
+  menu.querySelectorAll('.text-swatch').forEach((s) =>
+    s.classList.toggle('active', s.getAttribute('data-color') === textBorderColor));
+  const fillItem = document.getElementById('textFillItem');
+  if (fillItem) fillItem.textContent = (textFill ? '✓ ' : '☐ ') + 'พื้นหลังขาว';
+  const roundItem = document.getElementById('textRoundItem');
+  if (roundItem) roundItem.textContent = (textRounded ? '✓ ' : '☐ ') + 'มุมโค้ง';
+}
+function setTextFont(f) {
+  if (!TEXT_FONTS.includes(f)) return;
+  textFont = f; lsPut('bookEditor_textFont', f);
+  const sel = selectedTextbox();
+  if (sel) { sel.style.fontFamily = `'${f}', sans-serif`; setDirty(true); }
+  updateTextMenuState();
+}
+function changeTextSize(d) {
+  const sel = selectedTextbox();
+  let s = sel ? (parseInt(sel.style.fontSize, 10) || textSize) : textSize;
+  s = Math.max(TEXT_SIZE_MIN, Math.min(TEXT_SIZE_MAX, s + d));
+  textSize = s; lsPut('bookEditor_textSize', String(s));
+  if (sel) { sel.style.fontSize = s + 'px'; setDirty(true); }
+  showToast('ขนาดฟอนต์: ' + s + 'px');
+}
+function setTextColor(which) {
+  textColorDark = (which !== 'light');
+  lsPut('bookEditor_textColorDark', textColorDark ? '1' : '0');
+  const sel = selectedTextbox();
+  if (sel) { sel.style.color = textColorHex(); setDirty(true); }
+  updateTextMenuState();
+}
+function setTextBorderColor(c) {
+  if (!TEXT_BORDER_COLORS.includes(c)) return;
+  textBorderColor = c; lsPut('bookEditor_textBorderColor', c);
+  const sel = selectedTextbox();
+  if (sel) { sel.style.borderColor = c; setDirty(true); }
+  updateTextMenuState();
+}
+function setTextBorderStyle(s) {
+  if (!TEXT_BORDER_STYLES.includes(s)) return;
+  textBorderStyle = s; lsPut('bookEditor_textBorderStyle', s);
+  const sel = selectedTextbox();
+  if (sel) { sel.style.borderStyle = s; setDirty(true); }
+  updateTextMenuState();
+}
+function changeTextBorderWidth(d) {
+  const sel = selectedTextbox();
+  let w = sel ? (parseInt(sel.style.borderWidth, 10) || textBorderW) : textBorderW;
+  w = Math.max(TEXT_BW_MIN, Math.min(TEXT_BW_MAX, w + d));
+  textBorderW = w; lsPut('bookEditor_textBorderW', String(w));
+  if (sel) { sel.style.borderWidth = w + 'px'; setDirty(true); }
+  showToast(w === 0 ? 'เส้นขอบ: ปิด' : 'ความหนาเส้นขอบ: ' + w + 'px');
+}
+function toggleTextFill() {
+  textFill = !textFill; lsPut('bookEditor_textFill', textFill ? '1' : '0');
+  const sel = selectedTextbox();
+  if (sel) { sel.style.background = textFill ? '#ffffff' : 'transparent'; setDirty(true); }
+  updateTextMenuState();
+}
+function toggleTextRounded() {
+  textRounded = !textRounded; lsPut('bookEditor_textRounded', textRounded ? '1' : '0');
+  const sel = selectedTextbox();
+  if (sel) { sel.style.borderRadius = textRounded ? '8px' : '0'; setDirty(true); }
+  updateTextMenuState();
+}
+function textMenuAction(action, arg) {
+  if (action === 'font') setTextFont(arg);
+  else if (action === 'sizeup') changeTextSize(1);
+  else if (action === 'sizedown') changeTextSize(-1);
+  else if (action === 'tcolor') setTextColor(arg);
+  else if (action === 'bstyle') setTextBorderStyle(arg);
+  else if (action === 'bwup') changeTextBorderWidth(1);
+  else if (action === 'bwdown') changeTextBorderWidth(-1);
+  else if (action === 'fill') toggleTextFill();
+  else if (action === 'round') toggleTextRounded();
+  else if (action === 'delete') {
+    const s = selectedTextbox();
+    if (s) { s.remove(); setDirty(true); }
+    hideTextMenu();
+  }
+}
+
 /* Close the text-align submenu when the user clicks or presses Esc INSIDE
  * the editor iframe (P2-S83). Parent-document handlers can't see events
  * that happen inside the iframe, so the menu would otherwise stay open
@@ -4038,11 +4409,13 @@ function bindToolbarMenuDismiss(doc) {
   doc.addEventListener('mousedown', () => {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) hideAlignMenu();
-    // P2-S86/87 — clicking into the canvas closes the rect/line submenus too.
+    // P2-S86/87/88 — clicking the canvas closes the rect/line/text submenus.
     const rm = document.getElementById('rectMenu');
     if (rm && rm.classList.contains('show')) hideRectMenu();
     const lm = document.getElementById('lineMenu');
     if (lm && lm.classList.contains('show')) hideLineMenu();
+    const tm = document.getElementById('textMenu');
+    if (tm && tm.classList.contains('show')) hideTextMenu();
   }, true);
 
   doc.addEventListener('keydown', (e) => {
@@ -4832,6 +5205,8 @@ document.addEventListener('keydown', (e) => {
     if (rMenu && rMenu.classList.contains('show')) { hideRectMenu(); return; }
     const lMenu = document.getElementById('lineMenu');
     if (lMenu && lMenu.classList.contains('show')) { hideLineMenu(); return; }
+    const tMenu = document.getElementById('textMenu');
+    if (tMenu && tMenu.classList.contains('show')) { hideTextMenu(); return; }
     // Otherwise exit annotate mode — but let an open modal own its Esc.
     if (annotatingFrame && !document.querySelector('.modal-overlay.show')) {
       exitAnnotateMode();
@@ -4845,12 +5220,18 @@ document.addEventListener('keydown', (e) => {
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
     return;
   }
+  // Never delete the box while its text is being edited (P2-S88).
+  if (annotateTool === 'text' && annotatingFrame.querySelector('.img-textbox.editing')) {
+    return;
+  }
   // Delete the selected annotation of the active tool.
   const sel = annotateTool === 'rect'
     ? annotatingFrame.querySelector('.img-rect.selected')
     : annotateTool === 'line'
       ? annotatingFrame.querySelector('.img-line.selected')
-      : annotatingFrame.querySelector('.img-marker.selected');
+      : annotateTool === 'text'
+        ? annotatingFrame.querySelector('.img-textbox.selected')
+        : annotatingFrame.querySelector('.img-marker.selected');
   if (!sel) return;
   e.preventDefault();
   sel.remove();
@@ -4904,6 +5285,15 @@ document.addEventListener('click', (e) => {
       && !lineMenu.contains(e.target)
       && (!lineCaret || !lineCaret.contains(e.target))) {
     hideLineMenu();
+  }
+
+  // Close text submenu on outside click (P2-S88), same pattern.
+  const textMenu = document.getElementById('textMenu');
+  const textCaret = document.getElementById('textCaretBtn');
+  if (textMenu && textMenu.classList.contains('show')
+      && !textMenu.contains(e.target)
+      && (!textCaret || !textCaret.contains(e.target))) {
+    hideTextMenu();
   }
 
   // Close text-align submenu on outside click (P2-S83). Same pattern as
@@ -5156,6 +5546,14 @@ function buildSaveContent() {
   cloneBody.querySelectorAll('.img-line-handle').forEach(h => h.remove());
   cloneBody.querySelectorAll('.img-frame.tool-line')
     .forEach(f => f.classList.remove('tool-line'));
+  // P2-S88 — text boxes: static (not editable/selected), drop handles
+  cloneBody.querySelectorAll('.img-textbox').forEach(b => {
+    b.classList.remove('selected', 'editing');
+    b.setAttribute('contenteditable', 'false');
+  });
+  cloneBody.querySelectorAll('.img-textbox-handle').forEach(h => h.remove());
+  cloneBody.querySelectorAll('.img-frame.tool-text')
+    .forEach(f => f.classList.remove('tool-text'));
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
   // drop the stale per-frame counter attr (now a global session counter)

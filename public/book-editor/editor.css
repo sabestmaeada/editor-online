@@ -817,6 +817,33 @@ body {
   border-color: var(--shell-accent);
 }
 
+/* Text-box font picker rows (P2-S88) — same segmented look as cap rows */
+.marker-menu .text-font-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 4px;
+}
+.text-font-row button {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px 4px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  border-radius: 5px;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: background 0.12s, border-color 0.12s;
+}
+.text-font-row button:hover { background: var(--shell-accent-lt); }
+.text-font-row button.is-active {
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  border-color: var(--shell-accent);
+}
+
 /* Split button: main (toggle mode) + caret (open submenu) flush together */
 .tb-split { display: inline-flex; align-items: center; flex-shrink: 0; }
 .tb-split .tb-split-main { border-radius: 5px 0 0 5px; }

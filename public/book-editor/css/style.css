@@ -777,6 +777,27 @@ tr:hover td {
 }
 .img-line-hit { stroke: transparent; fill: none; }
 
+/* ── Text / callout boxes (P2-S88) — fallback / standalone ──
+   Font/colour/background/border are inline per box; this provides the
+   layout base. Book PDF (book-dev) carries the equivalent rules. */
+.img-textbox {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 26px;
+  padding: 4px 7px;
+  font-family: 'Prompt', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #18181B;
+  background: #ffffff;
+  border: 1px solid #2D6CDF;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
 .img-placeholder {
   background: linear-gradient(135deg, #f0f4ff, #e8ecf8);
   border: 2px dashed #7C8DB5;
