@@ -2712,12 +2712,17 @@ let annotateTool = 'marker';
 
 // Highlight-rectangle defaults (persisted as UI prefs).
 const RECT_COLORS = ['#E5534B', '#E08A1E', '#2D6CDF', '#1A6B52'];
+const RECT_MIN_W = 1;        // min/max border thickness in px
+const RECT_MAX_W = 12;
 let rectColor = '#E5534B';   // default = red (emphasis)
 let rectRounded = false;     // square by default; toggle for rounded corners
+let rectThickness = 3;       // default border thickness (px)
 try {
   const c = localStorage.getItem('bookEditor_rectColor');
   if (c && RECT_COLORS.includes(c)) rectColor = c;
   rectRounded = localStorage.getItem('bookEditor_rectRounded') === '1';
+  const w = parseInt(localStorage.getItem('bookEditor_rectThickness') || '', 10);
+  if (Number.isFinite(w) && w >= RECT_MIN_W && w <= RECT_MAX_W) rectThickness = w;
 } catch (e) { /* localStorage may be blocked */ }
 
 function clampPct(v) { return Math.max(0, Math.min(100, v)); }
@@ -3400,6 +3405,7 @@ function bindRectEvents(doc) {
       const r = doc.createElement('span');
       r.className = 'img-rect drawing' + (rectRounded ? ' rounded' : '');
       r.style.borderColor = rectColor;
+      r.style.borderWidth = rectThickness + 'px';
       r.style.left = p.x.toFixed(1) + '%';
       r.style.top = p.y.toFixed(1) + '%';
       r.style.width = '0%';
@@ -3514,8 +3520,25 @@ function toggleRectRounded() {
   showToast(rectRounded ? 'มุมกรอบ: โค้ง' : 'มุมกรอบ: เหลี่ยม');
 }
 
+/** Adjust border thickness — applies to the selected rect AND becomes the
+ *  default for new rects (clamped to RECT_MIN_W..RECT_MAX_W). */
+function changeRectThickness(delta) {
+  const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
+  // base the new value on the selected rect if there is one, else the default
+  const current = sel
+    ? (parseInt(sel.style.borderWidth, 10) || rectThickness)
+    : rectThickness;
+  const next = Math.max(RECT_MIN_W, Math.min(RECT_MAX_W, current + delta));
+  rectThickness = next;
+  try { localStorage.setItem('bookEditor_rectThickness', String(next)); } catch (e) { /* ignore */ }
+  if (sel) { sel.style.borderWidth = next + 'px'; setDirty(true); }
+  showToast('ความหนาเส้น: ' + next + 'px');
+}
+
 function rectMenuAction(action) {
   if (action === 'corner') { toggleRectRounded(); }
+  else if (action === 'thicker') { changeRectThickness(1); }
+  else if (action === 'thinner') { changeRectThickness(-1); }
   else if (action === 'delete') {
     const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
     if (sel) { sel.remove(); setDirty(true); }
