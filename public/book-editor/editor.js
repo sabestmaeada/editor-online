@@ -1568,6 +1568,60 @@ td.table-cell-targeted, th.table-cell-targeted {
   outline-offset: -2px;
   background-color: rgba(26,107,82,0.08) !important;
 }
+
+/* ── Image number markers (P2-S81) ──────────────────────────────
+   markers are % anchored inside .img-frame which wraps ONLY the
+   image (not figcaption) so coords track the rendered image box.
+   px units here are for screen editing; the book PDF (book-dev
+   repo, styles/style_{bw,cmyk}.css) carries pt-unit equivalents. */
+.book-img .img-frame {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  max-width: 100%;
+}
+.img-markers {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;   /* don't block image clicks outside annotate mode */
+}
+.img-marker {
+  position: absolute;
+  box-sizing: border-box;
+  width: 24px; height: 24px;
+  margin-left: -12px; margin-top: -12px;   /* center on the anchor point */
+  border-radius: 50%;
+  border: 2px solid #fff;                  /* white ring → readable on dark bg */
+  background: #1A6B52; color: #fff;
+  font-family: var(--hd, sans-serif);
+  font-size: 12px; font-weight: 700;
+  line-height: 20px; text-align: center;   /* 24 - 2*2px border; center digit */
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);    /* drop shadow → readable on light bg */
+  user-select: none; cursor: default;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+/* marker size presets (per-image, class on .img-frame). base = M (no class). */
+.img-frame.msize-1 .img-marker {
+  width: 18px; height: 18px; margin-left: -9px; margin-top: -9px;
+  border-width: 1.5px; line-height: 15px; font-size: 10px;
+}
+.img-frame.msize-3 .img-marker {
+  width: 30px; height: 30px; margin-left: -15px; margin-top: -15px;
+  line-height: 26px; font-size: 15px;
+}
+.img-frame.msize-4 .img-marker {
+  width: 38px; height: 38px; margin-left: -19px; margin-top: -19px;
+  border-width: 2.5px; line-height: 33px; font-size: 18px;
+}
+/* annotate mode — frame interactive, markers grabbable */
+.img-frame.annotating { cursor: crosshair; outline: 2px solid #1A6B52; outline-offset: 2px; }
+.img-frame.annotating .img-markers { pointer-events: auto; }
+.img-frame.annotating .img-marker { cursor: grab; }
+.img-frame.annotating .img-marker.dragging { cursor: grabbing; }
+.img-frame.annotating .img-marker.selected { box-shadow: 0 0 0 3px rgba(229,83,83,.6); }
+/* suppress the "double-click to edit" hover hint while annotating */
+.book-img:has(.img-frame.annotating):hover::before { display: none; }
 </style>
 </head>
 <body>
@@ -1580,6 +1634,7 @@ ${bodyContent}
     doc.body.setAttribute('contenteditable', 'true');
     doc.body.addEventListener('input', () => { setDirty(true); updateStatus(); });
     doc.addEventListener('keydown', handleEditorKeys);
+    bindMarkerEvents(doc);   // P2-S81 — must bind BEFORE bindImageClicks
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     buildSidebar(doc);
@@ -2557,6 +2612,7 @@ function bindImageClicks(doc) {
   doc.body._imgClickBound = true;
 
   doc.body.addEventListener('dblclick', (e) => {
+    if (annotatingFrame) return;   // P2-S81 — no edit-modal while annotating
     const img = e.target.closest('img');
     if (!img) return;
     e.preventDefault();
@@ -2566,9 +2622,211 @@ function bindImageClicks(doc) {
   }, true);
 
   doc.body.addEventListener('mousedown', (e) => {
+    if (annotatingFrame) return;   // P2-S81 — marker handlers own the pointer
     const img = e.target.closest('img');
     doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
     if (img) img.classList.add('img-selected');
+  }, true);
+}
+
+// ============================================================
+// IMAGE NUMBER MARKERS (annotations) — P2-S81
+// ------------------------------------------------------------
+// Numbered circles anchored to an image by percentage so they
+// stay locked when the image scales (screen / print). Markers
+// live inside <span class="img-frame"> which wraps only the
+// <img> (figcaption stays outside, editable). The frame is
+// contenteditable=false so rich-text editing can't break it.
+// Saved as plain HTML (saveProject -> innerHTML) → round-trips
+// automatically; handlers are delegated so reload needs no
+// re-binding.
+// ============================================================
+
+let annotatingFrame = null;   // the .img-frame currently in annotate mode
+
+function clampPct(v) { return Math.max(0, Math.min(100, v)); }
+
+/** Wrap an <img> (inside figure.book-img) in .img-frame + .img-markers
+ *  if not already wrapped. Returns the .img-frame element. */
+function ensureImageFrame(img) {
+  const existing = img.closest('.img-frame');
+  if (existing) return existing;
+  const doc = getDoc();
+  const frame = doc.createElement('span');
+  frame.className = 'img-frame';
+  frame.setAttribute('contenteditable', 'false');
+  img.parentNode.insertBefore(frame, img);
+  frame.appendChild(img);
+  const markers = doc.createElement('span');
+  markers.className = 'img-markers';
+  frame.appendChild(markers);
+  return frame;
+}
+
+/** Toolbar: toggle annotate mode for the currently selected image. */
+function toggleImageAnnotate() {
+  if (annotatingFrame) { exitAnnotateMode(); return; }
+  const doc = getDoc();
+  const img =
+    doc.querySelector('img.img-selected') ||
+    doc.querySelector('img.img-editing');
+  if (!img) {
+    showToast('เลือกรูปก่อน แล้วกดปุ่มใส่ตัวชี้');
+    return;
+  }
+  const frame = ensureImageFrame(img);
+  frame.classList.add('annotating');
+  annotatingFrame = frame;
+  const btn = document.getElementById('annotateBtn');
+  if (btn) btn.classList.add('active');
+  setDirty(true); // wrapping the img mutates the HTML
+  showToast('โหมดใส่ตัวชี้: คลิกบนรูปเพื่อวางเลข · ลากเพื่อย้าย · เลือกแล้วกด Delete เพื่อลบ');
+}
+
+function exitAnnotateMode() {
+  if (annotatingFrame) {
+    annotatingFrame.classList.remove('annotating');
+    annotatingFrame
+      .querySelectorAll('.img-marker.selected')
+      .forEach((m) => m.classList.remove('selected'));
+  }
+  annotatingFrame = null;
+  const btn = document.getElementById('annotateBtn');
+  if (btn) btn.classList.remove('active');
+}
+
+/** Next number for a frame = max existing data-n + 1 (per-image). */
+function nextMarkerNumber(markers) {
+  let max = 0;
+  markers.querySelectorAll('.img-marker').forEach((m) => {
+    const n = parseInt(m.getAttribute('data-n') || '0', 10);
+    if (n > max) max = n;
+  });
+  return max + 1;
+}
+
+/** Toolbar: renumber markers of the active frame in reading order
+ *  (top → bottom, then left → right within ~4% rows). */
+function renumberMarkers() {
+  if (!annotatingFrame) { showToast('เข้าโหมดใส่ตัวชี้ที่รูปก่อน'); return; }
+  const markers = annotatingFrame.querySelector('.img-markers');
+  if (!markers) return;
+  const list = Array.from(markers.querySelectorAll('.img-marker'));
+  list.sort((a, b) => {
+    const ay = parseFloat(a.style.top) || 0;
+    const by = parseFloat(b.style.top) || 0;
+    if (Math.abs(ay - by) > 4) return ay - by; // 4% tolerance → same row
+    const ax = parseFloat(a.style.left) || 0;
+    const bx = parseFloat(b.style.left) || 0;
+    return ax - bx;
+  });
+  list.forEach((m, i) => {
+    const n = String(i + 1);
+    m.setAttribute('data-n', n);
+    m.textContent = n;
+  });
+  setDirty(true);
+  showToast('เรียงเลขใหม่แล้ว');
+}
+
+/* Marker size presets are per-image, stored as class msize-1..4 on the
+ * .img-frame. Size 2 (M) is the base style → no class. Size travels in
+ * the saved HTML so it persists + can be mirrored in the book PDF CSS. */
+function getFrameSize(frame) {
+  for (const s of [1, 3, 4]) {
+    if (frame.classList.contains('msize-' + s)) return s;
+  }
+  return 2; // default = base style
+}
+function setFrameSize(frame, size) {
+  size = Math.max(1, Math.min(4, size));
+  [1, 2, 3, 4].forEach((s) => frame.classList.remove('msize-' + s));
+  if (size !== 2) frame.classList.add('msize-' + size);
+  setDirty(true);
+  return size;
+}
+/** Toolbar: bump the active frame's marker size by delta (+1 / -1). */
+function changeMarkerSize(delta) {
+  if (!annotatingFrame) { showToast('เข้าโหมดใส่ตัวชี้ที่รูปก่อน'); return; }
+  const next = setFrameSize(annotatingFrame, getFrameSize(annotatingFrame) + delta);
+  const labels = { 1: 'เล็ก', 2: 'กลาง', 3: 'ใหญ่', 4: 'ใหญ่พิเศษ' };
+  showToast('ขนาดตัวชี้: ' + labels[next] + ' (' + next + '/4)');
+}
+
+/** Bind place / drag / delete handlers once (event delegation). */
+function bindMarkerEvents(doc) {
+  if (!doc.body || doc.body._markerBound) return;
+  doc.body._markerBound = true;
+
+  let dragMarker = null;
+  let dragRect = null;
+
+  // Place a marker: click on the annotating frame (not on a marker)
+  doc.body.addEventListener('click', (e) => {
+    if (!annotatingFrame) return;
+    const frame = e.target.closest && e.target.closest('.img-frame');
+    if (frame !== annotatingFrame) return;
+    if (e.target.closest('.img-marker')) return; // clicked a marker → not place
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = frame.getBoundingClientRect();
+    const x = clampPct(((e.clientX - rect.left) / rect.width) * 100);
+    const y = clampPct(((e.clientY - rect.top) / rect.height) * 100);
+    const markers = frame.querySelector('.img-markers');
+    const n = String(nextMarkerNumber(markers));
+    const m = doc.createElement('span');
+    m.className = 'img-marker';
+    m.setAttribute('data-n', n);
+    m.textContent = n;
+    m.style.left = x.toFixed(1) + '%';
+    m.style.top = y.toFixed(1) + '%';
+    markers.appendChild(m);
+    setDirty(true);
+  }, true);
+
+  // Select + start dragging a marker
+  doc.body.addEventListener('mousedown', (e) => {
+    if (!annotatingFrame) return;
+    const marker = e.target.closest && e.target.closest('.img-marker');
+    if (!marker || marker.closest('.img-frame') !== annotatingFrame) return;
+    e.preventDefault();
+    e.stopImmediatePropagation(); // beat bindImageClicks' mousedown
+    annotatingFrame
+      .querySelectorAll('.img-marker.selected')
+      .forEach((x) => x.classList.remove('selected'));
+    marker.classList.add('selected', 'dragging');
+    dragMarker = marker;
+    dragRect = annotatingFrame.getBoundingClientRect();
+  }, true);
+
+  doc.body.addEventListener('mousemove', (e) => {
+    if (!dragMarker || !dragRect) return;
+    const x = clampPct(((e.clientX - dragRect.left) / dragRect.width) * 100);
+    const y = clampPct(((e.clientY - dragRect.top) / dragRect.height) * 100);
+    dragMarker.style.left = x.toFixed(1) + '%';
+    dragMarker.style.top = y.toFixed(1) + '%';
+  }, true);
+
+  doc.body.addEventListener('mouseup', () => {
+    if (dragMarker) {
+      dragMarker.classList.remove('dragging');
+      setDirty(true);
+    }
+    dragMarker = null;
+    dragRect = null;
+  }, true);
+
+  // Delete selected marker / Esc to exit mode
+  doc.body.addEventListener('keydown', (e) => {
+    if (!annotatingFrame) return;
+    if (e.key === 'Escape') { exitAnnotateMode(); return; }
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const sel = annotatingFrame.querySelector('.img-marker.selected');
+    if (!sel) return;
+    e.preventDefault();
+    e.stopPropagation();
+    sel.remove();
+    setDirty(true);
   }, true);
 }
 

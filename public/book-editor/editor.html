@@ -129,6 +129,18 @@
       <button class="tb-btn" data-tip="แทรกรูปภาพ" onclick="showImageModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
       </button>
+      <button class="tb-btn" id="annotateBtn" data-tip="ใส่ตัวชี้รูป (เลือกรูปก่อน)" onclick="toggleImageAnnotate()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text></svg>
+      </button>
+      <button class="tb-btn" data-tip="เรียงเลขตัวชี้ใหม่" onclick="renumberMarkers()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 11h2"/><path d="M6 18H4l2-2.5H4"/></svg>
+      </button>
+      <button class="tb-btn" data-tip="ย่อตัวชี้" onclick="changeMarkerSize(-1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </button>
+      <button class="tb-btn" data-tip="ขยายตัวชี้" onclick="changeMarkerSize(1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </button>
       <button class="tb-btn" data-tip="เส้นคั่น (HR)" onclick="insertHR()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/></svg>
       </button>
