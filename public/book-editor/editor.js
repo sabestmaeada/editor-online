@@ -3940,16 +3940,23 @@ function lineEnds(g) {
   };
 }
 
-/** Build the SVG path `d` for a type + the outward unit vectors at each end. */
-function buildLinePath(type, x1, y1, x2, y2, bow) {
+/** Build the SVG path `d` for a type + the outward unit vectors at each end.
+ *  inset1/inset2 pull each DRAWN endpoint back along its own tangent (out
+ *  vector). Used to trim the shaft so an arrowhead's notch — not the bare
+ *  line tip — is what meets the head. Corner/control points are unchanged,
+ *  so only the final segment is shortened. */
+function buildLinePath(type, x1, y1, x2, y2, bow, inset1, inset2) {
+  const i1 = inset1 || 0, i2 = inset2 || 0;
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 0.0001;
+  // endpoint (x,y) pulled inward by distance d along its outward unit vector o
+  const back = (x, y, o, d) => `${r2(x - o.x * d)} ${r2(y - o.y * d)}`;
   if (type === 'elbow') {
     const cx = x2, cy = y1;            // horizontal-first L, corner at (x2,y1)
+    const out1 = unitVec(x1 - cx, y1 - cy), out2 = unitVec(x2 - cx, y2 - cy);
     return {
-      d: `M ${r2(x1)} ${r2(y1)} L ${r2(cx)} ${r2(cy)} L ${r2(x2)} ${r2(y2)}`,
-      out1: unitVec(x1 - cx, y1 - cy),
-      out2: unitVec(x2 - cx, y2 - cy),
+      d: `M ${back(x1, y1, out1, i1)} L ${r2(cx)} ${r2(cy)} L ${back(x2, y2, out2, i2)}`,
+      out1, out2,
     };
   }
   if (type === 'elbow45') {
@@ -3959,10 +3966,10 @@ function buildLinePath(type, x1, y1, x2, y2, bow) {
     let cx, cy;
     if (adx >= ady) { cx = x2 - sx * ady; cy = y1; }   // horizontal, then 45°
     else { cx = x1; cy = y2 - sy * adx; }              // vertical, then 45°
+    const out1 = unitVec(x1 - cx, y1 - cy), out2 = unitVec(x2 - cx, y2 - cy);
     return {
-      d: `M ${r2(x1)} ${r2(y1)} L ${r2(cx)} ${r2(cy)} L ${r2(x2)} ${r2(y2)}`,
-      out1: unitVec(x1 - cx, y1 - cy),
-      out2: unitVec(x2 - cx, y2 - cy),
+      d: `M ${back(x1, y1, out1, i1)} L ${r2(cx)} ${r2(cy)} L ${back(x2, y2, out2, i2)}`,
+      out1, out2,
     };
   }
   if (type === 'curved') {
@@ -3970,16 +3977,16 @@ function buildLinePath(type, x1, y1, x2, y2, bow) {
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
     const px = -dy / len, py = dx / len;               // perpendicular unit
     const cx = mx + px * (b * len), cy = my + py * (b * len);
+    const out1 = unitVec(x1 - cx, y1 - cy), out2 = unitVec(x2 - cx, y2 - cy);
     return {
-      d: `M ${r2(x1)} ${r2(y1)} Q ${r2(cx)} ${r2(cy)} ${r2(x2)} ${r2(y2)}`,
-      out1: unitVec(x1 - cx, y1 - cy),
-      out2: unitVec(x2 - cx, y2 - cy),
+      d: `M ${back(x1, y1, out1, i1)} Q ${r2(cx)} ${r2(cy)} ${back(x2, y2, out2, i2)}`,
+      out1, out2,
     };
   }
+  const out1 = unitVec(x1 - x2, y1 - y2), out2 = unitVec(x2 - x1, y2 - y1);
   return {
-    d: `M ${r2(x1)} ${r2(y1)} L ${r2(x2)} ${r2(y2)}`,
-    out1: unitVec(x1 - x2, y1 - y2),
-    out2: unitVec(x2 - x1, y2 - y1),
+    d: `M ${back(x1, y1, out1, i1)} L ${back(x2, y2, out2, i2)}`,
+    out1, out2,
   };
 }
 
@@ -3993,6 +4000,12 @@ function curveMid(x1, y1, x2, y2, bow) {
   return { x: (x1 + x2) / 2 + px * (0.5 * b * len), y: (y1 + y2) / 2 + py * (0.5 * b * len) };
 }
 
+// Arrowhead proportions (× cs). A concave/barbed back reads as a real arrow
+// tip rather than a plain triangle; ARROW_NOTCH is how far the back-centre is
+// pulled toward the tip (the deeper it is, the more swept-back the barbs). The
+// shaft is trimmed to the notch (see renderLine) so no bare line tip pokes out.
+const ARROW_LEN = 3.6, ARROW_HALF = 1.9, ARROW_NOTCH = 1.25;
+
 /** Endpoint cap shapes (drawn explicitly — no <marker>, for WeasyPrint).
  *  `cs` = cap-size scale (independent of line width). `edge` = white outer
  *  stroke width (vb); 0 disables it. The white edge keeps the cap readable
@@ -4005,11 +4018,15 @@ function capElements(x, y, dir, cap, color, cs, edge) {
     return [svgEl('circle', a)];
   }
   if (cap === 'arrow') {
-    const len = 3.2 * cs, half = 2.2 * cs;
-    const bx = x - dir.x * len, by = y - dir.y * len;
+    // Barbed arrowhead: tip → left barb → concave notch → right barb → close.
+    const len = ARROW_LEN * cs, half = ARROW_HALF * cs, notch = ARROW_NOTCH * cs;
+    const baseX = x - dir.x * len, baseY = y - dir.y * len;   // back-edge centre
     const perp = { x: -dir.y, y: dir.x };
-    const d = `M ${r2(x)} ${r2(y)} L ${r2(bx + perp.x * half)} ${r2(by + perp.y * half)} ` +
-              `L ${r2(bx - perp.x * half)} ${r2(by - perp.y * half)} Z`;
+    const lx = baseX + perp.x * half, ly = baseY + perp.y * half;   // left barb
+    const rx = baseX - perp.x * half, ry = baseY - perp.y * half;   // right barb
+    const nx = baseX + dir.x * notch, ny = baseY + dir.y * notch;   // concave back
+    const d = `M ${r2(x)} ${r2(y)} L ${r2(lx)} ${r2(ly)} ` +
+              `L ${r2(nx)} ${r2(ny)} L ${r2(rx)} ${r2(ry)} Z`;
     const a = { d, fill: color, 'stroke-linejoin': 'round', class: 'img-line-cap' };
     if (hasEdge) { a.stroke = '#ffffff'; a['stroke-width'] = r2(edge); }
     return [svgEl('path', a)];
@@ -4032,18 +4049,27 @@ function renderLine(g) {
   Array.from(g.childNodes).forEach((n) => {
     if (!(n.classList && n.classList.contains('img-line-handle'))) g.removeChild(n);
   });
-  const { d, out1, out2 } = buildLinePath(type, x1, y1, x2, y2, bow);
-  // fat transparent hit target
-  g.appendChild(svgEl('path', { d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4 + cs * 2)) }));
+  // Trim the shaft to the arrowhead notch (only ends that carry an arrow) so
+  // the bare line tip never pokes through. (ARROW_LEN − ARROW_NOTCH) × cs.
+  const aTrim = (ARROW_LEN - ARROW_NOTCH) * cs;
+  const inset1 = cap1 === 'arrow' ? aTrim : 0;
+  const inset2 = cap2 === 'arrow' ? aTrim : 0;
+  const full = buildLinePath(type, x1, y1, x2, y2, bow);   // true tips → hit + cap dirs
+  const out1 = full.out1, out2 = full.out2;
+  const vis = (inset1 || inset2)
+    ? buildLinePath(type, x1, y1, x2, y2, bow, inset1, inset2)   // trimmed shaft
+    : full;
+  // fat transparent hit target — FULL length so the whole line stays clickable
+  g.appendChild(svgEl('path', { d: full.d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4 + cs * 2)) }));
   // white halo underlay → line reads on dark/light backgrounds (skip if 0)
   if (halo > 0) {
     g.appendChild(svgEl('path', {
-      d, class: 'img-line-halo', fill: 'none', stroke: '#ffffff',
+      d: vis.d, class: 'img-line-halo', fill: 'none', stroke: '#ffffff',
       'stroke-width': r2(w + 2 * halo), 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
     }));
   }
   g.appendChild(svgEl('path', {
-    d, class: 'img-line-main', fill: 'none', stroke: color,
+    d: vis.d, class: 'img-line-main', fill: 'none', stroke: color,
     'stroke-width': r2(w), 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
   }));
   capElements(x1, y1, out1, cap1, color, cs, halo).forEach((el) => g.appendChild(el));
