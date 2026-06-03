@@ -1698,8 +1698,10 @@ td.table-cell-targeted, th.table-cell-targeted {
 /* P2-S90 — annotations are interactive ALWAYS (hover = hand cursor, and
    double-click selects them even when idle). The overlay CONTAINER stays
    pointer-events:none, so empty image areas still pass clicks through to
-   the image; only the items themselves capture events. */
-.img-marker, .img-rect, .img-textbox { pointer-events: auto; cursor: pointer; }
+   the image; only the items themselves capture events.
+   P2-S98 — idle hover uses grab (open hand) so an item reads as a
+   manipulable object, distinct from the image's pointer cursor (finger). */
+.img-marker, .img-rect, .img-textbox { pointer-events: auto; cursor: grab; }
 .img-frame.annotating .img-marker { cursor: grab; }
 .img-frame.annotating .img-marker.dragging { cursor: grabbing; }
 .img-frame.annotating .img-marker.selected { box-shadow: 0 0 0 3px rgba(229,83,83,.6); }
@@ -1752,7 +1754,7 @@ td.table-cell-targeted, th.table-cell-targeted {
 /* fat transparent stroke = easy click/drag target for a thin line. It is
    clickable ALWAYS (P2-S90) so a line can be double-clicked even when idle;
    the SVG container stays pointer-events:none so empty areas pass through. */
-.img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: pointer; }
+.img-line-hit { stroke: transparent; fill: none; pointer-events: stroke; cursor: grab; }
 .img-frame.annotating.tool-line .img-line-hit { cursor: move; }
 /* the visible stroke + halo + caps never intercept — hit path owns clicks */
 .img-line-main, .img-line-halo, .img-line-cap { pointer-events: none; }
