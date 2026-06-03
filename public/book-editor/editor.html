@@ -125,6 +125,9 @@
       <button class="tb-btn" data-tip="แทรกรูปภาพ" onclick="showImageModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
       </button>
+      <button class="tb-btn" id="cropBtn" data-tip="Crop รูป — เลื่อนเลือกส่วนที่เห็น (เลือกรูปก่อน)" onclick="toggleCrop()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/></svg>
+      </button>
       <div class="tb-split">
         <button class="tb-btn tb-split-main" id="markerMenuBtn" data-tip="เปิด/ปิดโหมดตัวชี้ (เลือกรูปก่อน)" onclick="toggleImageAnnotate()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text></svg>
@@ -628,6 +631,25 @@
   <div class="table-context-menu-item danger" onclick="tableAction('delRow')">🗑 ลบแถวนี้</div>
   <div class="table-context-menu-item danger" onclick="tableAction('delCol')">🗑 ลบคอลัมน์นี้</div>
   <div class="table-context-menu-item danger" onclick="tableAction('delTable')">🗑 ลบทั้งตาราง</div>
+</div>
+
+<!-- Crop control bar (P2-S93) — floating; shown while cropping an image -->
+<div id="cropBar" class="crop-bar" role="toolbar" aria-label="ปรับ Crop รูปภาพ">
+  <span class="crop-bar-label">สัดส่วน</span>
+  <div class="crop-aspect-row">
+    <button type="button" data-aspect="original" onclick="applyCropAspect('original')">เดิม</button>
+    <button type="button" data-aspect="1:1" onclick="applyCropAspect('1:1')">1:1</button>
+    <button type="button" data-aspect="4:3" onclick="applyCropAspect('4:3')">4:3</button>
+    <button type="button" data-aspect="16:9" onclick="applyCropAspect('16:9')">16:9</button>
+    <button type="button" data-aspect="free" onclick="applyCropAspect('free')">อิสระ</button>
+  </div>
+  <div class="crop-height-row" id="cropHeightRow">
+    <button type="button" title="สูงขึ้น" onclick="changeCropHeight(12)">สูง +</button>
+    <button type="button" title="เตี้ยลง" onclick="changeCropHeight(-12)">สูง −</button>
+  </div>
+  <div class="crop-bar-sep"></div>
+  <button type="button" class="crop-bar-btn cancel" onclick="exitCrop(false)">✕ ยกเลิก</button>
+  <button type="button" class="crop-bar-btn done" onclick="exitCrop(true)">✓ เสร็จ</button>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>

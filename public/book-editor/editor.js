@@ -1792,6 +1792,13 @@ td.table-cell-targeted, th.table-cell-targeted {
   background: #fff; border: 2px solid #2D6CDF; border-radius: 2px;
   cursor: ew-resize;
 }
+
+/* ── Image crop (P2-S93) — the image being cropped pans on drag ── */
+.img-cropping {
+  cursor: move !important;
+  outline: 2px dashed #2D6CDF !important;
+  outline-offset: 2px;
+}
 </style>
 </head>
 <body>
@@ -1810,6 +1817,7 @@ ${bodyContent}
     bindLineEvents(doc);     // P2-S87 — leader-line tool
     bindTextEvents(doc);     // P2-S88 — text / callout box tool
     bindAnnotationDblclick(doc); // P2-S90 — dblclick any item → edit it
+    bindCropDrag(doc);       // P2-S93 — drag-to-pan while cropping
     bindImageClicks(doc);
     bindAnchorClicks(doc);
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
@@ -2791,7 +2799,7 @@ function bindImageClicks(doc) {
   doc.body._imgClickBound = true;
 
   doc.body.addEventListener('dblclick', (e) => {
-    if (annotatingFrame) return;   // P2-S81 — no edit-modal while annotating
+    if (annotatingFrame || croppingImg) return;   // no edit-modal while annotating/cropping
     const img = e.target.closest('img');
     if (!img) return;
     e.preventDefault();
@@ -2801,7 +2809,7 @@ function bindImageClicks(doc) {
   }, true);
 
   doc.body.addEventListener('mousedown', (e) => {
-    if (annotatingFrame) return;   // P2-S81 — marker handlers own the pointer
+    if (annotatingFrame || croppingImg) return;   // marker/crop handlers own the pointer
     const img = e.target.closest('img');
     doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
     if (img) img.classList.add('img-selected');
@@ -2975,7 +2983,14 @@ function repairMarkerState(doc) {
     doc.querySelectorAll('.img-textbox-handle').forEach((h) => h.remove());
     doc.querySelectorAll('.img-frame.tool-text')
       .forEach((f) => f.classList.remove('tool-text'));
+    // P2-S93 — strip transient crop class
+    doc.querySelectorAll('.img-cropping').forEach((i) => i.classList.remove('img-cropping'));
   }
+  croppingImg = null;
+  const cropBar = document.getElementById('cropBar');
+  if (cropBar) cropBar.classList.remove('show');
+  const cropBtn = document.getElementById('cropBtn');
+  if (cropBtn) cropBtn.classList.remove('active');
   updateMarkerMenuState();
   resetAnnoBaseline();   // P2-S91 — fresh undo baseline after load / restore
 }
@@ -4595,6 +4610,142 @@ function toggleLinesLayer() {
   setDirty(true);
 }
 
+/* ── Image crop — in-place pan (P2-S93) ─────────────────────────
+ * FB-cover style: give the image object-fit:cover + a crop-box height,
+ * then drag the image to pan which part shows via object-position (no
+ * transform → WeasyPrint-safe). All styles are inline so they round-trip. */
+let croppingImg = null;
+let cropStyleBackup = '';
+let cropAspect = 'original';
+let cropBaseWidth = 0;   // original rendered width (px) — base for all aspects
+
+function toggleCrop() {
+  if (croppingImg) { exitCrop(true); return; }
+  const doc = getDoc();
+  const img = doc.querySelector('img.img-selected') || doc.querySelector('img.img-editing');
+  if (!img) { showToast('เลือกรูปก่อน แล้วกดปุ่ม Crop'); return; }
+  enterCrop(img);
+}
+
+function enterCrop(img) {
+  if (annotatingFrame) exitAnnotateMode();
+  croppingImg = img;
+  cropStyleBackup = img.getAttribute('style') || '';
+  cropBaseWidth = img.getBoundingClientRect().width || 300;
+  img.classList.add('img-cropping');
+  cropAspect = img.style.height ? 'free' : 'original';
+  applyCropAspect(cropAspect);
+  const bar = document.getElementById('cropBar');
+  if (bar) bar.classList.add('show');
+  const btn = document.getElementById('cropBtn');
+  if (btn) btn.classList.add('active');
+  showToast('โหมด Crop: เลือกสัดส่วน · ลากรูปเพื่อเลื่อนเลือกส่วนที่เห็น · กดเสร็จเมื่อพอใจ');
+}
+
+function exitCrop(apply) {
+  if (!croppingImg) return;
+  const img = croppingImg;
+  img.classList.remove('img-cropping');
+  if (!apply) {
+    if (cropStyleBackup) img.setAttribute('style', cropStyleBackup);
+    else img.removeAttribute('style');
+  } else {
+    setDirty(true);
+  }
+  croppingImg = null;
+  cropStyleBackup = '';
+  const bar = document.getElementById('cropBar');
+  if (bar) bar.classList.remove('show');
+  const btn = document.getElementById('cropBtn');
+  if (btn) btn.classList.remove('active');
+}
+
+function applyCropAspect(aspect) {
+  if (!croppingImg) return;
+  cropAspect = aspect;
+  const img = croppingImg;
+  const w = cropBaseWidth || img.getBoundingClientRect().width || 300;
+  if (aspect === 'original') {
+    // back to no crop — restore the pre-crop inline style
+    if (cropStyleBackup) img.setAttribute('style', cropStyleBackup);
+    else img.removeAttribute('style');
+  } else {
+    // fix BOTH width + height so the box aspect differs from the image →
+    // object-fit:cover actually crops, and dragging pans object-position.
+    let h;
+    if (aspect === 'free') {
+      h = parseFloat(img.style.height) || Math.round(w * 0.6);
+    } else {
+      const parts = aspect.split(':');
+      const aw = parseFloat(parts[0]) || 1, ah = parseFloat(parts[1]) || 1;
+      h = Math.round(w * ah / aw);
+    }
+    img.style.width = Math.round(w) + 'px';
+    img.style.height = Math.round(h) + 'px';
+    img.style.maxWidth = 'none';   // beat the book CSS max-width:62%
+    img.style.objectFit = 'cover';
+    if (!img.style.objectPosition) img.style.objectPosition = '50% 50%';
+  }
+  updateCropBarState();
+  setDirty(true);
+}
+
+function changeCropHeight(delta) {
+  if (!croppingImg || cropAspect !== 'free') return;
+  const img = croppingImg;
+  const cur = parseFloat(img.style.height) || img.getBoundingClientRect().height || 200;
+  img.style.height = Math.round(Math.max(40, cur + delta)) + 'px';
+  setDirty(true);
+}
+
+function updateCropBarState() {
+  const bar = document.getElementById('cropBar');
+  if (!bar) return;
+  bar.querySelectorAll('[data-aspect]').forEach((b) =>
+    b.classList.toggle('is-active', b.getAttribute('data-aspect') === cropAspect));
+  const hr = document.getElementById('cropHeightRow');
+  if (hr) hr.classList.toggle('show', cropAspect === 'free');
+}
+
+/** Overflow (px) of the cover-fitted image beyond its box, per axis. */
+function cropOverflow(img) {
+  const r = img.getBoundingClientRect();
+  const nw = img.naturalWidth || r.width;
+  const nh = img.naturalHeight || r.height;
+  if (!nw || !nh) return { x: 0, y: 0 };
+  const scale = Math.max(r.width / nw, r.height / nh);
+  return { x: Math.max(0, nw * scale - r.width), y: Math.max(0, nh * scale - r.height) };
+}
+
+function bindCropDrag(doc) {
+  if (!doc.body || doc.body._cropBound) return;
+  doc.body._cropBound = true;
+  let dragging = false, sx = 0, sy = 0, ox = 50, oy = 50, ovX = 0, ovY = 0;
+  doc.body.addEventListener('mousedown', (e) => {
+    if (!croppingImg || e.target !== croppingImg || cropAspect === 'original') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    dragging = true;
+    sx = e.clientX; sy = e.clientY;
+    const op = (croppingImg.style.objectPosition || '50% 50%').split(/\s+/);
+    ox = parseFloat(op[0]); if (!Number.isFinite(ox)) ox = 50;
+    oy = parseFloat(op[1]); if (!Number.isFinite(oy)) oy = 50;
+    const ov = cropOverflow(croppingImg);
+    ovX = ov.x; ovY = ov.y;
+  }, true);
+  doc.body.addEventListener('mousemove', (e) => {
+    if (!dragging || !croppingImg) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    let nx = ox, ny = oy;
+    if (ovX > 0) nx = Math.max(0, Math.min(100, ox - dx / ovX * 100));
+    if (ovY > 0) ny = Math.max(0, Math.min(100, oy - dy / ovY * 100));
+    croppingImg.style.objectPosition = nx.toFixed(1) + '% ' + ny.toFixed(1) + '%';
+  }, true);
+  doc.body.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; setDirty(true); }
+  }, true);
+}
+
 /* Close the text-align submenu when the user clicks or presses Esc INSIDE
  * the editor iframe (P2-S83). Parent-document handlers can't see events
  * that happen inside the iframe, so the menu would otherwise stay open
@@ -5395,6 +5546,8 @@ function closeQuickMenu() {
 // instead. Handling them here makes Delete work regardless of focus.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // Esc cancels an in-progress crop first (P2-S93).
+    if (croppingImg && !document.querySelector('.modal-overlay.show')) { exitCrop(false); return; }
     // Esc closes whichever annotate submenu is open first (P2-S86).
     const mMenu = document.getElementById('markerMenu');
     if (mMenu && mMenu.classList.contains('show')) { hideMarkerMenu(); return; }
@@ -5751,6 +5904,8 @@ function buildSaveContent() {
   cloneBody.querySelectorAll('.img-textbox-handle').forEach(h => h.remove());
   cloneBody.querySelectorAll('.img-frame.tool-text')
     .forEach(f => f.classList.remove('tool-text'));
+  // P2-S93 — drop the transient crop class (the crop styles are inline & kept)
+  cloneBody.querySelectorAll('.img-cropping').forEach(i => i.classList.remove('img-cropping'));
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
   // drop the stale per-frame counter attr (now a global session counter)

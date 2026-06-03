@@ -844,6 +844,74 @@ body {
   border-color: var(--shell-accent);
 }
 
+/* ==============================================
+   IMAGE CROP BAR (P2-S93)
+   ============================================== */
+.crop-bar {
+  position: fixed;
+  top: calc(var(--shell-topbar-h) + var(--shell-toolbar-h) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+  padding: 7px 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  z-index: 1100;
+  font-family: var(--hd);
+}
+.crop-bar.show { display: flex; }
+.crop-bar-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--shell-text-dim);
+}
+.crop-aspect-row, .crop-height-row { display: flex; gap: 4px; }
+.crop-height-row { display: none; }
+.crop-height-row.show { display: flex; }
+.crop-aspect-row button, .crop-height-row button {
+  font-family: var(--hd);
+  font-size: 12px;
+  padding: 5px 9px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.crop-aspect-row button:hover, .crop-height-row button:hover { background: var(--shell-accent-lt); }
+.crop-aspect-row button.is-active {
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+  border-color: var(--shell-accent);
+}
+.crop-bar-sep { width: 1px; height: 22px; background: var(--shell-border); margin: 0 2px; }
+.crop-bar-btn {
+  font-family: var(--hd);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.crop-bar-btn.cancel {
+  background: transparent;
+  color: var(--shell-text-dim);
+  border-color: var(--shell-border);
+}
+.crop-bar-btn.cancel:hover { background: var(--shell-accent-lt); color: var(--shell-text); }
+.crop-bar-btn.done {
+  background: var(--shell-accent);
+  color: var(--shell-accent-fg);
+}
+.crop-bar-btn.done:hover { background: var(--shell-accent-hover); }
+
 /* Split button: main (toggle mode) + caret (open submenu) flush together */
 .tb-split { display: inline-flex; align-items: center; flex-shrink: 0; }
 .tb-split .tb-split-main { border-radius: 5px 0 0 5px; }
