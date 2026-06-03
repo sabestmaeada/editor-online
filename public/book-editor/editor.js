@@ -3021,6 +3021,10 @@ function ensureImageFrame(img) {
  *  selections + sync tool classes. (Shared by enterAnnotate/enterAnnotateOn.) */
 function applyAnnotateTool(tool) {
   annotateTool = tool;
+  // P2-S95 — if the image was cropped/resized since lines were drawn, the
+  // line overlay's viewBox aspect is stale → resync before interacting so
+  // dot caps stay circular and lines un-skewed (no-op when aspect matches).
+  syncImageLines(annotatingFrame);
   // Clear the other tools' selections so only the active tool shows handles.
   annotatingFrame
     .querySelectorAll('.img-marker.selected')
@@ -3145,6 +3149,7 @@ function switchAnnotateTo(img) {
   const frame = ensureImageFrame(img);
   frame.classList.add('annotating');
   annotatingFrame = frame;
+  syncImageLines(frame);   // P2-S95 — fix stale line viewBox if this image was cropped
   updateMarkerMenuState();
   setDirty(true); // ensureImageFrame may have wrapped a fresh image
   showToast('สลับมาที่รูปนี้ — วาง marker ต่อได้เลย');
@@ -3897,6 +3902,35 @@ function ensureImageLines(frame) {
   });
   frame.appendChild(svg);
   return svg;
+}
+
+/** Keep the line overlay's viewBox aspect in sync with the image's CURRENT
+ *  rendered aspect (P2-S95). data-h (the viewBox height) is baked once at SVG
+ *  creation; if the image is later cropped/resized its box aspect changes, and
+ *  with preserveAspectRatio:none the X and Y axes then stretch by DIFFERENT
+ *  factors — which turns round dot caps / endpoint handles into ellipses and
+ *  skews line angles. We recompute H from the live box and rescale every
+ *  line's y-coords by the same factor (y' = y·Hnew/Hold). Because y/H is left
+ *  invariant, endpoints keep their EXACT on-screen position; only the per-axis
+ *  scale becomes uniform again, so caps render circular and lines un-skewed. */
+function syncImageLines(frame) {
+  if (!frame) return;
+  const svg = frame.querySelector('.img-lines');
+  if (!svg) return;
+  const rect = frame.getBoundingClientRect();
+  if (!(rect.width > 0 && rect.height > 0)) return;
+  const Hnew = r2(100 * rect.height / rect.width);
+  const Hold = parseFloat(svg.getAttribute('data-h')) || Hnew;
+  if (Math.abs(Hnew - Hold) < 0.05) return;   // aspect unchanged → nothing to do
+  const k = Hnew / Hold;
+  svg.querySelectorAll('.img-line').forEach((g) => {
+    g.dataset.y1 = String(r2(parseFloat(g.dataset.y1) * k));
+    g.dataset.y2 = String(r2(parseFloat(g.dataset.y2) * k));
+    renderLine(g);
+    if (g.classList.contains('selected')) addLineHandles(g);
+  });
+  svg.setAttribute('viewBox', `0 0 100 ${Hnew}`);
+  svg.setAttribute('data-h', String(Hnew));
 }
 
 function lineEnds(g) {
@@ -4658,6 +4692,9 @@ function exitCrop(apply) {
   if (bar) bar.classList.remove('show');
   const btn = document.getElementById('cropBtn');
   if (btn) btn.classList.remove('active');
+  // P2-S95 — crop changed the image aspect; resync the line overlay's viewBox
+  // so existing lines' dot caps/handles stay circular and lines un-skewed.
+  syncImageLines(img.closest('.img-frame'));
 }
 
 function applyCropAspect(aspect) {
