@@ -5129,7 +5129,7 @@ async function insertImage() {
 
   const alt = document.getElementById('imgAlt').value.trim() || 'รูปภาพ';
   const width = document.getElementById('imgWidth').value.trim();
-  const height = document.getElementById('imgHeight').value.trim();
+  // ความสูงไม่ใช้แล้ว (P2-S94) — ควบคุมผ่านเครื่องมือ Crop; ช่อง input ถูกซ่อน
   const objectFit = document.getElementById('imgObjectFit').value;
 
   if (!url) return;
@@ -5161,7 +5161,8 @@ async function insertImage() {
 
     editingImage.setAttribute('alt', alt);
     editingImage.style.width = width || '';
-    editingImage.style.height = height || '';
+    // ความสูง: ไม่แตะ style.height ที่นี่ (P2-S94) — เครื่องมือ Crop เป็นเจ้าของค่านี้
+    // การเขียนทับด้วยค่าว่างจะลบ crop ทิ้งและทำให้ overlay (ตัวชี้/เส้น/กรอบ/กล่อง) ขยับ
     editingImage.style.objectFit = objectFit || '';
 
     const figure = editingImage.closest('figure');
@@ -5184,12 +5185,11 @@ async function insertImage() {
     const safeUrl = safeImageUrl(url);
     const cssLenRe = /^(\d+(\.\d+)?(px|%|em|rem|vh|vw|pt|cm|mm|in|pc)?|auto|inherit)$/;
     const safeWidth = cssLenRe.test(width) ? width : '';
-    const safeHeight = cssLenRe.test(height) ? height : '';
+    // ความสูงไม่กำหนดตอนแทรก (P2-S94) — ใช้เครื่องมือ Crop หลังแทรกถ้าต้องการ
     const safeFit = ['cover', 'contain'].includes(objectFit) ? objectFit : '';
 
     let styleStr = '';
     if (safeWidth) styleStr += `width: ${safeWidth}; `;
-    if (safeHeight) styleStr += `height: ${safeHeight}; `;
     if (safeFit) styleStr += `object-fit: ${safeFit}; `;
     const styleAttr = styleStr ? ` style="${styleStr.trim()}"` : '';
 

@@ -299,13 +299,15 @@
       <input type="text" id="imgAlt" placeholder="คำอธิบายภาพ">
     </div>
     
-    <div class="modal-field-row" style="display: flex; gap: 12px; margin-bottom: 14px;">
-      <div class="modal-field" style="flex:1; margin-bottom:0;">
+    <div class="modal-field-row" style="margin-bottom: 14px;">
+      <div class="modal-field" style="margin-bottom:0;">
         <label>ความกว้าง (px หรือ %)</label>
         <input type="text" id="imgWidth" placeholder="เช่น 100%, 300px">
       </div>
-      <div class="modal-field" style="flex:1; margin-bottom:0;">
-        <label>ความสูง (px)</label>
+      <!-- ความสูง (px) ถูกซ่อน (P2-S94): ความสูงถูกควบคุมผ่านเครื่องมือ Crop แล้ว
+           กันภาพยืดผิดสัดส่วน และกัน overlay (ตัวชี้/เส้น/กรอบ/กล่อง) เพี้ยน
+           คง input ไว้ใน DOM (hidden) เพื่อให้โค้ดที่อ้างอิงเดิมไม่ error -->
+      <div class="modal-field" style="display:none;">
         <input type="text" id="imgHeight" placeholder="เช่น 300px">
       </div>
     </div>
