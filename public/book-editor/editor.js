@@ -4647,6 +4647,16 @@ function bindTextEvents(doc) {
       return;
     }
     if (editing) return;   // typing is handled natively while editing
+    // P2-S100 — Enter/F2 on a selected box enters text editing (graphics-app
+    // shortcut; pairs with the dblclick-to-select behaviour above).
+    if (e.key === 'Enter' || e.key === 'F2') {
+      const selBox = selectedTextbox();
+      if (!selBox) return;
+      e.preventDefault();
+      e.stopPropagation();
+      enterTextEdit(selBox);
+      return;
+    }
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     const sel = selectedTextbox();
     if (!sel) return;
@@ -4790,7 +4800,17 @@ function bindAnnotationDblclick(doc) {
     if (!frame) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (tb) { enterAnnotateOn(frame, 'text'); selectTextbox(tb); enterTextEdit(tb); }
+    if (tb) {
+      // P2-S100 — 1st dblclick SELECTS the box (move/resize, like rect/line);
+      // a 2nd dblclick on the already-selected box enters text editing. This
+      // makes "move" the default gesture (the common case) instead of jumping
+      // straight into typing.
+      if (annotatingFrame === frame && tb.classList.contains('selected')) {
+        enterTextEdit(tb);
+      } else {
+        enterAnnotateOn(frame, 'text'); selectTextbox(tb);
+      }
+    }
     else if (rect) { enterAnnotateOn(frame, 'rect'); selectRect(rect); }
     else if (lineG) { enterAnnotateOn(frame, 'line'); selectLine(lineG); }
     else if (marker) { enterAnnotateOn(frame, 'marker'); openMarkerStartDialog(frame, marker); }
