@@ -2791,6 +2791,171 @@ function insertLink() {
 }
 
 // ==============================================
+// RAW HTML INSERT (P2-S97) — แทรกโค้ด HTML ตรง ๆ พร้อมตรวจแท็ก + sanitize
+// ==============================================
+
+// void elements ไม่ต้องมีแท็กปิด
+const HTML_VOID_TAGS = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+  'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+// แท็กอันตราย/ระดับเอกสารที่ต้องตัดทิ้งตอน sanitize
+const HTML_DANGEROUS_TAGS =
+  'script,style,iframe,object,embed,base,meta,link,noscript,template';
+
+/** true ถ้า URL เป็นชนิดที่รันโค้ดได้ (javascript:/vbscript:/data:text/html). */
+function isDangerousUrl(v) {
+  const s = String(v || '').replace(/[\x00-\x20]+/g, '').toLowerCase();
+  return s.startsWith('javascript:') || s.startsWith('vbscript:') ||
+         s.startsWith('data:text/html');
+}
+
+/** กรอง HTML ที่อันตรายออก โดย parse ใน document เฉื่อย (ไม่รันสคริปต์/ไม่โหลด
+ *  ทรัพยากร) แล้ว serialize กลับ — ได้ผลที่ "ปิดแท็กครบ" จาก browser ในตัว.
+ *  ตัด: แท็กอันตราย, event handler on*, srcdoc, URL ที่รันโค้ดได้, เปลือก
+ *  เอกสาร (html/head/body parse แล้วเหลือเฉพาะเนื้อใน body). */
+function sanitizeInsertHtml(str) {
+  const parsed = new DOMParser().parseFromString(String(str || ''), 'text/html');
+  const body = parsed.body;
+  if (!body) return '';
+  body.querySelectorAll(HTML_DANGEROUS_TAGS).forEach((el) => el.remove());
+  body.querySelectorAll('*').forEach((el) => {
+    Array.from(el.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith('on') || name === 'srcdoc') { el.removeAttribute(attr.name); return; }
+      if ((name === 'href' || name === 'src' || name === 'xlink:href') &&
+          isDangerousUrl(attr.value)) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+  return body.innerHTML;
+}
+
+/** ตรวจสมดุลแท็กด้วย tokenizer + stack (ไม่ใช่ regex นับ). รู้จัก void
+ *  elements, ข้าม comment/CDATA/doctype, อ่าน attribute ที่มี > ในเครื่องหมาย
+ *  คำพูด. คืน { ok, problems[] } — ปัญหาเป็นข้อความภาษาไทยอ่านง่าย. */
+function validateHtmlTags(str) {
+  const problems = [];
+  const stack = [];
+  // tag name must follow '<' (or '</') immediately — matches browser parsing,
+  // so plain text like "a < b" is NOT mistaken for a tag. Quoted attrs may
+  // hold '>' (the "..."/'...' alternatives swallow it before the closing '>').
+  const re = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<![^>]*>|<(\/)?([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|'[^']*'|[^>])*?)(\/)?>/g;
+  let m;
+  while ((m = re.exec(str))) {
+    const whole = m[0];
+    if (whole.startsWith('<!')) continue;            // comment / CDATA / doctype
+    const isClose = !!m[1];
+    const tag = (m[2] || '').toLowerCase();
+    const selfClose = !!m[4] || HTML_VOID_TAGS.has(tag);
+    if (!tag) continue;
+    if (isClose) {
+      if (HTML_VOID_TAGS.has(tag)) continue;         // </br> ฯลฯ — ไม่นับ
+      if (!stack.length) {
+        problems.push(`พบแท็กปิด </${tag}> ที่ไม่มีแท็กเปิดคู่กัน`);
+      } else if (stack[stack.length - 1] === tag) {
+        stack.pop();
+      } else {
+        const at = stack.lastIndexOf(tag);
+        if (at === -1) {
+          problems.push(`พบแท็กปิด </${tag}> ที่ไม่มีแท็กเปิดคู่กัน`);
+        } else {
+          const inner = stack.slice(at + 1);
+          problems.push(`แท็ก <${inner.join('>, <')}> ปิดไม่ครบ/สลับลำดับก่อน </${tag}>`);
+          stack.length = at;                         // pop ถึง (รวม) ตัวที่จับคู่
+        }
+      }
+    } else if (!selfClose) {
+      stack.push(tag);
+    }
+  }
+  if (stack.length) {
+    problems.push(`แท็กที่ยังไม่ปิด: <${stack.join('>, <')}>`);
+  }
+  return { ok: problems.length === 0, problems };
+}
+
+function showHtmlModal() {
+  const sel = getWin().getSelection();
+  if (sel && sel.rangeCount) savedSelection = sel.getRangeAt(0).cloneRange();
+  const el = document.getElementById('htmlSource');
+  el.value = '';
+  document.getElementById('htmlModal').classList.add('show');
+  htmlLivePreview();
+  el.focus();
+}
+
+function closeHtmlModal() {
+  document.getElementById('htmlModal').classList.remove('show');
+}
+
+/** สด ๆ ระหว่างพิมพ์: ตรวจแท็ก + เรนเดอร์พรีวิว (ที่ sanitize แล้ว) +
+ *  เปิด/ปิดปุ่ม. ปุ่ม "แทรก" เปิดเฉพาะตอนแท็กครบ; "แก้อัตโนมัติ" เปิดตอนไม่ครบ. */
+function htmlLivePreview() {
+  const raw = document.getElementById('htmlSource').value;
+  const statusEl = document.getElementById('htmlStatus');
+  const previewEl = document.getElementById('htmlPreview');
+  const insertBtn = document.getElementById('htmlInsertBtn');
+  const fixBtn = document.getElementById('htmlFixBtn');
+
+  const safe = sanitizeInsertHtml(raw);
+  previewEl.innerHTML = safe || '<span class="html-preview-empty">— ยังไม่มีเนื้อหา —</span>';
+
+  if (!raw.trim()) {
+    statusEl.className = 'html-status';
+    statusEl.textContent = '';
+    insertBtn.disabled = true;
+    fixBtn.disabled = true;
+    return;
+  }
+
+  const { ok, problems } = validateHtmlTags(raw);
+  const filtered =
+    new RegExp(`<\\s*(${HTML_DANGEROUS_TAGS.replace(/,/g, '|')})\\b`, 'i').test(raw) ||
+    /\son[a-z-]+\s*=/i.test(raw) ||
+    /(href|src)\s*=\s*["']?\s*(javascript|vbscript):/i.test(raw);
+
+  if (ok) {
+    statusEl.className = 'html-status ok';
+    statusEl.textContent =
+      '✓ แท็กเปิด/ปิดครบถ้วน' + (filtered ? ' · กรองโค้ดที่อันตรายออกบางส่วนแล้ว' : '');
+    insertBtn.disabled = false;
+    fixBtn.disabled = true;
+  } else {
+    statusEl.className = 'html-status bad';
+    statusEl.textContent = '⚠ ' + problems.join('  ·  ');
+    insertBtn.disabled = true;
+    fixBtn.disabled = false;
+  }
+}
+
+/** แก้แท็กอัตโนมัติ: ให้ browser parse+serialize (ปิดแท็กที่ขาด/จัดโครงสร้าง)
+ *  พร้อม sanitize แล้วใส่กลับ textarea — ผู้ใช้เห็นพรีวิวและกดแทรกเองอีกที. */
+function autoFixHtml() {
+  const el = document.getElementById('htmlSource');
+  el.value = sanitizeInsertHtml(el.value);
+  htmlLivePreview();
+  el.focus();
+  showToast('ปิดแท็กที่ขาดให้แล้ว — ตรวจพรีวิวก่อนแทรก');
+}
+
+function insertRawHtml() {
+  const safe = sanitizeInsertHtml(document.getElementById('htmlSource').value);
+  if (!safe.trim()) { closeHtmlModal(); return; }
+  focusEditor();
+  if (savedSelection) {
+    const sel = getWin().getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedSelection);
+  }
+  getDoc().execCommand('insertHTML', false, safe);   // ผ่าน execCommand → undo/redo ฟรี
+  setDirty(true);
+  closeHtmlModal();
+  showToast('แทรก HTML แล้ว');
+}
+
+// ==============================================
 // IMAGE (FIXED BASE64 TRUNCATION)
 // ==============================================
 

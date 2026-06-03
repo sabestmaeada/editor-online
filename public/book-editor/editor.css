@@ -509,6 +509,43 @@ body {
   gap: 8px;
   margin-top: 18px;
 }
+.modal-actions .btn[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* ── Raw HTML insert modal (P2-S97) ─────────────────────────────── */
+.modal-wide { max-width: 640px; width: min(640px, 92vw); }
+.html-source {
+  min-height: 130px;
+  font-family: var(--cd);            /* JetBrains Mono — code-friendly */
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.html-status {
+  font-family: var(--bd);
+  font-size: 12px;
+  min-height: 17px;
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+.html-status.ok  { color: #2E9E73; }   /* readable on light + dark */
+.html-status.bad { color: #E5534B; }
+.html-preview {
+  background: var(--shell-bg);
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  font-family: var(--bd);
+  font-size: 13px;
+  color: var(--shell-text);
+}
+.html-preview-empty { color: var(--shell-text-dim); font-style: italic; }
 
 /* ==============================================
    FILE UPLOAD OVERLAY
