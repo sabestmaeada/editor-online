@@ -3676,6 +3676,16 @@ function changeMarkerSize(delta) {
 }
 
 /** Bind place / drag / delete handlers once (event delegation). */
+/** Select a single marker within its frame (deselect siblings). P2-S100 —
+ *  used by the dblclick-to-select flow so a marker can be moved before any
+ *  number dialog opens. */
+function selectMarker(marker) {
+  const frame = marker.closest('.img-frame');
+  if (!frame) return;
+  frame.querySelectorAll('.img-marker.selected').forEach((m) => m.classList.remove('selected'));
+  marker.classList.add('selected');
+}
+
 function bindMarkerEvents(doc) {
   if (!doc.body || doc.body._markerBound) return;
   doc.body._markerBound = true;
@@ -3767,6 +3777,16 @@ function bindMarkerEvents(doc) {
       const menu = document.getElementById('markerMenu');
       if (menu && menu.classList.contains('show')) { hideMarkerMenu(); return; }
       exitAnnotateMode();
+      return;
+    }
+    // P2-S100 — Enter/F2 on a selected marker opens the number dialog
+    // (parallel to the textbox edit shortcut).
+    if (e.key === 'Enter' || e.key === 'F2') {
+      const selM = annotatingFrame.querySelector('.img-marker.selected');
+      if (!selM) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openMarkerStartDialog(annotatingFrame, selM);
       return;
     }
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -4813,7 +4833,16 @@ function bindAnnotationDblclick(doc) {
     }
     else if (rect) { enterAnnotateOn(frame, 'rect'); selectRect(rect); }
     else if (lineG) { enterAnnotateOn(frame, 'line'); selectLine(lineG); }
-    else if (marker) { enterAnnotateOn(frame, 'marker'); openMarkerStartDialog(frame, marker); }
+    else if (marker) {
+      // P2-S100 — 1st dblclick SELECTS the marker (move mode); a 2nd dblclick
+      // on the already-selected marker opens the number dialog. Keeps "move"
+      // as the default gesture instead of jumping into renumbering.
+      if (annotatingFrame === frame && marker.classList.contains('selected')) {
+        openMarkerStartDialog(frame, marker);
+      } else {
+        enterAnnotateOn(frame, 'marker'); selectMarker(marker);
+      }
+    }
   }, true);
 }
 
