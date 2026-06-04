@@ -692,8 +692,8 @@ tr:hover td {
 }
 
 .book-img img {
-  max-width: 66%;
-  /* แก้จาก 100% เป็น 66% */
+  max-width: 100%;
+  /* 100% — ให้การปรับความกว้าง (inline width) ใน editor มีผลจริง */
   display: block;
   margin: 0 auto;
   border-radius: 10px;
@@ -1112,8 +1112,8 @@ tr:hover td {
   }
 
   .book-img img {
-    max-width: 66% !important;
-    /* เพิ่ม !important เพื่อความชัวร์ตอนสั่งพิมพ์ */
+    max-width: 100% !important;
+    /* 100% — ปรับความกว้างได้จริง (66% ไป cap ความกว้างไว้) */
     box-shadow: none !important;
     border: 1px solid #CCCCCC !important;
   }
