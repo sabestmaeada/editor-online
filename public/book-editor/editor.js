@@ -1918,41 +1918,51 @@ function execCmd(cmd, value) {
   focusEditor();
   getDoc().execCommand(cmd, false, value || null);
   // P2-S106 — execCommand nests the new list inside a <p> (<p><ol>…</ol></p>),
-  // which is invalid HTML; fix it immediately (see fixInsertedList).
+  // which is invalid HTML; hoist any block out of its <p> immediately so it
+  // renders correctly without a save+reload (see hoistBlocksFromP).
   if (cmd === 'insertOrderedList' || cmd === 'insertUnorderedList') {
-    fixInsertedList(getDoc());
+    hoistBlocksFromP(getDoc());
+    setDirty(true);
   }
 }
 
-/** Fix a freshly-inserted list (P2-S106). execCommand('insertOrderedList' /
- *  'insertUnorderedList') nests the new list inside a <p> (<p><ol>...</ol></p>)
- *  which is INVALID HTML (a block list cannot live in a <p>). Symptoms that
- *  only clear on save+reload (when the HTML parser hoists the list out of the
- *  <p>):
- *    - the list inherits text-indent:2em from .content p, pushing the text far
- *      from the marker (the wide gap), and
- *    - counter()-based OL numbers do not compute (blank circles).
- *  Do that hoist now. Moving the node (not re-parsing) keeps the caret. */
-function fixInsertedList(doc) {
-  if (!doc) return;
-  doc.querySelectorAll('.content p > ol, .content p > ul').forEach((list) => {
-    const p = list.parentElement;
-    if (!p || !p.parentNode) return;
-    // drop any text-indent execCommand left inline on the items
-    list.querySelectorAll('[style]').forEach((el) => {
-      if (el.style.textIndent) {
-        el.style.removeProperty('text-indent');
-        const s = el.getAttribute('style');
-        if (s !== null && !s.trim()) el.removeAttribute('style');
-      }
-    });
-    p.parentNode.insertBefore(list, p.nextSibling); // hoist out of the <p>
+/** Hoist block-level elements out of any <p> (P2-S106). A <p> may legally
+ *  contain only inline content, so a block trapped inside it (e.g. execCommand
+ *  wrapping a new list as <p><ol>...</ol></p>) is INVALID HTML — the browser
+ *  renders it broken (blank OL numbers, inherited text-indent gap) until a
+ *  save+reload re-parse hoists it out. We replicate that hoist on the live DOM
+ *  (after a list insert) and on the saved clone. Only acts on invalid
+ *  block-in-<p> nesting; valid content matches nothing → no-op. Reverse
+ *  document order keeps multiple blocks in one <p> in their original order. */
+function hoistBlocksFromP(root) {
+  if (!root) return;
+  const SEL =
+    '.content p > ol, .content p > ul, .content p > table, .content p > figure,' +
+    ' .content p > blockquote, .content p > pre, .content p > hr, .content p > div,' +
+    ' .content p > h1, .content p > h2, .content p > h3, .content p > h4,' +
+    ' .content p > h5, .content p > h6';
+  Array.from(root.querySelectorAll(SEL)).reverse().forEach((el) => {
+    const p = el.parentElement;
+    if (!p || p.tagName !== 'P' || !p.parentNode) return;
+    // lists also inherit/pick up text-indent:2em from .content p (the wide gap
+    // between marker and text) — strip it (only for lists, leave others alone)
+    if (el.tagName === 'OL' || el.tagName === 'UL') {
+      if (el.style && el.style.textIndent) el.style.removeProperty('text-indent');
+      el.querySelectorAll('[style]').forEach((c) => {
+        if (c.style.textIndent) {
+          c.style.removeProperty('text-indent');
+          const s = c.getAttribute('style');
+          if (s !== null && !s.trim()) c.removeAttribute('style');
+        }
+      });
+    }
+    p.parentNode.insertBefore(el, p.nextSibling); // hoist out of the <p>
+    // remove the wrapper <p> if only whitespace / a stray <br> is left
     const keep = Array.from(p.childNodes).some((n) =>
       (n.nodeType === 3 && n.textContent.trim()) ||
       (n.nodeType === 1 && n.tagName !== 'BR'));
-    if (!keep) p.remove(); // remove the now-empty wrapper <p>
+    if (!keep) p.remove();
   });
-  setDirty(true);
 }
 
 function execBlockFormat(tag) {
@@ -6205,6 +6215,11 @@ function buildSaveContent() {
   });
   // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
   cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
+
+  // P2-S106 — guarantee no block element is trapped inside a <p> in the saved
+  // file (invalid HTML); hoist them out so the output matches the post-reload
+  // structure regardless of how it was inserted. No-op for valid content.
+  hoistBlocksFromP(cloneBody);
 
   // P2-S81: strip transient UI-only classes so annotate mode / selection
   // never leak into the saved file. Without this, saving while annotate
