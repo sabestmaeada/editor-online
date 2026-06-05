@@ -706,6 +706,34 @@ body {
   border-color: var(--shell-accent);
 }
 
+/* ลบบล็อกปัจจุบัน (P2-S108) — เคียงข้างปุ่ม + (left:40) hover เป็นสีอันตราย */
+.quick-delete-btn {
+  position: absolute;
+  left: 40px;
+  width: 26px;
+  height: 26px;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  color: var(--shell-text-dim);
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.quick-delete-btn svg { width: 14px; height: 14px; }
+.quick-delete-btn.show { opacity: 1; pointer-events: auto; }
+.quick-delete-btn:hover {
+  background: #E5534B;
+  color: #fff;
+  border-color: #E5534B;
+}
+
 .quick-insert-menu {
   position: absolute;
   left: 40px;

@@ -1414,6 +1414,7 @@ function doCloseProject() {
     '<div style="padding:20px;text-align:center;color:var(--shell-text-dim);font-size:12px;">ยังไม่ได้เปิดไฟล์</div>';
   document.getElementById('statusInfo').textContent = 'พร้อมใช้งาน';
   document.getElementById('quickInsertBtn').classList.remove('show', 'active');
+  document.getElementById('quickDeleteBtn').classList.remove('show');
   document.getElementById('quickInsertMenu').classList.remove('show');
   isQuickMenuOpen = false;
 
@@ -5653,7 +5654,8 @@ function autoContinueList() {
 function bindHoverInsert(doc) {
   const btn = document.getElementById('quickInsertBtn');
   const menu = document.getElementById('quickInsertMenu');
-  
+  const delBtn = document.getElementById('quickDeleteBtn');
+
   doc.body.addEventListener('mousemove', (e) => {
     if (isQuickMenuOpen) return;
 
@@ -5678,6 +5680,8 @@ function bindHoverInsert(doc) {
       const rect = block.getBoundingClientRect();
       btn.classList.add('show');
       btn.style.top = (rect.top + 2) + 'px';
+      delBtn.classList.add('show');                 // P2-S108 — delete button
+      delBtn.style.top = (rect.top + 2) + 'px';
     } else {
       scheduleHide();
     }
@@ -5686,6 +5690,7 @@ function bindHoverInsert(doc) {
   doc.addEventListener('scroll', () => {
     if (!isQuickMenuOpen) {
       btn.classList.remove('show');
+      delBtn.classList.remove('show');
       menu.classList.remove('show');
     }
   });
@@ -5696,6 +5701,7 @@ function bindHoverInsert(doc) {
 
   btn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
   menu.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+  delBtn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
 
   // Esc inside the iframe → close quick menu. Iframe keydowns don't
   // bubble to the parent document, so a parent-level Esc handler can't
@@ -5715,10 +5721,38 @@ function bindHoverInsert(doc) {
     quickMenuHideTimeout = setTimeout(() => {
       if (!isQuickMenuOpen) {
         btn.classList.remove('show');
+        delBtn.classList.remove('show');
         hoveredBlock = null;
       }
     }, 300);
   }
+}
+
+/** Delete the block currently under the hover "+" / trash buttons (P2-S108).
+ *  Immediate delete with undo (Ctrl+Z restores via the snapshot stack). Only
+ *  content blocks are hoverable, so structural sections are never targeted. */
+function deleteHoveredBlock() {
+  const block = hoveredBlock;
+  if (!block || !block.parentNode) return;
+  const doc = getDoc();
+  const content = block.closest('.content');
+  pushUndoSnapshot();                 // enable Ctrl+Z to bring it back
+  block.remove();
+  // keep the chapter editable: if .content is now empty, drop in an empty <p>
+  if (content && !content.querySelector(
+    'p, h1, h2, h3, h4, h5, h6, ul, ol, figure, blockquote, pre, hr,' +
+    ' .note, .code-block, .table-wrap, table')) {
+    const np = doc.createElement('p');
+    np.appendChild(doc.createElement('br'));
+    content.appendChild(np);
+  }
+  hoveredBlock = null;
+  const b = document.getElementById('quickInsertBtn');
+  const d = document.getElementById('quickDeleteBtn');
+  if (b) b.classList.remove('show');
+  if (d) d.classList.remove('show');
+  setDirty(true);
+  showToast('ลบบล็อกแล้ว · กด Ctrl+Z เพื่อเรียกคืน');
 }
 
 function toggleQuickMenu() {

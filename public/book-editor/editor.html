@@ -210,6 +210,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </div>
 
+      <!-- ลบบล็อกปัจจุบัน (P2-S108) -->
+      <div id="quickDeleteBtn" class="quick-delete-btn" onclick="deleteHoveredBlock()" role="button" tabindex="0" aria-label="ลบบล็อกนี้" title="ลบบล็อกนี้">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+      </div>
+
       <div id="quickInsertMenu" class="quick-insert-menu" role="menu">
         <div class="qi-item" onclick="quickAction('p')">📝 ย่อหน้าใหม่ (Paragraph)</div>
         <div class="qi-item" onclick="quickAction('h4')">🔖 หัวข้อ 4 (H4)</div>
