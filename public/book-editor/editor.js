@@ -1917,6 +1917,42 @@ function execCmd(cmd, value) {
   if (cmd === 'redo' && trackRedoStack.length > 0) { trackRedo(); return; }
   focusEditor();
   getDoc().execCommand(cmd, false, value || null);
+  // P2-S106 — execCommand nests the new list inside a <p> (<p><ol>…</ol></p>),
+  // which is invalid HTML; fix it immediately (see fixInsertedList).
+  if (cmd === 'insertOrderedList' || cmd === 'insertUnorderedList') {
+    fixInsertedList(getDoc());
+  }
+}
+
+/** Fix a freshly-inserted list (P2-S106). execCommand('insertOrderedList' /
+ *  'insertUnorderedList') nests the new list inside a <p> (<p><ol>...</ol></p>)
+ *  which is INVALID HTML (a block list cannot live in a <p>). Symptoms that
+ *  only clear on save+reload (when the HTML parser hoists the list out of the
+ *  <p>):
+ *    - the list inherits text-indent:2em from .content p, pushing the text far
+ *      from the marker (the wide gap), and
+ *    - counter()-based OL numbers do not compute (blank circles).
+ *  Do that hoist now. Moving the node (not re-parsing) keeps the caret. */
+function fixInsertedList(doc) {
+  if (!doc) return;
+  doc.querySelectorAll('.content p > ol, .content p > ul').forEach((list) => {
+    const p = list.parentElement;
+    if (!p || !p.parentNode) return;
+    // drop any text-indent execCommand left inline on the items
+    list.querySelectorAll('[style]').forEach((el) => {
+      if (el.style.textIndent) {
+        el.style.removeProperty('text-indent');
+        const s = el.getAttribute('style');
+        if (s !== null && !s.trim()) el.removeAttribute('style');
+      }
+    });
+    p.parentNode.insertBefore(list, p.nextSibling); // hoist out of the <p>
+    const keep = Array.from(p.childNodes).some((n) =>
+      (n.nodeType === 3 && n.textContent.trim()) ||
+      (n.nodeType === 1 && n.tagName !== 'BR'));
+    if (!keep) p.remove(); // remove the now-empty wrapper <p>
+  });
+  setDirty(true);
 }
 
 function execBlockFormat(tag) {
@@ -5554,13 +5590,26 @@ function getEditingOl() {
   return null;
 }
 
+/** Set an OL's starting number so it works in BOTH rendering modes (P2-S104):
+ *  - native <ol> markers → the `start` attribute
+ *  - CSS-counter themes (list-style:none + counter(ol-counter)) → an inline
+ *    `counter-reset: ol-counter (n-1)` which overrides the stylesheet's reset
+ *  Both are harmless to the other mode, and both round-trip into the saved
+ *  HTML (WeasyPrint honours CSS counters too). */
+function setOlStart(ol, start) {
+  const n = parseInt(start, 10);
+  if (!ol || !Number.isFinite(n) || n < 1) return false;
+  ol.setAttribute('start', String(n));
+  ol.style.counterReset = 'ol-counter ' + (n - 1);
+  return true;
+}
+
 function applyListStart() {
   const ol = getEditingOl();
   const val = document.getElementById('listStartInput').value;
-  if (ol) {
-    ol.setAttribute('start', val);
+  if (setOlStart(ol, val)) {
     setDirty(true);
-    showToast(`เริ่มรันเลขใหม่ที่ ${val} แล้ว`);
+    showToast(`เริ่มรันเลขใหม่ที่ ${parseInt(val, 10)} แล้ว`);
   }
   closeListSettingModal();
 }
@@ -5577,7 +5626,7 @@ function autoContinueList() {
       const prevCount = prevOl.querySelectorAll('li').length;
       
       const nextStart = prevStart + prevCount;
-      ol.setAttribute('start', nextStart);
+      setOlStart(ol, nextStart);
       setDirty(true);
       showToast(`รันตัวเลขต่อเป็นเลข ${nextStart} แล้ว`);
     } else {
