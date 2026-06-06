@@ -823,6 +823,13 @@ tr:hover td {
   .bd-row, .bd-col { display: block; width: 100%; padding: 0; }
 }
 
+/* OL marker ก,ข,ค,ง (P2-S111) — Thai-consonant numbering (no CSS built-in) */
+@counter-style thai-alpha {
+  system: alphabetic;
+  symbols: "ก" "ข" "ค" "ง" "จ" "ฉ" "ช" "ซ" "ฌ" "ญ" "ฎ" "ฏ" "ฐ" "ฑ" "ฒ" "ณ" "ด" "ต" "ถ" "ท" "ธ" "น" "บ" "ป" "ผ" "ฝ" "พ" "ฟ" "ภ" "ม" "ย" "ร" "ล" "ว" "ศ" "ษ" "ส" "ห" "ฬ" "อ" "ฮ";
+  suffix: ". ";
+}
+
 .img-placeholder {
   background: linear-gradient(135deg, #f0f4ff, #e8ecf8);
   border: 2px dashed #7C8DB5;

@@ -100,9 +100,14 @@
       <button class="tb-btn" data-tip="รายการ (UL)" onclick="execCmd('insertUnorderedList')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg>
       </button>
-      <button class="tb-btn" data-tip="รายการลำดับ (OL)" onclick="execCmd('insertOrderedList')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="4" y="8" font-size="9" fill="currentColor" font-weight="700">1</text><text x="4" y="14" font-size="9" fill="currentColor" font-weight="700">2</text><text x="4" y="20" font-size="9" fill="currentColor" font-weight="700">3</text></svg>
-      </button>
+      <div class="tb-split" id="olSplit">
+        <button class="tb-btn tb-split-main" id="olMainBtn" data-tip="รายการลำดับ (OL)" onclick="insertOrderedListWithType()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="4" y="8" font-size="9" fill="currentColor" font-weight="700">1</text><text x="4" y="14" font-size="9" fill="currentColor" font-weight="700">2</text><text x="4" y="20" font-size="9" fill="currentColor" font-weight="700">3</text></svg>
+        </button>
+        <button class="tb-btn tb-split-caret" id="olCaretBtn" data-tip="รูปแบบลำดับ (A / a / ก)" onclick="toggleOlTypeMenu(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
       <button class="tb-btn" data-tip="ตั้งค่าลำดับตัวเลข" onclick="showListSettingModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/><circle cx="17" cy="18" r="3"/></svg>
       </button>
@@ -481,6 +486,14 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
     กระจายเต็มบรรทัด
   </div>
+</div>
+
+<!-- OL marker-style Dropdown (P2-S111) — choose 1,2,3 / A,B,C / a,b,c / ก,ข,ค -->
+<div id="olTypeMenu" class="marker-menu align-menu" role="menu" aria-label="รูปแบบลำดับ">
+  <div class="qi-item" data-ol-type="decimal" onclick="setOlType('decimal')">1, 2, 3, …</div>
+  <div class="qi-item" data-ol-type="upper-alpha" onclick="setOlType('upper-alpha')">A, B, C, …</div>
+  <div class="qi-item" data-ol-type="lower-alpha" onclick="setOlType('lower-alpha')">a, b, c, …</div>
+  <div class="qi-item" data-ol-type="thai-alpha" onclick="setOlType('thai-alpha')">ก, ข, ค, …</div>
 </div>
 
 <!-- Image Marker Dropdown (popover) — group of image-annotation actions -->

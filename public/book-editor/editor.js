@@ -1819,6 +1819,14 @@ td.table-cell-targeted, th.table-cell-targeted {
 .bd-col-4 { width: 33.333%; } .bd-col-5 { width: 41.667%; } .bd-col-6 { width: 50%; }
 .bd-col-7 { width: 58.333%; } .bd-col-8 { width: 66.667%; } .bd-col-9 { width: 75%; }
 .bd-col-10 { width: 83.333%; } .bd-col-11 { width: 91.667%; } .bd-col-12 { width: 100%; }
+
+/* OL marker style ก,ข,ค,ง (P2-S111) — CSS has no built-in Thai-consonant
+   numbering, so define one. Works for list-style-type AND counter(.., thai-alpha). */
+@counter-style thai-alpha {
+  system: alphabetic;
+  symbols: "ก" "ข" "ค" "ง" "จ" "ฉ" "ช" "ซ" "ฌ" "ญ" "ฎ" "ฏ" "ฐ" "ฑ" "ฒ" "ณ" "ด" "ต" "ถ" "ท" "ธ" "น" "บ" "ป" "ผ" "ฝ" "พ" "ฟ" "ภ" "ม" "ย" "ร" "ล" "ว" "ศ" "ษ" "ส" "ห" "ฬ" "อ" "ฮ";
+  suffix: ". ";
+}
 </style>
 </head>
 <body>
@@ -3143,6 +3151,16 @@ try {
   if (MARKER_COLORS.includes(c)) markerColor = c;
 } catch (e) { /* localStorage may be blocked */ }
 
+// P2-S111 — last-used OL marker style, remembered across sessions. The main
+// OL button inserts with this; the caret menu changes it.
+const OL_TYPES = ['decimal', 'upper-alpha', 'lower-alpha', 'thai-alpha'];
+let olType = 'decimal';
+try {
+  const t = localStorage.getItem('bookEditor_olType');
+  if (OL_TYPES.includes(t)) olType = t;
+} catch (e) { /* localStorage may be blocked */ }
+updateOlMainIcon();   // reflect the remembered style on the main button
+
 // P2-S86 — which annotate tool is active while a frame is in annotate mode.
 // 'marker' = numbered circles (P2-S81); 'rect' = highlight rectangles.
 let annotateTool = 'marker';
@@ -3530,6 +3548,103 @@ function hideAlignMenu() {
   // keyboard interaction, which would otherwise leave a blue focus ring.
   const caret = document.getElementById('alignCaretBtn');
   if (caret) caret.blur();
+}
+
+/* ── OL marker-style split-button (P2-S111) — caret opens 1,2,3 / A,B,C /
+ *    a,b,c / ก,ข,ค. Applies to the OL at the caret, or inserts a new one. */
+function toggleOlTypeMenu(evt) {
+  const menu = document.getElementById('olTypeMenu');
+  if (!menu) return;
+  if (menu.classList.contains('show')) { hideOlTypeMenu(); return; }
+  const anchor = document.getElementById('olMainBtn');
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+  }
+  updateOlTypeMenuState();
+  menu.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+/** Reflect the remembered OL style on the main button (digits + tooltip). */
+function updateOlMainIcon() {
+  const btn = document.getElementById('olMainBtn');
+  if (!btn) return;
+  const map = {
+    'decimal':     ['1', '2', '3', '1,2,3'],
+    'upper-alpha': ['A', 'B', 'C', 'A,B,C'],
+    'lower-alpha': ['a', 'b', 'c', 'a,b,c'],
+    'thai-alpha':  ['ก', 'ข', 'ค', 'ก,ข,ค'],
+  };
+  const m = map[olType] || map.decimal;
+  btn.querySelectorAll('svg text').forEach((t, i) => { if (m[i] != null) t.textContent = m[i]; });
+  btn.setAttribute('data-tip', `รายการลำดับ (${m[3]})`);
+}
+
+/** Highlight the active item in the OL-type menu. */
+function updateOlTypeMenuState() {
+  const menu = document.getElementById('olTypeMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.qi-item').forEach((item) =>
+    item.classList.toggle('is-active', item.getAttribute('data-ol-type') === olType));
+}
+
+function hideOlTypeMenu() {
+  const menu = document.getElementById('olTypeMenu');
+  if (menu) menu.classList.remove('show');
+  const caret = document.getElementById('olCaretBtn');
+  if (caret) caret.blur();
+}
+
+/** Apply an OL marker style. Sets BOTH list-style-type (native themes) AND
+ *  --ol-marker (counter themes, whose ::before uses counter(ol-counter,
+ *  var(--ol-marker))). Skips list-style-type when the computed value is 'none'
+ *  (a counter theme) so the native marker doesn't appear as a duplicate. */
+function applyOlType(ol, type) {
+  if (!ol) return;
+  ol.style.setProperty('--ol-marker', type);
+  if (getWin().getComputedStyle(ol).listStyleType !== 'none') {
+    ol.style.listStyleType = type;
+  }
+}
+
+function setOlType(type) {
+  hideOlTypeMenu();
+  if (OL_TYPES.includes(type)) {
+    olType = type;                                       // remember the choice
+    try { localStorage.setItem('bookEditor_olType', type); } catch (e) { /* blocked */ }
+    updateOlMainIcon();
+    updateOlTypeMenuState();
+  }
+  focusEditor();
+  const sel = getWin().getSelection();
+  let ol = null;
+  if (sel && sel.rangeCount) {
+    let n = sel.anchorNode;
+    if (n && n.nodeType === 3) n = n.parentNode;
+    ol = n && n.closest ? n.closest('ol') : null;
+  }
+  if (!ol) {
+    execCmd('insertOrderedList');   // not in a list → make one (insert + hoist)
+    const s2 = getWin().getSelection();
+    let n2 = s2 && s2.rangeCount ? s2.anchorNode : null;
+    if (n2 && n2.nodeType === 3) n2 = n2.parentNode;
+    ol = n2 && n2.closest ? n2.closest('ol') : null;
+  }
+  applyOlType(ol, type);
+  setDirty(true);
+}
+
+/** Main OL button — insert a list using the REMEMBERED marker style (P2-S111). */
+function insertOrderedListWithType() {
+  execCmd('insertOrderedList');   // insert + hoist + setDirty
+  const sel = getWin().getSelection();
+  let n = sel && sel.rangeCount ? sel.anchorNode : null;
+  if (n && n.nodeType === 3) n = n.parentNode;
+  const ol = n && n.closest ? n.closest('ol') : null;
+  // decimal = the default → leave the OL clean (no inline style)
+  if (ol && olType !== 'decimal') applyOlType(ol, olType);
 }
 
 /* ── Marker split-button (P2-S81) — main button toggles annotate mode;
@@ -5196,6 +5311,8 @@ function bindToolbarMenuDismiss(doc) {
   doc.addEventListener('mousedown', () => {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) hideAlignMenu();
+    const otm = document.getElementById('olTypeMenu');
+    if (otm && otm.classList.contains('show')) hideOlTypeMenu();
     // P2-S86/87/88 — clicking the canvas closes the rect/line/text submenus.
     const rm = document.getElementById('rectMenu');
     if (rm && rm.classList.contains('show')) hideRectMenu();
@@ -5210,6 +5327,12 @@ function bindToolbarMenuDismiss(doc) {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) {
       hideAlignMenu();
+      e.stopPropagation();
+      return;
+    }
+    const otm = document.getElementById('olTypeMenu');
+    if (otm && otm.classList.contains('show')) {
+      hideOlTypeMenu();
       e.stopPropagation();
     }
   }, true);
@@ -6156,6 +6279,15 @@ document.addEventListener('click', (e) => {
       && !alignMenu.contains(e.target)
       && (!alignCaret || !alignCaret.contains(e.target))) {
     hideAlignMenu();
+  }
+
+  // Close OL marker-style submenu on outside click (P2-S111)
+  const olTypeMenu = document.getElementById('olTypeMenu');
+  const olCaret = document.getElementById('olCaretBtn');
+  if (olTypeMenu && olTypeMenu.classList.contains('show')
+      && !olTypeMenu.contains(e.target)
+      && (!olCaret || !olCaret.contains(e.target))) {
+    hideOlTypeMenu();
   }
 
   // Close table context menu on outside click (any click that's not
