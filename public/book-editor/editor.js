@@ -1819,7 +1819,8 @@ ${bodyContent}
     bindRectEvents(doc);     // P2-S86 — highlight-rectangle tool
     bindLineEvents(doc);     // P2-S87 — leader-line tool
     bindTextEvents(doc);     // P2-S88 — text / callout box tool
-    bindAnnotationDblclick(doc); // P2-S90 — dblclick any item → edit it
+    bindAnnotationClick(doc);    // P2-S109 — single click any item → select (move)
+    bindAnnotationDblclick(doc); // P2-S90 — double click any item → edit it
     bindCropDrag(doc);       // P2-S93 — drag-to-pan while cropping
     bindImageClicks(doc);
     bindAnchorClicks(doc);
@@ -4890,6 +4891,39 @@ function bindAnnotationDblclick(doc) {
         enterAnnotateOn(frame, 'marker'); selectMarker(marker);
       }
     }
+  }, true);
+}
+
+/** P2-S109 — SINGLE click selects an annotation item (+ enters its tool) so it
+ *  can be dragged to move right away. Double click still edits content
+ *  (textbox text / marker number dialog) because the dblclick handler above
+ *  takes the "already selected → edit" branch once this click has selected it.
+ *  No-op when already annotating this frame+tool (the per-tool mousedown
+ *  handlers own select/drag then) and while a textbox is being edited. */
+function bindAnnotationClick(doc) {
+  if (!doc.body || doc.body._annoClickBound) return;
+  doc.body._annoClickBound = true;
+
+  doc.body.addEventListener('click', (e) => {
+    const tb = e.target.closest && e.target.closest('.img-textbox');
+    if (tb && tb.classList.contains('editing')) return; // editing → place caret
+    const rect = e.target.closest && e.target.closest('.img-rect');
+    const lineG = e.target.closest && e.target.closest('.img-line');
+    const marker = e.target.closest && e.target.closest('.img-marker');
+    const item = tb || rect || lineG || marker;
+    if (!item) return; // empty/image → place/draw + image handlers own it
+    const frame = item.closest('.img-frame');
+    if (!frame) return;
+    const tool = tb ? 'text' : rect ? 'rect' : lineG ? 'line' : 'marker';
+    // already in this frame+tool → per-tool mousedown manages select/drag
+    if (annotatingFrame === frame && annotateTool === tool) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    enterAnnotateOn(frame, tool);
+    if (tb) selectTextbox(tb);
+    else if (rect) selectRect(rect);
+    else if (lineG) selectLine(lineG);
+    else selectMarker(marker);
   }, true);
 }
 
