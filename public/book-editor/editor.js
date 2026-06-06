@@ -5966,7 +5966,7 @@ function bindHoverInsert(doc) {
     if (isQuickMenuOpen) return;
 
     let block = e.target.closest(
-      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row'
+      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row, .img-placeholder, .callout, .warning'
     );
 
     // P2-S110 — treat a column block as ONE unit: hovering inside any column
