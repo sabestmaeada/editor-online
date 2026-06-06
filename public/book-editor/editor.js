@@ -5414,6 +5414,11 @@ function showImageModalForEdit(img) {
   document.getElementById('imgHeight').value = img.style.height || '';
   document.getElementById('imgObjectFit').value = img.style.objectFit || '';
 
+  // sync checkbox จาก figcaption ที่มีอยู่จริงในรูปนี้
+  const figForCaption = img.closest('figure');
+  document.getElementById('imgShowCaption').checked =
+    !!(figForCaption && figForCaption.querySelector('figcaption'));
+
   updateImagePreviewFromUrl(img.getAttribute('src') || currentSrc);
 
   document.getElementById('imageModal').classList.add('show');
@@ -5657,6 +5662,7 @@ function showImageModal() {
   document.getElementById('imgWidth').value = '';
   document.getElementById('imgHeight').value = '';
   document.getElementById('imgObjectFit').value = '';
+  document.getElementById('imgShowCaption').checked = false; // ค่าเริ่มต้น: ไม่แสดงคำอธิบายใต้ภาพ
 
   document.getElementById('imgPreview').classList.remove('show');
   resetImageFilePicker();
@@ -5729,8 +5735,17 @@ async function insertImage() {
 
     const figure = editingImage.closest('figure');
     if (figure) {
-      const caption = figure.querySelector('figcaption');
-      if (caption) caption.textContent = alt;
+      const showCaption = document.getElementById('imgShowCaption').checked;
+      let caption = figure.querySelector('figcaption');
+      if (showCaption) {
+        if (!caption) {
+          caption = figure.ownerDocument.createElement('figcaption');
+          figure.appendChild(caption); // ต่อท้าย figure (หลัง .img-frame) — ไม่กระทบ overlay
+        }
+        caption.textContent = alt;
+      } else if (caption) {
+        caption.remove(); // เอาติ๊กออก = ลบคำอธิบายใต้ภาพ
+      }
     }
 
     setDirty(true);
@@ -5771,10 +5786,12 @@ async function insertImage() {
     }
 
     const escAlt = escapeHtml(alt);
+    // ค่าเริ่มต้นไม่แสดง figcaption — สร้างเฉพาะเมื่อผู้ใช้ติ๊ก "แสดงคำอธิบายใต้ภาพ"
+    const showCaption = document.getElementById('imgShowCaption').checked;
+    const captionHtml = showCaption ? `\n  <figcaption>${escAlt}</figcaption>` : '';
     const html = `
 <figure class="book-img">
-  <img src="${escapeHtml(finalSrc)}" alt="${escAlt}" loading="lazy"${styleAttr}${dataOriginalSrcAttr}>
-  <figcaption>${escAlt}</figcaption>
+  <img src="${escapeHtml(finalSrc)}" alt="${escAlt}" loading="lazy"${styleAttr}${dataOriginalSrcAttr}>${captionHtml}
 </figure>
 <p><br></p>`;
     getDoc().execCommand('insertHTML', false, html);
