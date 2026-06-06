@@ -1802,6 +1802,23 @@ td.table-cell-targeted, th.table-cell-targeted {
   outline: 2px dashed #2D6CDF !important;
   outline-offset: 2px;
 }
+
+/* ── Column layout (P2-S110) — display:table (WeasyPrint-safe). The book CSS
+   carries the same rules; these guarantee columns render even on older books
+   whose style.css predates the feature. Editor-only: a faint dashed outline
+   so column boundaries are visible while editing. ── */
+.bd-grid { margin: 16px 0; }
+.bd-grid > .bd-row { margin: 0; }
+.bd-grid > .bd-row + .bd-row { margin-top: 12px; }
+.bd-row { display: table; table-layout: fixed; width: 100%; margin: 16px 0; border-spacing: 0; }
+.bd-col { display: table-cell; vertical-align: top; padding: 0 12px; box-sizing: border-box; outline: 1px dashed rgba(120,130,150,.4); outline-offset: -2px; }
+.bd-col:first-child { padding-left: 0; }
+.bd-col:last-child { padding-right: 0; }
+.bd-col > :first-child { margin-top: 0; }
+.bd-col-1 { width: 8.333%; } .bd-col-2 { width: 16.667%; } .bd-col-3 { width: 25%; }
+.bd-col-4 { width: 33.333%; } .bd-col-5 { width: 41.667%; } .bd-col-6 { width: 50%; }
+.bd-col-7 { width: 58.333%; } .bd-col-8 { width: 66.667%; } .bd-col-9 { width: 75%; }
+.bd-col-10 { width: 83.333%; } .bd-col-11 { width: 91.667%; } .bd-col-12 { width: 100%; }
 </style>
 </head>
 <body>
@@ -2167,6 +2184,68 @@ function insertTable(rows, cols) {
   // Insert via execCommand for free undo support (the existing Track
   // Changes snapshot stack also auto-captures because of this path).
   getDoc().execCommand('insertHTML', false, buildTableHtml(rows, cols));
+  setDirty(true);
+}
+
+// ── Column layout (P2-S110) ─────────────────────────────────
+function showColPicker(evt) {
+  const picker = document.getElementById('colPicker');
+  if (!picker) return;
+  const btn = (evt && evt.currentTarget) || document.getElementById('colBtn');
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    picker.style.top = `${rect.bottom + 6}px`;
+    picker.style.left = `${rect.left}px`;
+  }
+  picker.classList.add('show');
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+
+function hideColPicker() {
+  const picker = document.getElementById('colPicker');
+  if (picker) picker.classList.remove('show');
+}
+
+/** Insert one or more column rows. spec = '6-6' | '4-8' | '4-4-4' (single row),
+ *  or rows separated by ';' e.g. '6-6;6-6' = a 2×2 grid (4 cells, for a
+ *  4-choice answer block). Each number = N/12. Uses display:table columns
+ *  (WeasyPrint-safe). Rows must not sit inside a <p>, so we hoist them out,
+ *  then drop the caret in the first cell. */
+function insertColumns(spec) {
+  hideColPicker();
+  const rows = String(spec).split(';')
+    .map((r) => r.split('-').map((n) => parseInt(n, 10))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 12))
+    .filter((cols) => cols.length >= 2);
+  if (!rows.length) return;
+  focusEditor();
+  // wrap every insert in .bd-grid so the whole thing (a 2×2 = 2 rows) is one
+  // deletable unit (hover +/delete targets the .bd-grid).
+  const rowsHtml = rows.map((cols) => {
+    const inner = cols
+      .map((n) => `<div class="bd-col bd-col-${n}"><p><br></p></div>`)
+      .join('');
+    return `<div class="bd-row">${inner}</div>`;
+  }).join('');
+  getDoc().execCommand('insertHTML', false,
+    `<div class="bd-grid" data-fresh="1">${rowsHtml}</div><p><br></p>`);
+  hoistBlocksFromP(getDoc());   // the .bd-grid block can't live inside a <p>
+  const doc = getDoc();
+  const fresh = doc.querySelector('.bd-grid[data-fresh]');
+  if (fresh) {
+    fresh.removeAttribute('data-fresh');
+    const firstP = fresh.querySelector('.bd-col p');
+    if (firstP) {
+      try {
+        const sel = getWin().getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(firstP);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) { /* selection unavailable — ignore */ }
+    }
+  }
   setDirty(true);
 }
 
@@ -5694,8 +5773,16 @@ function bindHoverInsert(doc) {
     if (isQuickMenuOpen) return;
 
     let block = e.target.closest(
-      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table'
+      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row'
     );
+
+    // P2-S110 — treat a column block as ONE unit: hovering inside any column
+    // targets the whole .bd-grid (a 2×2 deletes in one go), like .table-wrap.
+    // Falls back to .bd-row for legacy content saved before the .bd-grid wrap.
+    if (block) {
+      const grid = block.closest('.bd-grid') || block.closest('.bd-row');
+      if (grid) block = grid;
+    }
 
     // Tables: closest() usually matches <table> before <.table-wrap>
     // because it's closer to the cursor. We prefer the wrap for the
@@ -6011,6 +6098,15 @@ document.addEventListener('click', (e) => {
       && !picker.contains(e.target)
       && (!tableBtn || !tableBtn.contains(e.target))) {
     hideTableGridPicker();
+  }
+
+  // Close column picker on outside click (P2-S110)
+  const colPicker = document.getElementById('colPicker');
+  const colBtn = document.getElementById('colBtn');
+  if (colPicker && colPicker.classList.contains('show')
+      && !colPicker.contains(e.target)
+      && (!colBtn || !colBtn.contains(e.target))) {
+    hideColPicker();
   }
 
   // Close image-marker submenu on outside click (P2-S81). The caret

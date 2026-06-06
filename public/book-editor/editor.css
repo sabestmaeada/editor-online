@@ -1189,6 +1189,45 @@ body {
 }
 .table-grid-picker.show { display: block; }
 
+/* ── Column layout picker (P2-S110) ── */
+.col-picker {
+  position: fixed;
+  display: none;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  padding: 10px 12px;
+  z-index: 1000;
+  width: 232px;
+}
+.col-picker.show { display: block; }
+.col-picker-title {
+  font-family: var(--hd);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--shell-text-dim);
+  margin: 2px 2px 6px;
+}
+.col-picker-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.col-picker-row:last-child { margin-bottom: 0; }
+.col-preset {
+  display: flex;
+  gap: 2px;
+  width: 62px;
+  height: 30px;
+  padding: 3px;
+  background: var(--shell-bg);
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.col-preset:hover { border-color: var(--shell-accent); }
+.col-preset span { background: var(--shell-accent); opacity: .5; border-radius: 2px; }
+.col-preset:hover span { opacity: .85; }
+/* 2×2 grid thumbnail (P2-S110) */
+.col-preset-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
 .table-grid-picker-grid {
   display: grid;
   /* columns/rows ตั้งใน JS ตอน buildTableGridCells (ป้องกัน hard-code) */

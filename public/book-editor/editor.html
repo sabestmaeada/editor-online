@@ -166,6 +166,9 @@
       <button class="tb-btn" data-tip="แทรกตาราง" id="tableBtn" onclick="showTableGridPicker(event)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
       </button>
+      <button class="tb-btn" data-tip="แทรกคอลัมน์" id="colBtn" onclick="showColPicker(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/></svg>
+      </button>
       <button class="tb-btn" data-tip="แทรกโค้ด HTML (ตรวจแท็กเปิด/ปิด)" onclick="showHtmlModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="10 12 8 14 10 16"/><polyline points="14 12 16 14 14 16"/></svg>
       </button>
@@ -650,6 +653,29 @@
   <div class="table-grid-picker-inner">
     <div class="table-grid-picker-grid" id="tableGridCells" role="grid" aria-label="กริดเลือกขนาดตาราง"></div>
     <div class="table-grid-picker-label" id="tableGridLabel">ลากเมาส์เพื่อเลือกขนาด</div>
+  </div>
+</div>
+
+<!-- Column layout picker (P2-S110) -->
+<div id="colPicker" class="col-picker" role="dialog" aria-label="เลือกรูปแบบคอลัมน์">
+  <div class="col-picker-title">2 คอลัมน์</div>
+  <div class="col-picker-row">
+    <button class="col-preset" onclick="insertColumns('6-6')" title="½ | ½"><span style="flex:6"></span><span style="flex:6"></span></button>
+    <button class="col-preset" onclick="insertColumns('4-8')" title="⅓ | ⅔"><span style="flex:4"></span><span style="flex:8"></span></button>
+    <button class="col-preset" onclick="insertColumns('8-4')" title="⅔ | ⅓"><span style="flex:8"></span><span style="flex:4"></span></button>
+    <button class="col-preset" onclick="insertColumns('9-3')" title="¾ | ¼"><span style="flex:9"></span><span style="flex:3"></span></button>
+    <button class="col-preset" onclick="insertColumns('3-9')" title="¼ | ¾"><span style="flex:3"></span><span style="flex:9"></span></button>
+  </div>
+  <div class="col-picker-title">3 คอลัมน์</div>
+  <div class="col-picker-row">
+    <button class="col-preset" onclick="insertColumns('4-4-4')" title="⅓ | ⅓ | ⅓"><span style="flex:4"></span><span style="flex:4"></span><span style="flex:4"></span></button>
+    <button class="col-preset" onclick="insertColumns('3-6-3')" title="¼ | ½ | ¼"><span style="flex:3"></span><span style="flex:6"></span><span style="flex:3"></span></button>
+    <button class="col-preset" onclick="insertColumns('6-3-3')" title="½ | ¼ | ¼"><span style="flex:6"></span><span style="flex:3"></span><span style="flex:3"></span></button>
+    <button class="col-preset" onclick="insertColumns('3-3-6')" title="¼ | ¼ | ½"><span style="flex:3"></span><span style="flex:3"></span><span style="flex:6"></span></button>
+  </div>
+  <div class="col-picker-title">ตาราง (เช่น ตัวเลือก 4 คำตอบ)</div>
+  <div class="col-picker-row">
+    <button class="col-preset col-preset-grid" onclick="insertColumns('6-6;6-6')" title="2 แถว × 2 คอลัมน์ (4 ช่อง)"><span></span><span></span><span></span><span></span></button>
   </div>
 </div>
 
