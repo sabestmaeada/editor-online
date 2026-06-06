@@ -5209,6 +5209,9 @@ function exitCrop(apply) {
   if (bar) bar.classList.remove('show');
   const btn = document.getElementById('cropBtn');
   if (btn) btn.classList.remove('active');
+  // P2-S113 — recompute data-crop จาก style สุดท้าย (apply = ค่าใหม่, cancel = คืนค่าเดิม)
+  // เป็น pure function จึงตรงเสมอ ไม่ต้อง backup/restore แยก
+  updateCropData(img);
   // P2-S95 — crop changed the image aspect; resync the line overlay's viewBox
   // so existing lines' dot caps/handles stay circular and lines un-skewed.
   syncImageLines(img.closest('.img-frame'));
@@ -5240,6 +5243,7 @@ function applyCropAspect(aspect) {
     img.style.objectFit = 'cover';
     if (!img.style.objectPosition) img.style.objectPosition = '50% 50%';
   }
+  updateCropData(img); // sync data-crop (P2-S113) — 'original' จะลบทิ้งให้เอง
   updateCropBarState();
   setDirty(true);
 }
@@ -5249,6 +5253,7 @@ function changeCropHeight(delta) {
   const img = croppingImg;
   const cur = parseFloat(img.style.height) || img.getBoundingClientRect().height || 200;
   img.style.height = Math.round(Math.max(40, cur + delta)) + 'px';
+  updateCropData(img); // sync data-crop (P2-S113) — กล่องสูงเปลี่ยน หน้าต่างที่เห็นเปลี่ยน
   setDirty(true);
 }
 
@@ -5269,6 +5274,48 @@ function cropOverflow(img) {
   if (!nw || !nh) return { x: 0, y: 0 };
   const scale = Math.max(r.width / nw, r.height / nh);
   return { x: Math.max(0, nw * scale - r.width), y: Math.max(0, nh * scale - r.height) };
+}
+
+/* ── data-crop — เขียนหน้าต่างที่มองเห็นเป็น % ของ "ไฟล์เต็ม" (P2-S113) ──────
+ * เครื่องมือ Crop แสดงภาพแค่บางส่วน (object-fit:cover + box px + object-position)
+ * แต่สกิล image-annotator วัด target จากไฟล์เต็ม → ต้องบอกสกิลว่ากรอบที่เห็น
+ * คือช่วงไหนของไฟล์ เพื่อ remap พิกัดให้ตรง
+ *   data-crop="cropX,cropY,cropW,cropH"  (ทุกค่าเป็น % ของไฟล์เต็ม)
+ * เป็น pure function ของ inline style + ขนาดไฟล์จริง → คำนวณซ้ำได้เสมอ
+ * คำนวณจาก style px (ไม่ใช่ getBoundingClientRect) เพื่อให้ค่าตรงกับที่สกิล
+ * อ่านได้จาก HTML ที่เซฟ (ดู references/crop-support.md ในสกิล) */
+function updateCropData(img) {
+  if (!img) return;
+  const nw = img.naturalWidth;
+  const nh = img.naturalHeight;
+  const isPx = (v) => typeof v === 'string' && v.trim().endsWith('px');
+  const boxW = parseFloat(img.style.width);
+  const boxH = parseFloat(img.style.height);
+  // crop จริงต่อเมื่อ: object-fit:cover + กล่อง px ครบ + รู้ขนาดไฟล์จริง
+  if (
+    img.style.objectFit !== 'cover' ||
+    !nw || !nh ||
+    !isPx(img.style.width) || !isPx(img.style.height) ||
+    !Number.isFinite(boxW) || !Number.isFinite(boxH) || boxW <= 0 || boxH <= 0
+  ) {
+    img.removeAttribute('data-crop');
+    return;
+  }
+  const scale = Math.max(boxW / nw, boxH / nh);
+  const ovX = Math.max(0, nw * scale - boxW);
+  const ovY = Math.max(0, nh * scale - boxH);
+  const op = (img.style.objectPosition || '50% 50%').trim().split(/\s+/);
+  let px = parseFloat(op[0]); if (!Number.isFinite(px)) px = 50;
+  let py = parseFloat(op[1]); if (!Number.isFinite(py)) py = 50;
+  const cropX = ((px / 100) * ovX / scale) / nw * 100;
+  const cropY = ((py / 100) * ovY / scale) / nh * 100;
+  const cropW = (boxW / scale) / nw * 100;
+  const cropH = (boxH / scale) / nh * 100;
+  const r2c = (n) => Math.round(n * 100) / 100; // 2 ตำแหน่งทศนิยม
+  img.setAttribute(
+    'data-crop',
+    `${r2c(cropX)},${r2c(cropY)},${r2c(cropW)},${r2c(cropH)}`,
+  );
 }
 
 function bindCropDrag(doc) {
@@ -5296,7 +5343,11 @@ function bindCropDrag(doc) {
     croppingImg.style.objectPosition = nx.toFixed(1) + '% ' + ny.toFixed(1) + '%';
   }, true);
   doc.body.addEventListener('mouseup', () => {
-    if (dragging) { dragging = false; setDirty(true); }
+    if (dragging) {
+      dragging = false;
+      updateCropData(croppingImg); // sync data-crop (P2-S113) หลัง pan เสร็จ
+      setDirty(true);
+    }
   }, true);
 }
 
@@ -5732,6 +5783,8 @@ async function insertImage() {
     // ความสูง: ไม่แตะ style.height ที่นี่ (P2-S94) — เครื่องมือ Crop เป็นเจ้าของค่านี้
     // การเขียนทับด้วยค่าว่างจะลบ crop ทิ้งและทำให้ overlay (ตัวชี้/เส้น/กรอบ/กล่อง) ขยับ
     editingImage.style.objectFit = objectFit || '';
+    // P2-S113 — แก้ object-fit/ความกว้างจาก dialog อาจเปลี่ยนสถานะ crop → sync data-crop
+    updateCropData(editingImage);
 
     const figure = editingImage.closest('figure');
     if (figure) {
