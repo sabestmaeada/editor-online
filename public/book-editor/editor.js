@@ -2219,7 +2219,7 @@ function hideColPicker() {
  *  4-choice answer block). Each number = N/12. Uses display:table columns
  *  (WeasyPrint-safe). Rows must not sit inside a <p>, so we hoist them out,
  *  then drop the caret in the first cell. */
-function insertColumns(spec) {
+function insertColumns(spec, extraClass) {
   hideColPicker();
   const rows = String(spec).split(';')
     .map((r) => r.split('-').map((n) => parseInt(n, 10))
@@ -2227,6 +2227,11 @@ function insertColumns(spec) {
     .filter((cols) => cols.length >= 2);
   if (!rows.length) return;
   focusEditor();
+  // คลาสเสริมบน .bd-grid (เช่น 'quiz' สำหรับตัวเลือก 4 คำตอบ) — sanitize กันอักขระแปลก
+  const extra = (typeof extraClass === 'string'
+    ? extraClass.trim().replace(/[^a-z0-9 _-]/gi, '')
+    : '');
+  const gridCls = extra ? `bd-grid ${extra}` : 'bd-grid';
   // wrap every insert in .bd-grid so the whole thing (a 2×2 = 2 rows) is one
   // deletable unit (hover +/delete targets the .bd-grid).
   const rowsHtml = rows.map((cols) => {
@@ -2236,7 +2241,7 @@ function insertColumns(spec) {
     return `<div class="bd-row">${inner}</div>`;
   }).join('');
   getDoc().execCommand('insertHTML', false,
-    `<div class="bd-grid" data-fresh="1">${rowsHtml}</div><p><br></p>`);
+    `<div class="${gridCls}" data-fresh="1">${rowsHtml}</div><p><br></p>`);
   hoistBlocksFromP(getDoc());   // the .bd-grid block can't live inside a <p>
   const doc = getDoc();
   const fresh = doc.querySelector('.bd-grid[data-fresh]');

@@ -823,6 +823,22 @@ tr:hover td {
   .bd-row, .bd-col { display: block; width: 100%; padding: 0; }
 }
 
+/* ── Quiz answers (P2-S114) — .bd-grid.quiz = ตัวเลือก 4 คำตอบ (2×2) ──
+   ทำให้ ol/ul ที่ใช้เป็นคำตอบดูเป็น "การ์ดตัวเลือก" ต่างจากลิสต์ทั่วไป
+   ปลอดภัยกับ WeasyPrint (ไม่ใช้ flex/grid/transform) · ปรับแก้ได้ตามต้องการ */
+.bd-grid.quiz .bd-col { padding-top: 6px; padding-bottom: 6px; }
+.bd-grid.quiz ol,
+.bd-grid.quiz ul { margin: 0; padding-left: 28px; }
+.bd-grid.quiz li {
+  margin: 0 0 10px 0;
+  padding: 10px 14px;
+  background: var(--accent-lt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  break-inside: avoid;
+}
+.bd-grid.quiz li::marker { color: var(--accent-dk); font-weight: 700; }
+
 /* OL marker ก,ข,ค,ง (P2-S111) — Thai-consonant numbering (no CSS built-in) */
 @counter-style thai-alpha {
   system: alphabetic;
