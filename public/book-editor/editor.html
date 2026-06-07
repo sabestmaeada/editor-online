@@ -222,13 +222,23 @@
 
     <div class="editor-area" id="editorArea">
       <!-- Quick Insert Floating Menu -->
-      <div id="quickInsertBtn" class="quick-insert-btn" onclick="toggleQuickMenu()" role="button" tabindex="0" aria-label="เมนูแทรกด่วน">
+      <div id="quickInsertBtn" class="quick-insert-btn" onclick="toggleQuickMenu('before')" role="button" tabindex="0" aria-label="แทรกบล็อกเหนือบล็อกนี้" title="แทรกบล็อกเหนือบล็อกนี้">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+
+      <!-- แทรกบล็อกใต้บล็อกปัจจุบัน (P2-S120) -->
+      <div id="quickInsertBtnBelow" class="quick-insert-btn" onclick="toggleQuickMenu('after')" role="button" tabindex="0" aria-label="แทรกบล็อกใต้บล็อกนี้" title="แทรกบล็อกใต้บล็อกนี้">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </div>
 
       <!-- ลบบล็อกปัจจุบัน (P2-S108) -->
       <div id="quickDeleteBtn" class="quick-delete-btn" onclick="deleteHoveredBlock()" role="button" tabindex="0" aria-label="ลบบล็อกนี้" title="ลบบล็อกนี้">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+      </div>
+
+      <!-- คัดลอกบล็อกปัจจุบัน (P2-S119) -->
+      <div id="quickCopyBtn" class="quick-copy-btn" onclick="copyHoveredBlock()" role="button" tabindex="0" aria-label="คัดลอกบล็อกนี้" title="คัดลอกบล็อกนี้ (วางด้วย Ctrl+V)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       </div>
 
       <div id="quickInsertMenu" class="quick-insert-menu" role="menu">

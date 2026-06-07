@@ -1088,6 +1088,7 @@ let currentBase64Data = null;
 // ===== QUICK INSERT STATE =====
 let hoveredBlock = null;
 let isQuickMenuOpen = false;
+let quickInsertDir = 'before';   // P2-S120 — ทิศแทรกของเมนู + ('before'=เหนือ / 'after'=ใต้)
 let quickMenuHideTimeout = null;
 
 // ==============================================
@@ -1415,6 +1416,7 @@ function doCloseProject() {
   document.getElementById('statusInfo').textContent = 'พร้อมใช้งาน';
   document.getElementById('quickInsertBtn').classList.remove('show', 'active');
   document.getElementById('quickDeleteBtn').classList.remove('show');
+  document.getElementById('quickCopyBtn').classList.remove('show');
   document.getElementById('quickInsertMenu').classList.remove('show');
   isQuickMenuOpen = false;
 
@@ -1852,6 +1854,7 @@ ${bodyContent}
     bindToolbarMenuDismiss(doc);  // P2-S83 — close align menu on iframe click/Esc
     buildSidebar(doc);
     bindHoverInsert(doc);
+    bindPasteHoist(doc);     // P2-S119 — unwrap pasted block from <p>
     bindTableContextMenu(doc);
     bindTableResize(doc);
     bindTableKeyboard(doc);
@@ -6005,6 +6008,8 @@ function bindHoverInsert(doc) {
   const btn = document.getElementById('quickInsertBtn');
   const menu = document.getElementById('quickInsertMenu');
   const delBtn = document.getElementById('quickDeleteBtn');
+  const copyBtn = document.getElementById('quickCopyBtn');
+  const belowBtn = document.getElementById('quickInsertBtnBelow');
 
   doc.body.addEventListener('mousemove', (e) => {
     if (isQuickMenuOpen) return;
@@ -6040,6 +6045,11 @@ function bindHoverInsert(doc) {
       btn.style.top = (rect.top + 2) + 'px';
       delBtn.classList.add('show');                 // P2-S108 — delete button
       delBtn.style.top = (rect.top + 2) + 'px';
+      copyBtn.classList.add('show');                // P2-S119 — copy button
+      copyBtn.style.top = (rect.top + 2) + 'px';
+      belowBtn.classList.add('show');               // P2-S120 — "+" ใต้บล็อก
+      // ขอบล่าง (inside) แต่ไม่ต่ำกว่า +32 จากขอบบน เพื่อไม่ทับชุดปุ่มบนในบล็อกเตี้ย
+      belowBtn.style.top = Math.max(rect.top + 32, rect.bottom - 28) + 'px';
     } else {
       scheduleHide();
     }
@@ -6049,6 +6059,8 @@ function bindHoverInsert(doc) {
     if (!isQuickMenuOpen) {
       btn.classList.remove('show');
       delBtn.classList.remove('show');
+      copyBtn.classList.remove('show');
+      belowBtn.classList.remove('show');
       menu.classList.remove('show');
     }
   });
@@ -6060,6 +6072,8 @@ function bindHoverInsert(doc) {
   btn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
   menu.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
   delBtn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+  copyBtn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
+  belowBtn.addEventListener('mouseenter', () => clearTimeout(quickMenuHideTimeout));
 
   // Esc inside the iframe → close quick menu. Iframe keydowns don't
   // bubble to the parent document, so a parent-level Esc handler can't
@@ -6080,6 +6094,8 @@ function bindHoverInsert(doc) {
       if (!isQuickMenuOpen) {
         btn.classList.remove('show');
         delBtn.classList.remove('show');
+        copyBtn.classList.remove('show');
+        belowBtn.classList.remove('show');
         hoveredBlock = null;
       }
     }, 300);
@@ -6107,37 +6123,72 @@ function deleteHoveredBlock() {
   hoveredBlock = null;
   const b = document.getElementById('quickInsertBtn');
   const d = document.getElementById('quickDeleteBtn');
+  const c = document.getElementById('quickCopyBtn');
   if (b) b.classList.remove('show');
   if (d) d.classList.remove('show');
+  if (c) c.classList.remove('show');
   setDirty(true);
   showToast('ลบบล็อกแล้ว · กด Ctrl+Z เพื่อเรียกคืน');
 }
 
-function toggleQuickMenu() {
+/** Copy the hovered block to the system clipboard (P2-S119). Selects the whole
+ *  block element then runs the native copy, so the clipboard gets its full
+ *  outerHTML. Pasting (Ctrl+V) re-inserts it; bindPasteHoist() then unwraps it
+ *  from any <p> the browser nests it in (same hoist as list inserts). */
+function copyHoveredBlock() {
+  const block = hoveredBlock;
+  if (!block || !block.parentNode) { showToast('เลื่อนเมาส์ไปที่บล็อกก่อนครับ'); return; }
+  const doc = getDoc();
+  const win = getWin();
+  let ok = false;
+  try {
+    const sel = win.getSelection();
+    const range = doc.createRange();
+    range.selectNode(block);            // ทั้งบล็อก (รวม element นอกสุด)
+    sel.removeAllRanges();
+    sel.addRange(range);
+    ok = doc.execCommand('copy');
+    sel.removeAllRanges();              // ยกเลิกไฮไลต์
+  } catch (e) { ok = false; }
+  showToast(ok ? 'คัดลอกบล็อกแล้ว · กด Ctrl+V เพื่อวาง' : 'คัดลอกไม่สำเร็จ ลองใหม่อีกครั้ง');
+}
+
+/** หลัง paste ทุกครั้ง → unwrap block ที่ browser เอา <p> ไปครอบ (P2-S119) —
+ *  ใช้ hoist ตัวเดียวกับตอนแทรกลิสต์ ทำให้บล็อกที่ก็อปมา (figure, .bd-grid quiz,
+ *  ตาราง ฯลฯ) ลงมาสะอาด · no-op สำหรับการวางข้อความ/inline ปกติ */
+function bindPasteHoist(doc) {
+  if (!doc.body || doc.body._pasteHoistBound) return;
+  doc.body._pasteHoistBound = true;
+  doc.addEventListener('paste', () => {
+    setTimeout(() => { hoistBlocksFromP(getDoc()); setDirty(true); }, 0);
+  });
+}
+
+function toggleQuickMenu(dir) {
   const menu = document.getElementById('quickInsertMenu');
-  const btn = document.getElementById('quickInsertBtn');
-  
-  if (isQuickMenuOpen) {
-    menu.classList.remove('show');
-    btn.classList.remove('active');
-    isQuickMenuOpen = false;
-  } else {
-    if (hoveredBlock) {
-      const sel = getWin().getSelection();
-      const range = getDoc().createRange();
-      range.setStart(hoveredBlock, 0);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      focusEditor();
-      savedSelection = range;
-    }
-    
-    btn.classList.add('active');
-    menu.style.top = btn.style.top;
-    menu.classList.add('show');
-    isQuickMenuOpen = true;
+  if (isQuickMenuOpen) { closeQuickMenu(); return; }   // คลิกซ้ำ/อีกปุ่ม → ปิด
+
+  quickInsertDir = dir === 'after' ? 'after' : 'before';   // P2-S120
+  if (hoveredBlock) {
+    const sel = getWin().getSelection();
+    const range = getDoc().createRange();
+    range.setStart(hoveredBlock, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    focusEditor();
+    savedSelection = range;
   }
+
+  // เปิดเมนูที่ปุ่มที่กด (บน=เหนือ / ล่าง=ใต้) — ใช้เมนูตัวเดียวกัน
+  const trigger = document.getElementById(
+    quickInsertDir === 'after' ? 'quickInsertBtnBelow' : 'quickInsertBtn');
+  if (trigger) {
+    trigger.classList.add('active');
+    menu.style.top = trigger.style.top;
+  }
+  menu.classList.add('show');
+  isQuickMenuOpen = true;
 }
 
 // HTML payloads for quick-insert actions. Kept here (rather than reusing
@@ -6163,64 +6214,36 @@ const QUICK_INSERT_CONTAINER_SELECTOR =
   '.note, .code-block, blockquote, figure, ul, ol, .table-wrap, table';
 
 function quickAction(action) {
-  // Container escape path.
-  //
-  // If the hovered block lives inside a container (or IS a container),
-  // we bypass execCommand entirely and use DOM insertBefore against the
-  // outermost container. execCommand's insertHTML, even with the caret
-  // anchored "before" the container via setStartBefore, sometimes ends
-  // up nesting content inside the container — Chrome normalizes the
-  // caret to the nearest valid contenteditable position, which often
-  // means "inside the container at offset 0". DOM insertBefore has no
-  // such ambiguity: it places the new node as a sibling of the anchor,
-  // before it, full stop.
-  let container = null;
-  if (hoveredBlock) {
-    container =
-      hoveredBlock.closest(QUICK_INSERT_CONTAINER_SELECTOR)
-      || (hoveredBlock.matches && hoveredBlock.matches(QUICK_INSERT_CONTAINER_SELECTOR)
-            ? hoveredBlock
-            : null);
-    // Tables: hover usually hits the inner table (closest finds it
-    // first), but we want to anchor on the outer .table-wrap so the
-    // wrap's overflow/break-inside layout stays intact.
-    if (container && container.tagName === 'TABLE') {
-      container = container.closest('.table-wrap') || container;
-    }
+  // P2-S120 — แทรกบล็อกใหม่ "เหนือ" (before) หรือ "ใต้" (after) บล็อกที่ hover
+  // ตาม quickInsertDir (ตั้งตอนกดปุ่ม + บน/ล่าง) · ใช้ DOM insert กับ anchor
+  // นอกสุด: ถ้า hover อยู่ในคอนเทนเนอร์ (note/figure/ol/ตาราง) ให้แทรก "นอก"
+  // คอนเทนเนอร์ — DOM insertBefore/After วางเป็น sibling ตรงทิศที่ต้องการแน่นอน
+  // (execCommand ทำ "ใต้" ไม่ได้ และมักไป nest ในคอนเทนเนอร์)
+  if (action === 'image') { showImageModal(); closeQuickMenu(); return; }
+
+  const html = QUICK_INSERT_HTML[action];
+  let anchor = hoveredBlock || null;
+  if (anchor) {
+    const container =
+      anchor.closest(QUICK_INSERT_CONTAINER_SELECTOR)
+      || (anchor.matches && anchor.matches(QUICK_INSERT_CONTAINER_SELECTOR) ? anchor : null);
+    if (container) anchor = container;
+    if (anchor.tagName === 'TABLE') anchor = anchor.closest('.table-wrap') || anchor;
   }
 
-  if (container && action !== 'image' && QUICK_INSERT_HTML[action]) {
-    insertHtmlBeforeNode(container, QUICK_INSERT_HTML[action]);
-  } else {
-    // No container → original beta-0.50 behavior. setStart(hoveredBlock, 0)
-    // was already set in toggleQuickMenu; here we just let execCommand
-    // take it from there. For plain <p>/<h*> at top level the browser
-    // auto-splits and the new block ends up BEFORE the hovered block,
-    // which matches user expectations.
-    if (action === 'image') showImageModal();
-    else if (action === 'p') {
-      focusEditor();
-      getDoc().execCommand('insertHTML', false, '<p><br></p>'); // แทรกย่อหน้าใหม่
-    }
-    else if (action === 'h2') {
-      focusEditor();
-      getDoc().execCommand('insertHTML', false, '<h2><br></h2>');
-    }
-    else if (action === 'h3') {
-      focusEditor();
-      getDoc().execCommand('insertHTML', false, '<h3><br></h3>');
-    }
-    else if (action === 'h4') {
-      focusEditor();
-      getDoc().execCommand('insertHTML', false, '<h4><br></h4>');
-    }
-    else if (action === 'note') insertNoteBox();
-    else if (action === 'code') insertCodeBlock();
+  if (anchor && anchor.parentNode && html) {
+    pushUndoSnapshot();   // Ctrl+Z คืนได้
+    if (quickInsertDir === 'after') insertHtmlAfterNode(anchor, html);
+    else insertHtmlBeforeNode(anchor, html);
+  } else if (html) {
+    // ไม่มีบล็อกที่ hover (กรณีหายาก) → แทรกที่เคอร์เซอร์เหมือนเดิม
+    focusEditor();
+    getDoc().execCommand('insertHTML', false, html);
+    hoistBlocksFromP(getDoc());
   }
 
-  document.getElementById('quickInsertMenu').classList.remove('show');
-  document.getElementById('quickInsertBtn').classList.remove('active');
-  isQuickMenuOpen = false;
+  closeQuickMenu();
+  setDirty(true);
 }
 
 // DOM-based insert: builds nodes from `html` and places them as siblings
@@ -6246,16 +6269,52 @@ function insertHtmlBeforeNode(anchor, html) {
     anchor.parentNode.insertBefore(tmp.firstChild, anchor);
   }
 
-  // Place caret at the start of the first inserted element so typing
-  // appends content into it immediately.
-  const sel = getWin().getSelection();
-  const range = doc.createRange();
-  range.selectNodeContents(firstNew);
-  range.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(range);
-  focusEditor();
+  placeCaretInNewBlock(firstNew);   // P2-S121 — โฟกัส + เลื่อนเข้าจอบล็อกใหม่
   setDirty(true);
+  return firstNew;
+}
+
+// DOM-based insert AFTER a node (P2-S120) — mirror of insertHtmlBeforeNode.
+// Places the new block(s) as the next sibling(s) of `anchor`; caret lands in
+// the first new element. Used by the quick-insert "+ ใต้" path.
+function insertHtmlAfterNode(anchor, html) {
+  if (!anchor || !anchor.parentNode) return;
+  const doc = getDoc();
+  const tmp = doc.createElement('div');
+  tmp.innerHTML = html;
+  const firstNew = tmp.firstElementChild;
+  if (!firstNew) return;
+  const ref = anchor.nextSibling;   // จับ sibling ถัดไปไว้ก่อน → แทรก "หลัง" anchor
+  while (tmp.firstChild) {
+    anchor.parentNode.insertBefore(tmp.firstChild, ref); // ref=null → appendChild (ท้ายสุด)
+  }
+  placeCaretInNewBlock(firstNew);   // P2-S121
+  setDirty(true);
+  return firstNew;
+}
+
+/** วางเคอร์เซอร์ในบล็อกที่เพิ่งแทรก + โฟกัส + เลื่อนเข้าจอ (P2-S121).
+ *  - เลือก "จุดพิมพ์ได้" ตัวแรกในคอนเทนเนอร์ (note/code → <p>/.line) ไม่ใช่ตัว wrapper
+ *  - ย้ำ focus/selection ใน setTimeout(0) เผื่อ default focus ของ click มาทับ */
+function placeCaretInNewBlock(el) {
+  if (!el) return;
+  const doc = getDoc();
+  const win = getWin();
+  const target = el.querySelector('p, li, h1, h2, h3, h4, .line, code') || el;
+  const apply = () => {
+    try {
+      const range = doc.createRange();
+      range.selectNodeContents(target);
+      range.collapse(true);
+      const sel = win.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) { /* selection unavailable — ignore */ }
+    win.focus();
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  };
+  apply();              // ทันที
+  setTimeout(apply, 0); // ย้ำหลัง click จัดการ focus เริ่มต้นเสร็จ
 }
 
 // Helper — close the quick insert menu + reset its trigger state.
@@ -6265,6 +6324,8 @@ function insertHtmlBeforeNode(anchor, html) {
 function closeQuickMenu() {
   document.getElementById('quickInsertMenu').classList.remove('show');
   document.getElementById('quickInsertBtn').classList.remove('active');
+  const below = document.getElementById('quickInsertBtnBelow');
+  if (below) below.classList.remove('active');   // P2-S120
   isQuickMenuOpen = false;
 }
 
@@ -6320,11 +6381,13 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('click', (e) => {
   const btn = document.getElementById('quickInsertBtn');
+  const belowBtn = document.getElementById('quickInsertBtnBelow');   // P2-S120
   const menu = document.getElementById('quickInsertMenu');
-  if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
-    menu.classList.remove('show');
-    btn.classList.remove('active');
-    isQuickMenuOpen = false;
+  if (btn && menu
+      && !btn.contains(e.target)
+      && !(belowBtn && belowBtn.contains(e.target))    // อย่านับปุ่ม + ล่างเป็น "นอกเมนู"
+      && !menu.contains(e.target)) {
+    closeQuickMenu();
   }
 
   // Close table grid picker on outside click. The picker's own trigger
