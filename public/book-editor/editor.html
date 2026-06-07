@@ -51,6 +51,9 @@
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span>โครงสร้างหนังสือ</span>
+      <button class="sidebar-collapse-btn" onclick="toggleSidebar(true)" title="ซ่อนสารบัญ" aria-label="ซ่อนสารบัญ">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
     </div>
     <div class="sidebar-list" id="sidebarList">
       <div style="padding:20px;text-align:center;color:var(--shell-text-dim);font-size:12px;">
@@ -221,6 +224,11 @@
     </div>
 
     <div class="editor-area" id="editorArea">
+      <!-- ปุ่มเปิดสารบัญ ลอยที่ขอบซ้าย แสดงเฉพาะตอนยุบ (P2-S122) -->
+      <button id="sidebarExpandBtn" class="sidebar-expand" onclick="toggleSidebar(false)" title="แสดงสารบัญ" aria-label="แสดงสารบัญ">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
       <!-- Quick Insert Floating Menu -->
       <div id="quickInsertBtn" class="quick-insert-btn" onclick="toggleQuickMenu('before')" role="button" tabindex="0" aria-label="แทรกบล็อกเหนือบล็อกนี้" title="แทรกบล็อกเหนือบล็อกนี้">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

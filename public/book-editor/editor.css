@@ -247,6 +247,35 @@ body {
 
 .sidebar.collapsed { width: 0; opacity: 0; pointer-events: none; }
 
+/* ปุ่มยุบ « ที่ขอบ sidebar (VS Code-style) (P2-S122) */
+.sidebar-collapse-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; margin: 0;
+  background: transparent; border: none;
+  color: var(--shell-text-dim); border-radius: 5px;
+  cursor: pointer; flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover { background: var(--shell-accent-lt); color: var(--shell-accent); }
+.sidebar-collapse-btn svg { width: 16px; height: 16px; }
+
+/* ปุ่มเปิด » ลอยที่ขอบซ้ายของพื้นที่ทำงาน — แสดงเฉพาะตอน sidebar ยุบ */
+.sidebar-expand {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 46px;
+  display: none; align-items: center; justify-content: center;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border); border-left: none;
+  border-radius: 0 8px 8px 0;
+  color: var(--shell-text-dim); cursor: pointer; z-index: 60;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+}
+.sidebar-expand.show { display: flex; }
+.sidebar-expand:hover { background: var(--shell-accent-lt); color: var(--shell-accent); border-color: var(--shell-accent); }
+.sidebar-expand svg { width: 16px; height: 16px; }
+
+/* ปุ่ม "สารบัญ" บนแถบบน ติด active เมื่อยุบอยู่ */
+#sidebarToggle.active { background: var(--shell-accent-lt); color: var(--shell-accent); }
+
 .sidebar-header {
   padding: 14px 16px;
   border-bottom: 1px solid var(--shell-border);

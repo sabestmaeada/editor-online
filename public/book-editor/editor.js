@@ -1930,8 +1930,18 @@ function scrollToEl(el) {
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('collapsed');
+/** สลับ sidebar (P2-S122). force=true ยุบ, false เปิด, undefined สลับ.
+ *  ซิงก์ปุ่มเปิด « » ที่ขอบ + ไฮไลต์ปุ่ม "สารบัญ" บนแถบบนเมื่อยุบ. */
+function toggleSidebar(force) {
+  const sb = document.getElementById('sidebar');
+  if (!sb) return;
+  const collapsed = typeof force === 'boolean' ? force : !sb.classList.contains('collapsed');
+  sb.classList.toggle('collapsed', collapsed);
+  const exp = document.getElementById('sidebarExpandBtn');
+  if (exp) exp.classList.toggle('show', collapsed);     // ปุ่ม » โผล่เฉพาะตอนยุบ
+  const tb = document.getElementById('sidebarToggle');
+  if (tb) tb.classList.toggle('active', collapsed);
+  try { localStorage.setItem('bookEditor_sidebarCollapsed', collapsed ? '1' : '0'); } catch (e) { /* blocked */ }
 }
 
 // ==============================================
@@ -3177,6 +3187,11 @@ try {
   if (OL_TYPES.includes(t)) olType = t;
 } catch (e) { /* localStorage may be blocked */ }
 updateOlMainIcon();   // reflect the remembered style on the main button
+
+// P2-S123 — คืนสถานะ sidebar (ยุบ/เปิด) ที่จำไว้ข้าม session
+try {
+  if (localStorage.getItem('bookEditor_sidebarCollapsed') === '1') toggleSidebar(true);
+} catch (e) { /* localStorage may be blocked */ }
 
 // P2-S86 — which annotate tool is active while a frame is in annotate mode.
 // 'marker' = numbered circles (P2-S81); 'rect' = highlight rectangles.
