@@ -1227,6 +1227,8 @@ body {
 .col-preset:hover span { opacity: .85; }
 /* 2×2 grid thumbnail (P2-S110) */
 .col-preset-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+/* 2×3 grid thumbnail (P2-S115) — 3 คอลัมน์ 2 แถว = 6 ตัวเลือก */
+.col-preset-grid-2x3 { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
 .table-grid-picker-grid {
   display: grid;
