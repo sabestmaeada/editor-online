@@ -111,6 +111,14 @@
       <button class="tb-btn" data-tip="ตั้งค่าลำดับตัวเลข" onclick="showListSettingModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/><circle cx="17" cy="18" r="3"/></svg>
       </button>
+      <button class="tb-btn" id="quizMarkerToggleBtn" data-tip="สลับ a,b,c ⇄ ก,ข,ค (เคอร์เซอร์ใน quiz/รายการ)" onclick="toggleQuizMarker()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <text x="1.5" y="10" font-size="10" font-weight="700" fill="currentColor" stroke="none">a</text>
+          <text x="13" y="22" font-size="10" font-weight="700" fill="currentColor" stroke="none">ก</text>
+          <polyline points="14 5.5 17 8.5 14 11.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="10 12.5 7 15.5 10 18.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
 
       <div class="tb-sep"></div>
 
@@ -695,6 +703,8 @@
     <button class="col-preset col-preset-grid" onclick="insertColumns('6-6;6-6', 'quiz')" title="2 แถว × 2 คอลัมน์ (4 ตัวเลือกคำตอบ)"><span></span><span></span><span></span><span></span></button>
     <button class="col-preset" onclick="insertColumns('3-3-3-3', 'quiz')" title="1 แถว × 4 คอลัมน์ (4 ตัวเลือกแนวนอน)"><span style="flex:3"></span><span style="flex:3"></span><span style="flex:3"></span><span style="flex:3"></span></button>
     <button class="col-preset col-preset-grid-2x3" onclick="insertColumns('4-4-4;4-4-4', 'quiz')" title="2 แถว × 3 คอลัมน์ (6 ตัวเลือกคำตอบ)"><span></span><span></span><span></span><span></span><span></span><span></span></button>
+    <button class="col-preset col-preset-vert" onclick="insertColumns('12;12;12;12', 'quiz')" title="4 แถว × 1 คอลัมน์ (4 ตัวเลือกแนวตั้ง)"><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1"></span></button>
+    <button class="col-preset col-preset-vert" onclick="insertColumns('12;12;12;12;12', 'quiz')" title="5 แถว × 1 คอลัมน์ (5 ตัวเลือกแนวตั้ง)"><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1"></span><span style="flex:1"></span></button>
   </div>
 </div>
 

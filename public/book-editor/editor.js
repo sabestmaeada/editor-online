@@ -2224,7 +2224,7 @@ function insertColumns(spec, extraClass) {
   const rows = String(spec).split(';')
     .map((r) => r.split('-').map((n) => parseInt(n, 10))
       .filter((n) => Number.isFinite(n) && n >= 1 && n <= 12))
-    .filter((cols) => cols.length >= 2);
+    .filter((cols) => cols.length >= 1);   // >=1 รองรับ 1 คอลัมน์/แถว (quiz 4×1, 5×1)
   if (!rows.length) return;
   focusEditor();
   // คลาสเสริมบน .bd-grid (เช่น 'quiz' สำหรับตัวเลือก 4 คำตอบ) — sanitize กันอักขระแปลก
@@ -2232,14 +2232,23 @@ function insertColumns(spec, extraClass) {
     ? extraClass.trim().replace(/[^a-z0-9 _-]/gi, '')
     : '');
   const gridCls = extra ? `bd-grid ${extra}` : 'bd-grid';
+  // quiz: เติม <ol> หนึ่งข้อต่อช่อง รันลำดับต่อเนื่องข้ามช่อง (เช่น a,b,c,d) ตาม
+  // รูปแบบปุ่ม OL ล่าสุด (olType) — ใส่ start + --ol-marker + counter-reset ครบ
+  // เพื่อให้แสดงถูกทั้งใน editor (native marker) และ WeasyPrint (CSS counter) (P2-S116)
+  const isQuiz = /\bquiz\b/.test(extra);
+  const qType = OL_TYPES.includes(olType) ? olType : 'decimal';
+  let qNo = 0;
+  const cellHtml = (n) => {
+    if (!isQuiz) return `<div class="bd-col bd-col-${n}"><p><br></p></div>`;
+    qNo += 1;
+    const st = `list-style-type:${qType}; --ol-marker:${qType}; counter-reset:ol-counter ${qNo - 1};`;
+    return `<div class="bd-col bd-col-${n}"><ol start="${qNo}" style="${st}"><li><br></li></ol></div>`;
+  };
   // wrap every insert in .bd-grid so the whole thing (a 2×2 = 2 rows) is one
   // deletable unit (hover +/delete targets the .bd-grid).
-  const rowsHtml = rows.map((cols) => {
-    const inner = cols
-      .map((n) => `<div class="bd-col bd-col-${n}"><p><br></p></div>`)
-      .join('');
-    return `<div class="bd-row">${inner}</div>`;
-  }).join('');
+  const rowsHtml = rows.map((cols) =>
+    `<div class="bd-row">${cols.map(cellHtml).join('')}</div>`
+  ).join('');
   getDoc().execCommand('insertHTML', false,
     `<div class="${gridCls}" data-fresh="1">${rowsHtml}</div><p><br></p>`);
   hoistBlocksFromP(getDoc());   // the .bd-grid block can't live inside a <p>
@@ -2247,7 +2256,7 @@ function insertColumns(spec, extraClass) {
   const fresh = doc.querySelector('.bd-grid[data-fresh]');
   if (fresh) {
     fresh.removeAttribute('data-fresh');
-    const firstP = fresh.querySelector('.bd-col p');
+    const firstP = fresh.querySelector('.bd-col li') || fresh.querySelector('.bd-col p');
     if (firstP) {
       try {
         const sel = getWin().getSelection();
@@ -3612,6 +3621,36 @@ function applyOlType(ol, type) {
   if (getWin().getComputedStyle(ol).listStyleType !== 'none') {
     ol.style.listStyleType = type;
   }
+}
+
+/** Quick toggle (P2-S118): สลับ marker ระหว่าง a,b,c (lower-alpha) ⇄ ก,ข,ค
+ *  (thai-alpha) แบบคลิกเดียว · scope อัตโนมัติ — เคอร์เซอร์อยู่ใน quiz grid →
+ *  สลับ "ทุก" ol ในนั้นพร้อมกัน (คง start/ลำดับ a,b,c,d เดิม) · อยู่ใน ol เดียว
+ *  → สลับเฉพาะตัวนั้น · ไม่แตะ olType เริ่มต้น (ใช้เมนู caret สำหรับค่าเริ่มต้น) */
+function toggleQuizMarker() {
+  const sel = getWin().getSelection();
+  let node = sel && sel.rangeCount ? sel.anchorNode : null;
+  if (node && node.nodeType === 3) node = node.parentNode;
+  if (!node || !node.closest) {
+    showToast('วางเคอร์เซอร์ในตัวเลือก (quiz) หรือรายการ ol ก่อนครับ');
+    return;
+  }
+  const grid = node.closest('.bd-grid');
+  const ols = grid
+    ? Array.from(grid.querySelectorAll('ol'))
+    : (node.closest('ol') ? [node.closest('ol')] : []);
+  if (!ols.length) {
+    showToast('วางเคอร์เซอร์ในตัวเลือก (quiz) หรือรายการ ol ก่อนครับ');
+    return;
+  }
+  const cur = ols[0].style.getPropertyValue('--ol-marker').trim()
+    || getWin().getComputedStyle(ols[0]).listStyleType
+    || 'decimal';
+  const next = cur === 'thai-alpha' ? 'lower-alpha' : 'thai-alpha';
+  pushUndoSnapshot();
+  ols.forEach((ol) => applyOlType(ol, next));   // คง start/counter-reset ของแต่ละ ol
+  setDirty(true);
+  showToast(next === 'thai-alpha' ? 'สลับเป็น ก, ข, ค' : 'สลับเป็น a, b, c');
 }
 
 function setOlType(type) {
