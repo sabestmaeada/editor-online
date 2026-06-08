@@ -4550,8 +4550,13 @@ function renderLine(g) {
   const vis = (inset1 || inset2)
     ? buildLinePath(type, x1, y1, x2, y2, bow, inset1, inset2)   // trimmed shaft
     : full;
-  // fat transparent hit target — FULL length so the whole line stays clickable
-  g.appendChild(svgEl('path', { d: full.d, class: 'img-line-hit', 'stroke-width': r2(Math.max(3, w * 4 + cs * 2)) }));
+  // fat transparent hit target — FULL length so the whole line stays clickable.
+  // fill/stroke ต้องเป็น inline (ไม่พึ่ง CSS) — ฝั่ง PDF/WeasyPrint ไม่อ่าน CSS จึงใช้
+  // SVG default fill="black" → เส้นโค้ง/มุม (มี closed region) เป็นพื้นดำใน PDF (P2-S124)
+  g.appendChild(svgEl('path', {
+    d: full.d, class: 'img-line-hit', fill: 'none', stroke: 'transparent',
+    'stroke-width': r2(Math.max(3, w * 4 + cs * 2)),
+  }));
   // white halo underlay → line reads on dark/light backgrounds (skip if 0)
   if (halo > 0) {
     g.appendChild(svgEl('path', {
