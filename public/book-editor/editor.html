@@ -540,6 +540,7 @@
     <button type="button" class="rect-swatch marker-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setMarkerColor('#E08A1E')"></button>
     <button type="button" class="rect-swatch marker-swatch" data-color="#2D6CDF" style="background:#2D6CDF" title="น้ำเงิน" onclick="setMarkerColor('#2D6CDF')"></button>
     <button type="button" class="rect-swatch marker-swatch" data-color="#18181B" style="background:#18181B" title="ดำ" onclick="setMarkerColor('#18181B')"></button>
+    <span class="rect-swatch anno-custom" data-anno="marker" onclick="annoCustomApply(this)" ondblclick="annoCustomPick(this)" title="สีกำหนดเอง · คลิก = ใช้สีนี้ · ดับเบิลคลิก = เลือกสีใหม่"><input type="color" class="anno-custom-in" tabindex="-1" aria-hidden="true" oninput="annoCustomInput(this)" onchange="annoCustomChosen(this)"></span>
   </div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" id="markerContinuousItem" onclick="markerMenuAction('continuous')">☐ นับต่อเนื่องข้ามรูป</div>
@@ -560,6 +561,7 @@
     <button type="button" class="rect-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setRectColor('#E08A1E')"></button>
     <button type="button" class="rect-swatch" data-color="#2D6CDF" style="background:#2D6CDF" title="น้ำเงิน" onclick="setRectColor('#2D6CDF')"></button>
     <button type="button" class="rect-swatch" data-color="#1A6B52" style="background:#1A6B52" title="เขียว" onclick="setRectColor('#1A6B52')"></button>
+    <span class="rect-swatch anno-custom" data-anno="rect" onclick="annoCustomApply(this)" ondblclick="annoCustomPick(this)" title="สีกำหนดเอง · คลิก = ใช้สีนี้ · ดับเบิลคลิก = เลือกสีใหม่"><input type="color" class="anno-custom-in" tabindex="-1" aria-hidden="true" oninput="annoCustomInput(this)" onchange="annoCustomChosen(this)"></span>
   </div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="rectMenuAction('thicker')">➕ เส้นหนาขึ้น</div>
@@ -614,6 +616,7 @@
     <button type="button" class="rect-swatch line-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setLineColor('#E08A1E')"></button>
     <button type="button" class="rect-swatch line-swatch" data-color="#2D6CDF" style="background:#2D6CDF" title="น้ำเงิน" onclick="setLineColor('#2D6CDF')"></button>
     <button type="button" class="rect-swatch line-swatch" data-color="#1A6B52" style="background:#1A6B52" title="เขียว" onclick="setLineColor('#1A6B52')"></button>
+    <span class="rect-swatch anno-custom" data-anno="line" onclick="annoCustomApply(this)" ondblclick="annoCustomPick(this)" title="สีกำหนดเอง · คลิก = ใช้สีนี้ · ดับเบิลคลิก = เลือกสีใหม่"><input type="color" class="anno-custom-in" tabindex="-1" aria-hidden="true" oninput="annoCustomInput(this)" onchange="annoCustomChosen(this)"></span>
   </div>
   <div class="marker-menu-sep"></div>
   <div class="qi-item" onclick="lineMenuAction('thicker')">➕ เส้นหนาขึ้น</div>
@@ -666,6 +669,7 @@
     <button type="button" class="rect-swatch text-swatch" data-color="#E08A1E" style="background:#E08A1E" title="ส้ม" onclick="setTextBorderColor('#E08A1E')"></button>
     <button type="button" class="rect-swatch text-swatch" data-color="#1A6B52" style="background:#1A6B52" title="เขียว" onclick="setTextBorderColor('#1A6B52')"></button>
     <button type="button" class="rect-swatch text-swatch" data-color="#18181B" style="background:#18181B" title="ดำ" onclick="setTextBorderColor('#18181B')"></button>
+    <span class="rect-swatch anno-custom" data-anno="text" onclick="annoCustomApply(this)" ondblclick="annoCustomPick(this)" title="สีกำหนดเอง · คลิก = ใช้สีนี้ · ดับเบิลคลิก = เลือกสีใหม่"><input type="color" class="anno-custom-in" tabindex="-1" aria-hidden="true" oninput="annoCustomInput(this)" onchange="annoCustomChosen(this)"></span>
   </div>
   <div class="line-cap-row">
     <button type="button" data-bstyle="solid" title="เส้นทึบ" onclick="textMenuAction('bstyle','solid')">ทึบ</button>

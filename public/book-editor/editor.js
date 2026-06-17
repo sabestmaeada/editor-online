@@ -3175,7 +3175,7 @@ const MARKER_DEFAULT_COLOR = '#1A6B52';
 let markerColor = MARKER_DEFAULT_COLOR;
 try {
   const c = localStorage.getItem('bookEditor_markerColor');
-  if (MARKER_COLORS.includes(c)) markerColor = c;
+  if (isHexColor(c)) markerColor = c;
 } catch (e) { /* localStorage may be blocked */ }
 
 // P2-S111 — last-used OL marker style, remembered across sessions. The main
@@ -3206,7 +3206,7 @@ let rectRounded = false;     // square by default; toggle for rounded corners
 let rectThickness = 3;       // default border thickness (px)
 try {
   const c = localStorage.getItem('bookEditor_rectColor');
-  if (c && RECT_COLORS.includes(c)) rectColor = c;
+  if (isHexColor(c)) rectColor = c;
   rectRounded = localStorage.getItem('bookEditor_rectRounded') === '1';
   const w = parseInt(localStorage.getItem('bookEditor_rectThickness') || '', 10);
   if (Number.isFinite(w) && w >= RECT_MIN_W && w <= RECT_MAX_W) rectThickness = w;
@@ -3237,7 +3237,7 @@ try {
   const c2 = localStorage.getItem('bookEditor_lineCap2');
   if (LINE_CAPS.includes(c2)) lineCap2 = c2;
   const lc = localStorage.getItem('bookEditor_lineColor');
-  if (lc && LINE_COLORS.includes(lc)) lineColor = lc;
+  if (isHexColor(lc)) lineColor = lc;
   const lv = parseInt(localStorage.getItem('bookEditor_lineLevel') || '', 10);
   if (Number.isFinite(lv) && lv >= LINE_MIN_LV && lv <= LINE_MAX_LV) lineLevel = lv;
   const cv = parseInt(localStorage.getItem('bookEditor_lineCapLevel') || '', 10);
@@ -3267,7 +3267,7 @@ try {
   if (Number.isFinite(s) && s >= TEXT_SIZE_MIN && s <= TEXT_SIZE_MAX) textSize = s;
   if (localStorage.getItem('bookEditor_textColorDark') === '0') textColorDark = false;
   const bc = localStorage.getItem('bookEditor_textBorderColor');
-  if (TEXT_BORDER_COLORS.includes(bc)) textBorderColor = bc;
+  if (isHexColor(bc)) textBorderColor = bc;
   const bs = localStorage.getItem('bookEditor_textBorderStyle');
   if (TEXT_BORDER_STYLES.includes(bs)) textBorderStyle = bs;
   const bw = parseInt(localStorage.getItem('bookEditor_textBorderW') || '', 10);
@@ -3765,7 +3765,7 @@ function updateMarkerColorSwatches() {
  *  image (markers are a numbered set, usually one colour) AND becomes the
  *  default for new markers (P2-S92). */
 function setMarkerColor(c) {
-  if (!MARKER_COLORS.includes(c)) return;
+  if (!isHexColor(c)) return;   // รับทั้ง preset และ custom (P2-S125)
   markerColor = c;
   try { localStorage.setItem('bookEditor_markerColor', c); } catch (e) { /* ignore */ }
   if (annotatingFrame) {
@@ -4313,7 +4313,7 @@ function updateRectMenuState() {
 /** Pick a border colour — applies to the selected rect AND becomes the
  *  default for new rects. */
 function setRectColor(color) {
-  if (!RECT_COLORS.includes(color)) return;
+  if (!isHexColor(color)) return;   // รับทั้ง preset และ custom (P2-S125)
   rectColor = color;
   try { localStorage.setItem('bookEditor_rectColor', color); } catch (e) { /* ignore */ }
   const sel = annotatingFrame && annotatingFrame.querySelector('.img-rect.selected');
@@ -4376,6 +4376,73 @@ function lineW() { return lineLevel * 0.3; }        // thickness level → vb st
 function lineCapScale() { return lineCapLevel * 0.5; } // cap-size level → vb scale
 function lineHaloW() { return lineHaloLevel * 0.4; }   // white-edge width (0 = off)
 function lsPut(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+/** true ถ้าเป็นสี hex #rrggbb — รองรับ custom color picker (P2-S125) */
+function isHexColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c); }
+
+/* ── Custom color swatch (P2-S125b) ─────────────────────────────────────
+ * native <input type=color> เปิด picker ทันทีที่คลิก = ไม่สะดวก → ทำเป็น swatch
+ * ที่ "จำสี custom ล่าสุด" ต่อชนิด:
+ *   คลิกเดียว     → ลงสีที่จำไว้เลย
+ *   ดับเบิลคลิก   → เปิด native picker (.click() บน input ที่ซ่อนไว้)
+ *   เลือกสี+ปิด picker (event change) → ลงสี + อัปเดต swatch + จำใน localStorage */
+const ANNO_COLOR_SETTERS = {
+  marker: setMarkerColor, rect: setRectColor, line: setLineColor, text: setTextBorderColor,
+};
+const ANNO_CUSTOM = { marker: '#9333EA', rect: '#9333EA', line: '#9333EA', text: '#9333EA' };
+try {
+  Object.keys(ANNO_CUSTOM).forEach((k) => {
+    const v = localStorage.getItem('bookEditor_' + k + 'CustomColor');
+    if (isHexColor(v)) ANNO_CUSTOM[k] = v;
+  });
+} catch (e) { /* localStorage may be blocked */ }
+
+function annoCustomApply(el) {        // คลิกเดียว → ลงสีที่จำไว้
+  const setter = ANNO_COLOR_SETTERS[el.dataset.anno];
+  if (setter && isHexColor(ANNO_CUSTOM[el.dataset.anno])) setter(ANNO_CUSTOM[el.dataset.anno]);
+}
+let annoPick = null;   // สถานะระหว่างเปิด picker: { el, k, openValue, moved }
+function annoCustomPick(el) {          // ดับเบิลคลิก → เปิด native picker
+  const input = el.querySelector('.anno-custom-in');
+  if (!input) return;
+  const k = el.dataset.anno;
+  input.value = isHexColor(ANNO_CUSTOM[k]) ? ANNO_CUSTOM[k] : '#000000';
+  annoPick = { el, k, openValue: input.value, moved: false };
+  input.click();
+}
+/* oninput — พรีวิวสดขณะลากเลือกสี + กัน ESC ที่ดีดค่ากลับมาค่าเดิม:
+ * เมื่อขยับออกจากค่าตอนเปิดแล้ว ถ้ามีค่าดีดกลับมา = openValue → นั่นคือ ESC → ไม่สนใจ
+ * (คงสีล่าสุดไว้) → ปิด picker วิธีไหนก็ได้ สีล่าสุดติดเสมอ */
+function annoCustomInput(input) {
+  if (!annoPick || !isHexColor(input.value)) return;
+  if (input.value === annoPick.openValue) { if (annoPick.moved) return; }
+  else annoPick.moved = true;
+  applyAnnoCustom(annoPick.el, input.value);
+}
+/* onchange — ปิด picker (ESC/Enter/คลิกนอก) → คงสีล่าสุด + จำลง localStorage */
+function annoCustomChosen(input) {
+  const st = annoPick; annoPick = null;
+  if (st) {
+    if (input.value !== st.openValue && isHexColor(input.value)) applyAnnoCustom(st.el, input.value);
+    lsPut('bookEditor_' + st.k + 'CustomColor', ANNO_CUSTOM[st.k]);   // คงค่าล่าสุด (กัน ESC ดีดกลับ)
+  } else if (isHexColor(input.value)) {
+    const el = input.closest('.anno-custom');
+    if (el) { applyAnnoCustom(el, input.value); lsPut('bookEditor_' + el.dataset.anno + 'CustomColor', input.value); }
+  }
+}
+function applyAnnoCustom(el, val) {     // ลงสี + อัปเดต swatch + จำในหน่วยความจำ
+  if (!el || !isHexColor(val)) return;
+  const k = el.dataset.anno;
+  ANNO_CUSTOM[k] = val;
+  el.style.background = val;
+  const setter = ANNO_COLOR_SETTERS[k];
+  if (setter) setter(val);
+}
+function initAnnoCustomSwatches() {    // ตั้งพื้น swatch = สี custom ที่จำไว้
+  document.querySelectorAll('.anno-custom').forEach((el) => {
+    if (isHexColor(ANNO_CUSTOM[el.dataset.anno])) el.style.background = ANNO_CUSTOM[el.dataset.anno];
+  });
+}
+initAnnoCustomSwatches();
 function unitVec(x, y) { const m = Math.hypot(x, y) || 1; return { x: x / m, y: y / m }; }
 
 /** Get/create the per-frame SVG overlay (sits above .img-markers). viewBox
@@ -4766,7 +4833,7 @@ function setLineCap(which, cap) {
   updateLineMenuState();
 }
 function setLineColor(color) {
-  if (!LINE_COLORS.includes(color)) return;
+  if (!isHexColor(color)) return;   // รับทั้ง preset และ custom (P2-S125)
   lineColor = color; lsPut('bookEditor_lineColor', color);
   const sel = selectedLine();
   if (sel) { sel.dataset.color = color; renderLine(sel); addLineHandles(sel); setDirty(true); }
@@ -5056,7 +5123,7 @@ function setTextColor(which) {
   updateTextMenuState();
 }
 function setTextBorderColor(c) {
-  if (!TEXT_BORDER_COLORS.includes(c)) return;
+  if (!isHexColor(c)) return;   // รับทั้ง preset และ custom (P2-S125)
   textBorderColor = c; lsPut('bookEditor_textBorderColor', c);
   const sel = selectedTextbox();
   if (sel) { sel.style.borderColor = c; setDirty(true); }

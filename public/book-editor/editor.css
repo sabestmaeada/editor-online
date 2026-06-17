@@ -878,6 +878,35 @@ body {
   box-shadow: 0 0 0 2px var(--shell-surface) inset;
 }
 
+/* custom color swatch (P2-S125b) — คลิก=ใช้สีที่จำไว้ · ดับเบิลคลิก=เปิด picker */
+.anno-custom {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  min-width: 28px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--shell-border) inset;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.anno-custom:hover { transform: scale(1.06); }
+/* จุดมุมบอกว่าเป็น swatch กำหนดเอง (ดับเบิลคลิกเปลี่ยนสีได้) */
+.anno-custom::after {
+  content: '';
+  position: absolute; right: 2px; bottom: 2px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,.9);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.3);
+}
+/* native input ซ่อนไว้ — ใช้แค่เปิด picker ผ่าน .click() */
+.anno-custom-in {
+  position: absolute; left: 50%; bottom: 0;
+  width: 1px; height: 1px; opacity: 0;
+  border: 0; padding: 0; pointer-events: none;
+}
+
 /* Line tool submenu (P2-S87) — section labels + endpoint-cap segmented rows */
 .marker-menu .line-menu-label {
   font-family: var(--hd);
