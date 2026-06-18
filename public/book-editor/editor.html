@@ -188,6 +188,9 @@
       <button class="tb-btn" data-tip="แทรกโค้ด HTML (ตรวจแท็กเปิด/ปิด)" onclick="showHtmlModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="10 12 8 14 10 16"/><polyline points="14 12 16 14 14 16"/></svg>
       </button>
+      <button class="tb-btn" data-tip="ขึ้นหน้าใหม่ใน PDF (page break)" onclick="insertPageBreak()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3 3"/><polyline points="7 8 7 4 17 4 17 8"/><polyline points="7 16 7 20 17 20 17 16"/></svg>
+      </button>
 
       <div class="tb-sep"></div>
 
@@ -257,6 +260,7 @@
         <div class="qi-item" onclick="quickAction('image')">🖼️ แทรกรูปภาพ</div>
         <div class="qi-item" onclick="quickAction('note')">📌 Note Box</div>
         <div class="qi-item" onclick="quickAction('code')">💻 Code Block</div>
+        <div class="qi-item" onclick="quickAction('pagebreak')">✂️ ขึ้นหน้าใหม่ (PDF)</div>
       </div>
 
       <!-- Reviewing Mode Banner (โผล่เมื่อ Track Changes เปิด) -->

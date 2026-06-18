@@ -1569,6 +1569,31 @@ body { padding-bottom: 200px; }
 
 ::selection { background: rgba(26,107,82,.25); }
 
+/* ตัวคั่นหน้า PDF (P2-S126) — แสดงเป็นเส้นประ + ป้าย เฉพาะใน editor.
+   runtime CSS ไม่ถูกเซฟ → ใน PDF เป็น div ว่างมองไม่เห็น มีแค่ break-before:page */
+.pdf-page-break {
+  display: block;
+  height: 0;
+  margin: 24px 0;
+  border: none;
+  border-top: 2px dashed #8b93a7;
+  position: relative;
+}
+.pdf-page-break::before {
+  content: '✂ ขึ้นหน้าใหม่ (PDF)';
+  position: absolute;
+  left: 50%; top: 0;
+  transform: translate(-50%, -50%);
+  background: var(--bg, #ffffff);
+  color: #6b7280;
+  font-family: var(--bd, sans-serif);
+  font-size: 11px; font-weight: 600; letter-spacing: .3px;
+  white-space: nowrap;
+  padding: 2px 10px;
+  border: 1px solid #d6dae3;
+  border-radius: 999px;
+}
+
 .content b, .content strong { font-weight: 600; color: var(--accent-dk); }
 .content i, .content em { font-style: italic; }
 .preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
@@ -1855,6 +1880,8 @@ ${bodyContent}
     buildSidebar(doc);
     bindHoverInsert(doc);
     bindPasteHoist(doc);     // P2-S119 — unwrap pasted block from <p>
+    // P2-S126 — ตัวคั่นหน้าที่โหลดมาเป็น atomic marker (พิมพ์ทับไม่ได้)
+    doc.querySelectorAll('.pdf-page-break').forEach((el) => el.setAttribute('contenteditable', 'false'));
     bindTableContextMenu(doc);
     bindTableResize(doc);
     bindTableKeyboard(doc);
@@ -6102,7 +6129,7 @@ function bindHoverInsert(doc) {
     if (isQuickMenuOpen) return;
 
     let block = e.target.closest(
-      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row, .img-placeholder, .callout, .warning'
+      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row, .img-placeholder, .callout, .warning, .pdf-page-break'
     );
 
     // P2-S110 — treat a column block as ONE unit: hovering inside any column
@@ -6289,6 +6316,7 @@ const QUICK_INSERT_HTML = {
   h4:   '<h4><br></h4>',
   note: '<div class="note">\n  <div class="note-label">Note</div>\n  <p>เขียนหมายเหตุที่นี่</p>\n</div>',
   code: '<div class="code-block">\n  <div class="code-header">\n    <span class="code-lang-badge">code</span>\n    <span class="code-linecount">1 บรรทัด</span>\n  </div>\n  <pre><code><span class="line">// เขียนโค้ดที่นี่</span></code></pre>\n</div>',
+  pagebreak: '<div class="pdf-page-break" style="break-before: page;" contenteditable="false"></div>',
 };
 
 // Selectors for "container" elements that the quick-insert "+" should
@@ -6387,6 +6415,11 @@ function placeCaretInNewBlock(el) {
   if (!el) return;
   const doc = getDoc();
   const win = getWin();
+  // บล็อก atomic (เช่น ตัวคั่นหน้า contenteditable=false) — เคอร์เซอร์ไปบล็อกข้างเคียงที่พิมพ์ได้
+  if (el.getAttribute && el.getAttribute('contenteditable') === 'false') {
+    const sib = el.nextElementSibling || el.previousElementSibling;
+    if (sib) el = sib;
+  }
   const target = el.querySelector('p, li, h1, h2, h3, h4, .line, code') || el;
   const apply = () => {
     try {
@@ -6402,6 +6435,39 @@ function placeCaretInNewBlock(el) {
   };
   apply();              // ทันที
   setTimeout(apply, 0); // ย้ำหลัง click จัดการ focus เริ่มต้นเสร็จ
+}
+
+/** บล็อกบนสุดใน .content ที่เคอร์เซอร์อยู่ (ลูกตรงของ .content) (P2-S126) */
+function caretTopBlock() {
+  const sel = getWin().getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.anchorNode;
+  if (n && n.nodeType === 3) n = n.parentNode;
+  if (!n || !n.closest) return null;
+  const content = n.closest('.content');
+  if (!content) return null;
+  let b = n;
+  while (b && b.parentElement && b.parentElement !== content) b = b.parentElement;
+  return (b && b.parentElement === content) ? b : null;
+}
+
+/** แทรกตัวคั่นหน้า (ขึ้นหน้าใหม่ใน PDF) ใต้บล็อกที่เคอร์เซอร์อยู่ (P2-S126).
+ *  เป็น div ว่าง class=pdf-page-break + inline break-before:page → ใน editor เห็น
+ *  เป็นเส้นประ (runtime CSS) · ใน PDF/WeasyPrint ดันเนื้อหาถัดไปขึ้นหน้าใหม่ */
+function insertPageBreak() {
+  focusEditor();
+  const block = caretTopBlock();
+  pushUndoSnapshot();
+  if (block) {
+    insertHtmlAfterNode(block, QUICK_INSERT_HTML.pagebreak);
+  } else {
+    getDoc().execCommand('insertHTML', false, QUICK_INSERT_HTML.pagebreak);
+    hoistBlocksFromP(getDoc());
+  }
+  getDoc().querySelectorAll('.pdf-page-break').forEach(
+    (el) => el.setAttribute('contenteditable', 'false'));
+  setDirty(true);
+  showToast('แทรกตัวคั่นหน้า — เนื้อหาถัดจากนี้ขึ้นหน้าใหม่ใน PDF');
 }
 
 // Helper — close the quick insert menu + reset its trigger state.
