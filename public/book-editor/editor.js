@@ -1882,6 +1882,11 @@ ${bodyContent}
     bindPasteHoist(doc);     // P2-S119 — unwrap pasted block from <p>
     // P2-S126 — ตัวคั่นหน้าที่โหลดมาเป็น atomic marker (พิมพ์ทับไม่ได้)
     doc.querySelectorAll('.pdf-page-break').forEach((el) => el.setAttribute('contenteditable', 'false'));
+    // P2-S128 — cap เส้นเก่าที่ไม่มี stroke (halo=0) สืบทอด stroke:var(--accent) (น้ำเงิน)
+    // จาก .img-lines → ใส่ stroke="none" ให้ ดอท/หัวลูกศรจะเป็นสีเส้นจริง
+    doc.querySelectorAll('.img-line-cap').forEach((c) => {
+      if (!c.getAttribute('stroke')) c.setAttribute('stroke', 'none');
+    });
     bindTableContextMenu(doc);
     bindTableResize(doc);
     bindTableKeyboard(doc);
@@ -4600,6 +4605,7 @@ function capElements(x, y, dir, cap, color, cs, edge) {
   if (cap === 'dot') {
     const a = { cx: r2(x), cy: r2(y), r: r2(1.6 * cs), fill: color, class: 'img-line-cap' };
     if (hasEdge) { a.stroke = '#ffffff'; a['stroke-width'] = r2(edge); }
+    else a.stroke = 'none';   // P2-S128 — กันสืบทอด stroke:var(--accent) จาก .img-lines (ดอทน้ำเงิน)
     return [svgEl('circle', a)];
   }
   if (cap === 'arrow') {
@@ -4614,6 +4620,7 @@ function capElements(x, y, dir, cap, color, cs, edge) {
               `L ${r2(nx)} ${r2(ny)} L ${r2(rx)} ${r2(ry)} Z`;
     const a = { d, fill: color, 'stroke-linejoin': 'round', class: 'img-line-cap' };
     if (hasEdge) { a.stroke = '#ffffff'; a['stroke-width'] = r2(edge); }
+    else a.stroke = 'none';   // P2-S128 — กันสืบทอด stroke:var(--accent) จาก .img-lines
     return [svgEl('path', a)];
   }
   return [];
@@ -5266,7 +5273,15 @@ function bindAnnotationClick(doc) {
     const lineG = e.target.closest && e.target.closest('.img-line');
     const marker = e.target.closest && e.target.closest('.img-marker');
     const item = tb || rect || lineG || marker;
-    if (!item) return; // empty/image → place/draw + image handlers own it
+    if (!item) {
+      // P2-S127 — คลิกนอกรูป/annotation (p, h2, li, ตาราง ฯลฯ) ขณะยังมี annotation
+      // เลือกค้างอยู่ → ออกจากโหมด annotate (เคลียร์ selection + annotatingFrame)
+      // กัน Delete/Backspace ไปลบ annotation แทนตัวอักษร และกันแก้ไขโดยไม่ตั้งใจ
+      if (annotatingFrame && !(e.target.closest && e.target.closest('.img-frame'))) {
+        exitAnnotateMode();
+      }
+      return; // empty/image → place/draw + image handlers own it
+    }
     const frame = item.closest('.img-frame');
     if (!frame) return;
     const tool = tb ? 'text' : rect ? 'rect' : lineG ? 'line' : 'marker';
