@@ -1594,6 +1594,18 @@ body { padding-bottom: 200px; }
   border-radius: 999px;
 }
 
+/* หน้าเต็มหน้า (P2-S129) — ใน editor ย่อความสูง + ใส่ป้าย/ขอบ (runtime ไม่ไป PDF;
+   สี/รูป cover มาจาก book CSS + inline) */
+.full-page { min-height: 360px !important; border: 1px dashed #b0b7c3; position: relative; overflow: hidden; background-size: cover; background-position: center; }
+.full-page-img { display: block; width: 100% !important; height: 360px !important; }
+.full-page::before {
+  content: '🖼️ หน้าเต็มหน้า (เต็มขอบใน PDF)';
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  background: rgba(0,0,0,.55); color: #fff;
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+  pointer-events: none;
+}
+
 .content b, .content strong { font-weight: 600; color: var(--accent-dk); }
 .content i, .content em { font-style: italic; }
 .preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
@@ -1880,8 +1892,8 @@ ${bodyContent}
     buildSidebar(doc);
     bindHoverInsert(doc);
     bindPasteHoist(doc);     // P2-S119 — unwrap pasted block from <p>
-    // P2-S126 — ตัวคั่นหน้าที่โหลดมาเป็น atomic marker (พิมพ์ทับไม่ได้)
-    doc.querySelectorAll('.pdf-page-break').forEach((el) => el.setAttribute('contenteditable', 'false'));
+    // P2-S126/S129 — ตัวคั่นหน้า + หน้าเต็มหน้า ที่โหลดมาเป็น atomic marker (พิมพ์ทับไม่ได้)
+    doc.querySelectorAll('.pdf-page-break, .full-page').forEach((el) => el.setAttribute('contenteditable', 'false'));
     // P2-S128 — cap เส้นเก่าที่ไม่มี stroke (halo=0) สืบทอด stroke:var(--accent) (น้ำเงิน)
     // จาก .img-lines → ใส่ stroke="none" ให้ ดอท/หัวลูกศรจะเป็นสีเส้นจริง
     doc.querySelectorAll('.img-line-cap').forEach((c) => {
@@ -3161,6 +3173,15 @@ function bindImageClicks(doc) {
 
   doc.body.addEventListener('dblclick', (e) => {
     if (annotatingFrame || croppingImg) return;   // no edit-modal while annotating/cropping
+    // หน้าเต็มหน้า: ดับเบิลคลิกที่ไหนในบล็อก (สี/รูป) → แก้ไขหน้า ไม่ใช่ dialog รูปปกติ (P2-S129f)
+    const fp = e.target.closest('.full-page');
+    if (fp) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      showFullPageModalForEdit(fp);
+      return;
+    }
     const img = e.target.closest('img');
     if (!img) return;
     e.preventDefault();
@@ -6144,7 +6165,7 @@ function bindHoverInsert(doc) {
     if (isQuickMenuOpen) return;
 
     let block = e.target.closest(
-      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row, .img-placeholder, .callout, .warning, .pdf-page-break'
+      'p, h1, h2, h3, h4, blockquote, figure, .code-block, .note, ul, ol, .table-wrap, table, .bd-grid, .bd-row, .img-placeholder, .callout, .warning, .pdf-page-break, .full-page'
     );
 
     // P2-S110 — treat a column block as ONE unit: hovering inside any column
@@ -6350,6 +6371,7 @@ function quickAction(action) {
   // คอนเทนเนอร์ — DOM insertBefore/After วางเป็น sibling ตรงทิศที่ต้องการแน่นอน
   // (execCommand ทำ "ใต้" ไม่ได้ และมักไป nest ในคอนเทนเนอร์)
   if (action === 'image') { showImageModal(); closeQuickMenu(); return; }
+  if (action === 'fullpage') { showFullPageModal(); closeQuickMenu(); return; }   // P2-S129
 
   const html = QUICK_INSERT_HTML[action];
   let anchor = hoveredBlock || null;
@@ -6466,6 +6488,24 @@ function caretTopBlock() {
   return (b && b.parentElement === content) ? b : null;
 }
 
+/** หา "หน้าระดับบนสุด" ที่เคอร์เซอร์อยู่ = ลูกตรงของ .book-wrap
+ *  (.cover / .preface / .toc / .chapter / part / .back-cover / .full-page ...).
+ *  ใช้แทรกหน้าเต็มหน้าเป็น sibling ระดับหน้า — ไม่ฝังใน .content ของบท/part (P2-S129d). */
+function caretTopPage() {
+  const sel = getWin().getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.anchorNode;
+  if (n && n.nodeType === 3) n = n.parentNode;
+  if (!n || !n.closest) return null;
+  const doc = getDoc();
+  const root = doc.querySelector('.book-wrap')
+    || ((doc.querySelector('.chapter, .cover, .preface, .toc') || {}).parentElement)
+    || doc.body;
+  let b = n;
+  while (b && b.parentElement && b.parentElement !== root) b = b.parentElement;
+  return (b && b.parentElement === root) ? b : null;
+}
+
 /** แทรกตัวคั่นหน้า (ขึ้นหน้าใหม่ใน PDF) ใต้บล็อกที่เคอร์เซอร์อยู่ (P2-S126).
  *  เป็น div ว่าง class=pdf-page-break + inline break-before:page → ใน editor เห็น
  *  เป็นเส้นประ (runtime CSS) · ใน PDF/WeasyPrint ดันเนื้อหาถัดไปขึ้นหน้าใหม่ */
@@ -6483,6 +6523,188 @@ function insertPageBreak() {
     (el) => el.setAttribute('contenteditable', 'false'));
   setDirty(true);
   showToast('แทรกตัวคั่นหน้า — เนื้อหาถัดจากนี้ขึ้นหน้าใหม่ใน PDF');
+}
+
+/* ── หน้าเต็มหน้า (full-bleed page) (P2-S129) ─────────────────────────
+ * บล็อก <div class="full-page"> = หน้าของตัวเอง เต็มขอบจรดขอบใน PDF (named @page
+ * margin:0) · มีสีพื้น + รูปเต็มหน้า (cover/contain) ได้ · เป็น atomic marker */
+let fpImageData = null;     // Base64 data URL (fallback เมื่อไม่ได้เปิดโฟลเดอร์โปรเจกต์)
+let fpImagePath = null;     // './images/...' เมื่อคัดลอกไฟล์ลงโปรเจกต์แล้ว (ไม่บวมไฟล์)
+let fpImagePreview = null;  // blob URL สำหรับพรีวิว/แสดงใน editor
+let fpEditTarget = null;    // .full-page ที่กำลังแก้ไข (dblclick) — null = แทรกใหม่ (P2-S129f)
+
+/** แปลง rgb()/rgba() → #rrggbb (อ่านสีพื้นจาก inline style ตอนแก้ไข) */
+function rgbToHex(c) {
+  if (!c) return '';
+  if (isHexColor(c)) return c;
+  const m = String(c).match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!m) return '';
+  const h = (n) => ('0' + (parseInt(n, 10) & 255).toString(16)).slice(-2);
+  return '#' + h(m[1]) + h(m[2]) + h(m[3]);
+}
+
+function showFullPageModal() {
+  fpEditTarget = null;   // โหมดแทรกใหม่
+  fpImageData = null; fpImagePath = null; fpImagePreview = null;
+  const sel = getWin().getSelection();
+  if (sel && sel.rangeCount) savedSelection = sel.getRangeAt(0).cloneRange();
+  const savedColor = localStorage.getItem('bookEditor_fullPageColor');   // จำสีพื้นล่าสุด (P2-S129e)
+  document.getElementById('fpColor').value = isHexColor(savedColor) ? savedColor : '#111827';
+  document.getElementById('fpFileName').textContent = 'คลิกเพื่อเลือกรูป...';
+  document.getElementById('fpFileInput').value = '';
+  document.getElementById('fpFitField').style.display = 'none';
+  document.getElementById('fpClearImg').style.display = 'none';
+  document.getElementById('fpColor').oninput = fpUpdatePreview;
+  const t = document.getElementById('fpTitle'); if (t) t.textContent = '🖼️ หน้าเต็มหน้า (PDF)';
+  const b = document.getElementById('fpSubmitBtn'); if (b) b.textContent = 'แทรกหน้า';
+  fpUpdatePreview();
+  document.getElementById('fullPageModal').classList.add('show');
+}
+
+/** แก้ไขหน้าว่างที่มีอยู่ (dblclick) — เติมค่าสี/รูปเดิม แล้วบันทึกทับ (P2-S129f) */
+function showFullPageModalForEdit(fp) {
+  fpEditTarget = fp;
+  fpImageData = null; fpImagePath = null; fpImagePreview = null;
+  // สีพื้น: อ่านจาก data-bg (แม่นยำ) → fallback แปลงจาก rgb ของ inline style
+  const hex = fp.getAttribute('data-bg') || rgbToHex(fp.style.backgroundColor);
+  document.getElementById('fpColor').value = isHexColor(hex) ? hex : '#111827';
+  // รูป (ถ้ามี)
+  const img = fp.querySelector('img.full-page-img');
+  if (img) {
+    const orig = img.getAttribute('data-original-src') || '';
+    const src = img.getAttribute('src') || '';
+    if (orig) { fpImagePath = orig; fpImagePreview = src; }
+    else if (/^data:image\//.test(src)) { fpImageData = src; }
+    else if (src) { fpImagePath = src; fpImagePreview = src; }
+    document.getElementById('fpFit').value = (img.style.objectFit === 'contain') ? 'contain' : 'cover';
+    document.getElementById('fpFileName').textContent = 'รูปปัจจุบัน (เลือกใหม่เพื่อเปลี่ยน)';
+    document.getElementById('fpFitField').style.display = '';
+    document.getElementById('fpClearImg').style.display = '';
+  } else {
+    document.getElementById('fpFileName').textContent = 'คลิกเพื่อเลือกรูป...';
+    document.getElementById('fpFitField').style.display = 'none';
+    document.getElementById('fpClearImg').style.display = 'none';
+  }
+  document.getElementById('fpFileInput').value = '';
+  document.getElementById('fpColor').oninput = fpUpdatePreview;
+  const t = document.getElementById('fpTitle'); if (t) t.textContent = '✏️ แก้ไขหน้าเต็มหน้า';
+  const b = document.getElementById('fpSubmitBtn'); if (b) b.textContent = 'บันทึก';
+  fpUpdatePreview();
+  document.getElementById('fullPageModal').classList.add('show');
+}
+function closeFullPageModal() {
+  fpEditTarget = null;
+  document.getElementById('fullPageModal').classList.remove('show');
+}
+async function fpHandleFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  fpImageData = null; fpImagePath = null; fpImagePreview = null;
+  if (projectDirHandle && await ensureWritePermission(projectDirHandle)) {
+    // คัดลอกไฟล์ลง ./images/ (ไม่บวมไฟล์ HTML) — ใช้กลไก data-original-src เดียวกับ image dialog
+    try {
+      showToast('กำลังเซฟรูปลงโปรเจกต์...');
+      const safeName = sanitizeImageFilename(file.name);   // P2-S84 — ชื่อ URL-safe
+      const imgDir = await projectDirHandle.getDirectoryHandle('images', { create: true });
+      const fh = await imgDir.getFileHandle(safeName, { create: true });
+      const w = await fh.createWritable(); await w.write(file); await w.close();
+      const fresh = await fh.getFile();
+      fpImagePath = `./images/${safeName}`;
+      projectImageCache.set(fpImagePath, fresh);
+      fpImagePreview = await safeBlobToUrl(fresh);
+      if (fpImagePreview.startsWith('blob:')) activeObjectUrls.push(fpImagePreview);
+      if (safeName !== file.name) showToast(`เปลี่ยนชื่อเป็น ${safeName} เพื่อให้พิมพ์ PDF ได้ถูกต้อง`);
+    } catch (err) {
+      console.error('[fpHandleFile copy] failed:', err);
+      showToast('เซฟลงโฟลเดอร์ไม่สำเร็จ — ฝังเป็น Base64 แทน');
+      fpImageData = await readFileAsDataUrl(file); fpImagePath = null; fpImagePreview = null;
+    }
+  } else {
+    // ยังไม่ได้เปิดโฟลเดอร์โปรเจกต์ → ฝัง Base64 ชั่วคราว (เตือน)
+    showToast('เปิดโฟลเดอร์โปรเจกต์เพื่อเซฟเป็นไฟล์ · ตอนนี้ฝัง Base64');
+    fpImageData = await readFileAsDataUrl(file);
+  }
+  document.getElementById('fpFileName').textContent = file.name;
+  document.getElementById('fpFitField').style.display = '';
+  document.getElementById('fpClearImg').style.display = '';
+  fpUpdatePreview();
+}
+function fpClearImage() {
+  fpImageData = null; fpImagePath = null; fpImagePreview = null;
+  document.getElementById('fpFileName').textContent = 'คลิกเพื่อเลือกรูป...';
+  document.getElementById('fpFitField').style.display = 'none';
+  document.getElementById('fpClearImg').style.display = 'none';
+  fpUpdatePreview();
+}
+function fpUpdatePreview() {
+  const pv = document.getElementById('fpPreview');
+  const color = document.getElementById('fpColor').value || '#111827';
+  pv.style.background = color;
+  const src = fpImagePreview || fpImageData;   // blob (ไฟล์โปรเจกต์) หรือ base64 (fallback)
+  if (src) {
+    const fit = document.getElementById('fpFit').value === 'contain' ? 'contain' : 'cover';
+    pv.style.backgroundImage = `url("${src}")`;
+    pv.style.backgroundSize = fit;
+    pv.style.backgroundPosition = 'center';
+    pv.style.backgroundRepeat = 'no-repeat';
+  } else {
+    pv.style.backgroundImage = 'none';
+  }
+}
+function insertFullPage() {
+  const color = document.getElementById('fpColor').value || '#111827';
+  const fit = document.getElementById('fpFit').value === 'contain' ? 'contain' : 'cover';
+  const safeColor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#111827';
+  lsPut('bookEditor_fullPageColor', safeColor);   // จำสีไว้ใช้หน้าถัดไป (P2-S129e)
+  let inner = '';
+  if (fpImagePath) {
+    // คัดลอกลง ./images/ แล้ว — preview เป็น blob, data-original-src เก็บ path จริง (เซฟ → src)
+    inner = `<img class="full-page-img" src="${fpImagePreview || ''}" data-original-src="${escapeHtml(fpImagePath)}" alt="" style="object-fit:${fit};">`;
+  } else if (fpImageData && /^data:image\//.test(fpImageData)) {
+    inner = `<img class="full-page-img" src="${fpImageData}" alt="" style="object-fit:${fit};">`;
+  }
+  // ── โหมดแก้ไข (dblclick): อัปเดต element เดิม ไม่แทรกใหม่ (P2-S129f) ──
+  if (fpEditTarget && fpEditTarget.isConnected) {
+    pushUndoSnapshot();
+    fpEditTarget.style.background = safeColor;
+    fpEditTarget.setAttribute('data-bg', safeColor);
+    fpEditTarget.innerHTML = inner;   // เปลี่ยน/เพิ่ม/เอารูปออก ตามที่เลือก
+    fpEditTarget.setAttribute('contenteditable', 'false');
+    if (fpEditTarget.scrollIntoView) fpEditTarget.scrollIntoView({ block: 'center' });
+    setDirty(true);
+    closeFullPageModal();
+    showToast('แก้ไขหน้าเต็มหน้าแล้ว');
+    return;
+  }
+
+  const html = `<div class="full-page" data-bg="${safeColor}" style="background:${safeColor};" contenteditable="false">${inner}</div>`;
+
+  focusEditor();
+  if (savedSelection) {
+    try { const s = getWin().getSelection(); s.removeAllRanges(); s.addRange(savedSelection); } catch (e) { /* ignore */ }
+  }
+  const doc = getDoc();
+  // หน้าเต็มหน้า = หน้าระดับบนสุด → แทรกเป็น sibling "หลังหน้าปัจจุบัน" (chapter/part)
+  // ไม่ฝังใน .content (มี padding → ไม่ full-bleed และจะตกไปอยู่ใน part)
+  const page = caretTopPage();
+  pushUndoSnapshot();
+  const tmp = doc.createElement('div');
+  tmp.innerHTML = html;
+  const node = tmp.firstElementChild;
+  if (node) {
+    if (page && page.parentNode) {
+      page.parentNode.insertBefore(node, page.nextSibling);   // หลังหน้าปัจจุบัน
+    } else {
+      // ไม่มีเคอร์เซอร์ในหน้าใด → ต่อท้าย book-wrap (กันแทรกไม่ลง)
+      (doc.querySelector('.book-wrap') || doc.body).appendChild(node);
+    }
+    node.setAttribute('contenteditable', 'false');
+    if (node.scrollIntoView) node.scrollIntoView({ block: 'center' });
+  }
+  setDirty(true);
+  closeFullPageModal();
+  showToast('แทรกหน้าเต็มหน้าแล้ว — เป็นหน้าใหม่หลังหน้าปัจจุบัน');
 }
 
 // Helper — close the quick insert menu + reset its trigger state.

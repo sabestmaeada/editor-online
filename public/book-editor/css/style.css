@@ -849,6 +849,45 @@ tr:hover td {
   suffix: ". ";
 }
 
+/* หน้าเต็มหน้า full-bleed (P2-S129) — หน้าของตัวเอง เต็มขอบจรดขอบใน PDF
+   ใช้ named @page ตั้ง margin:0 เฉพาะหน้านี้ · สี/รูปเก็บ inline ต่อหน้า */
+@page blank-full { margin: 0; }
+.full-page {
+  page: blank-full;
+  break-before: page;
+  break-after: page;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  display: block;
+  background-position: center;
+  background-size: cover;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.full-page-img {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  object-fit: cover;
+  object-position: center;
+}
+@media print {
+  /* หลุดออกจาก .book-wrap (max-width:780px + padding:40px ที่จัดกึ่งกลาง)
+     ให้กว้างเต็มหน้ากระดาษจริง → เต็มขอบจรดขอบ */
+  .full-page {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    margin-right: calc(50% - 50vw);
+    height: 297mm;
+    min-height: 297mm;
+  }
+  .full-page-img { height: 297mm; }
+}
+
 .img-placeholder {
   background: linear-gradient(135deg, #f0f4ff, #e8ecf8);
   border: 2px dashed #7C8DB5;
