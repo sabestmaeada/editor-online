@@ -41,29 +41,33 @@ const DEFAULTS = {
   eb_pages: "240",
 
   // ── press fields ──
-  pr_title: "Claude Cowork Step-By-Step ให้ AI ทำงานแทนคน",
+  pr_title: "เว็บแวบเดียวด้วย Claude + Claude Design",
   pr_author: "ทีมงาน Millionaire Dev",
-  pr_editor: "",
-  pr_price: "250",
+  pr_editor: "จีราวุธ วารินทร์",
+  pr_price: "375",
   pr_cip_author: "ทีมงาน Millionaire Dev.",
   pr_cip_desc:
-    "Claude Cowork Step-By-Step ให้ AI ทำงานแทนคน.-- นนทบุรี : ธิงค์ บียอนด์ บุ๊คส์, 2569.\n240 หน้า.\n1. ปัญญาประดิษฐ์.  2. Claude.  I. ชื่อเรื่อง.",
-  pr_isbn: "",
+    "คู่มือ Claude Cowork สั่ง AI ทำงานอัตโนมัติแทนคน-- นนทบุรี : ธิงค์ บียอนด์ บุ๊คส์, 2569.\n240 หน้า.\n1. ปัญญาประดิษฐ์ -- การประมวลผลข้อมูล. I. ชื่อเรื่อง.\n006.30285",
+  pr_isbn: "978-616-449-633-0",
 
-  pr_asst_ed: "",
-  pr_layout: "",
-  pr_illust: "",
-  pr_cover: "",
-  pr_proof: "",
+  // ติ๊ก = แสดง block ข้อมูลบรรณานุกรมหอสมุดแห่งชาติ (CIP)
+  // ไม่ติ๊ก = ISBN ย้ายไปคู่ราคาในหัวข้อ + กล่องลิขสิทธิ์เต็มความกว้าง (แบบส่งโรงพิมพ์ไม่ส่งข้อมูลหอสมุด)
+  pr_include_cip: true,
 
-  pr_verify: "",
-  pr_tech: "",
-  pr_print_year: "",
+  pr_asst_ed: "สุภัสสรา วงษ์ศรี",
+  pr_layout: "ทีมงาน Millionaire Dev",
+  pr_illust: "ทีมงาน Millionaire Dev",
+  pr_cover: "Honey Toast",
+  pr_proof: "ทีมงาน Millionaire Dev",
 
-  pr_ph_name: "บริษัท ส. พิจิตรการพิมพ์ จำกัด",
-  pr_ph_addr: "50/46 หมู่ 5 ต.บางตลาด อ.ปากเกร็ด จ.นนทบุรี 11120",
-  pr_ph_tel: "",
-  pr_ph_fax: "",
+  pr_verify: "ทีมงาน Millionaire Dev",
+  pr_tech: "ปฐมพล ธรรมศรีสกุล",
+  pr_print_year: "มิถุนายน 2569",
+
+  pr_ph_name: "บริษัท พิมพ์ดี จำกัด",
+  pr_ph_addr: "30/2 หมู่ที่ 1 ถ.เจษฎาวิธี ต.โคกขาม อ.เมืองสมุทรสาคร จ.สมุทรสาคร 74000",
+  pr_ph_tel: "0-2401-9401",
+  pr_ph_fax: "0-2401-9417",
 
   pr_pub_name: "บริษัท ธิงค์ บียอนด์ บุ๊คส์ จำกัด",
   pr_pub_addr:
@@ -71,14 +75,14 @@ const DEFAULTS = {
   pr_pub_tel: "0-2962-1081-3 (อัตโนมัติ 10 คู่สาย)",
   pr_pub_fax: "0-2962-1084",
   pr_pub_web: "www.thinkbeyondbook.com",
-  pr_pub_logo: "",
+  pr_pub_logo: "./images/Logo_TBY.png",
 
   pr_dist_name: "บริษัท ไอดีซี พรีเมียร์ จำกัด",
   pr_dist_addr:
     "200 หมู่ 4 ชั้น 19 ห้อง 1901 จัสมินอินเตอร์เนชั่นแนลทาวเวอร์\nถ.แจ้งวัฒนะ ต.ปากเกร็ด อ.ปากเกร็ด จ.นนทบุรี ประเทศไทย 11120",
   pr_dist_tel: "0-2962-1081-3 (อัตโนมัติ 10 คู่สาย)",
   pr_dist_fax: "0-2962-1084",
-  pr_dist_logo: "",
+  pr_dist_logo: "./images/Logo_IDC.png",
 
   pr_footer_contact:
     "โทรศัพท์ 0-2962-1081, 0-2962-2626 ต่อ 112-114   โทรสาร 0-2962-1084",
@@ -89,7 +93,8 @@ const DEFAULTS = {
 };
 
 type FormState = typeof DEFAULTS;
-type StringKey = Exclude<keyof FormState, "type">;
+// pr_include_cip is boolean; everything else (except the "type" union) is a string.
+type StringKey = Exclude<keyof FormState, "type" | "pr_include_cip">;
 
 /* ───────────────────── helpers ───────────────────── */
 
@@ -163,18 +168,22 @@ function buildPressSection(d: FormState): string {
     ? escapeHtml(d.pr_ph_fax)
     : '<span class="placeholder">((แฟกซ์))</span>';
 
-  return `<section class="credits-page">
+  // CIP (ข้อมูลบรรณานุกรมหอสมุดแห่งชาติ) toggle.
+  //   on  → CIP block ซ้าย + กล่องลิขสิทธิ์ขวา (2 คอลัมน์), ISBN อยู่ใน CIP
+  //   off → ไม่มี CIP · ISBN ย้ายไปคู่ราคาในหัวข้อ · กล่องลิขสิทธิ์เต็มความกว้าง
+  const includeCip = d.pr_include_cip !== false;
+  const NOTICE =
+    "ห้ามลอกเลียนแบบส่วนใดส่วนหนึ่งของหนังสือเล่มนี้ ไม่ว่ารูปแบบใด ๆ นอกจากจะได้รับอนุญาตเป็นลายลักษณ์อักษรจากผู้จัดพิมพ์เท่านั้น";
 
-  <div class="credits-page-header">
-    <div class="book-title">${escapeHtml(d.pr_title)}</div>
-    <div class="meta-row">
-      <div><span class="label">ผู้เขียน :</span> ${escapeHtml(d.pr_author)}</div>
-      <div><span class="label">บรรณาธิการ :</span> ${editor}</div>
-    </div>
-    <div class="price">ราคา ${escapeHtml(d.pr_price)} บาท</div>
-  </div>
+  const headerPrice = includeCip
+    ? `    <div class="price">ราคา ${escapeHtml(d.pr_price)} บาท</div>`
+    : `    <div class="meta-row">
+      <div><span class="label">ราคา :</span> ${escapeHtml(d.pr_price)} บาท</div>
+      <div><span class="label">ISBN :</span> ${isbn}</div>
+    </div>`;
 
-  <div class="row-cip-copyright">
+  const cipCopyright = includeCip
+    ? `  <div class="row-cip-copyright">
     <div class="cip">
       <h3>ข้อมูลทางบรรณานุกรมของหอสมุดแห่งชาติ/<br>National Library of Thailand Cataloging in Publication Data</h3>
       <div class="cip-author">${escapeHtml(d.pr_cip_author)}</div>
@@ -184,12 +193,28 @@ ${linesToDivs(d.pr_cip_desc, "cip-desc")}
     <div class="copyright-block">
       <div class="law-year">สงวนลิขสิทธิ์ตามพระราชบัญญัติลิขสิทธิ์ พ.ศ.2537</div>
       <div class="by-publisher">โดย ${escapeHtml(d.pr_pub_name)}</div>
-      <div class="notice">
-        ห้ามลอกเลียนแบบส่วนใดส่วนหนึ่งของหนังสือเล่มนี้ ไม่ว่ารูปแบบใด ๆ
-        นอกจากจะได้รับอนุญาตเป็นลายลักษณ์อักษรจากผู้จัดพิมพ์เท่านั้น
-      </div>
+      <div class="notice">${NOTICE}</div>
     </div>
+  </div>`
+    : `  <div class="row-cip-copyright no-cip">
+    <div class="copyright-block">
+      <div class="law-year">สงวนลิขสิทธิ์ตามพระราชบัญญัติลิขสิทธิ์ พ.ศ.2537 โดย ${escapeHtml(d.pr_pub_name)}</div>
+      <div class="notice">${NOTICE}</div>
+    </div>
+  </div>`;
+
+  return `<section class="credits-page${includeCip ? "" : " no-cip"}">
+
+  <div class="credits-page-header">
+    <div class="book-title">${escapeHtml(d.pr_title)}</div>
+    <div class="meta-row">
+      <div><span class="label">ผู้เขียน :</span> ${escapeHtml(d.pr_author)}</div>
+      <div><span class="label">บรรณาธิการ :</span> ${editor}</div>
+    </div>
+${headerPrice}
   </div>
+
+${cipCopyright}
 
   <div class="row-production">
     <div class="production">
@@ -333,6 +358,11 @@ export function CreditsForm() {
     [],
   );
 
+  const setCip = useCallback(
+    (v: boolean) => setData((d) => ({ ...d, pr_include_cip: v })),
+    [],
+  );
+
   const showFlash = useCallback((msg: string) => {
     setFlash(msg);
     if (flashTimer.current) window.clearTimeout(flashTimer.current);
@@ -406,7 +436,7 @@ export function CreditsForm() {
         {/* ============ LEFT: Form ============ */}
         <div className="credits-form-panel">
           {isPress ? (
-            <PressFields data={data} update={updateField} />
+            <PressFields data={data} update={updateField} setCip={setCip} />
           ) : (
             <EbookFields data={data} update={updateField} />
           )}
@@ -518,9 +548,28 @@ function EbookFields({ data, update }: FieldsProps) {
   );
 }
 
-function PressFields({ data, update }: FieldsProps) {
+function PressFields({
+  data,
+  update,
+  setCip,
+}: FieldsProps & { setCip: (v: boolean) => void }) {
   return (
     <>
+      <section className="credits-form-section">
+        <label className="credits-checkbox">
+          <input
+            type="checkbox"
+            checked={data.pr_include_cip}
+            onChange={(e) => setCip(e.target.checked)}
+          />
+          <span>รวมข้อมูลบรรณานุกรมหอสมุดแห่งชาติ (CIP)</span>
+        </label>
+        <div className="credits-field-hint">
+          ไม่ติ๊ก = ISBN ย้ายไปคู่ราคาในหัวข้อ + กล่องลิขสิทธิ์เต็มความกว้าง
+          (สำหรับส่งโรงพิมพ์แบบไม่ส่งข้อมูลหอสมุด)
+        </div>
+      </section>
+
       <section className="credits-form-section">
         <h3>Header</h3>
         <TextField
@@ -548,18 +597,22 @@ function PressFields({ data, update }: FieldsProps) {
       </section>
 
       <section className="credits-form-section">
-        <h3>ข้อมูลบรรณานุกรม (CIP)</h3>
-        <TextField
-          label="ผู้เขียน (สำหรับ CIP)"
-          value={data.pr_cip_author}
-          onChange={(v) => update("pr_cip_author", v)}
-        />
-        <TextAreaField
-          label="รายละเอียดหนังสือ"
-          hint="แต่ละบรรทัด = 1 div ใน HTML"
-          value={data.pr_cip_desc}
-          onChange={(v) => update("pr_cip_desc", v)}
-        />
+        <h3>{data.pr_include_cip ? "ข้อมูลบรรณานุกรม (CIP)" : "ISBN"}</h3>
+        {data.pr_include_cip && (
+          <>
+            <TextField
+              label="ผู้เขียน (สำหรับ CIP)"
+              value={data.pr_cip_author}
+              onChange={(v) => update("pr_cip_author", v)}
+            />
+            <TextAreaField
+              label="รายละเอียดหนังสือ"
+              hint="แต่ละบรรทัด = 1 div ใน HTML"
+              value={data.pr_cip_desc}
+              onChange={(v) => update("pr_cip_desc", v)}
+            />
+          </>
+        )}
         <TextField
           label="ISBN"
           value={data.pr_isbn}

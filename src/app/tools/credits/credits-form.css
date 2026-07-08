@@ -309,6 +309,27 @@
   line-height: 1.5;
 }
 
+/* no-CIP variant (checkbox off) — กล่องลิขสิทธิ์เต็มความกว้าง (ไม่มีคอลัมน์ CIP);
+   ISBN ย้ายไปอยู่ใน .meta-row คู่กับราคาในหัวข้อ (สไตล์ .meta-row เดิมรองรับอยู่แล้ว) */
+.credits-preview-page.press .row-cip-copyright.no-cip {
+  display: block;
+}
+
+/* checkbox "รวมข้อมูลบรรณานุกรมหอสมุดแห่งชาติ (CIP)" ในฟอร์ม */
+.credits-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.credits-checkbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .credits-preview-page.press .production h3,
 .credits-preview-page.press .print-house h3,
 .credits-preview-page.press .publisher h3,
@@ -371,6 +392,7 @@
   padding-top: 2mm;
   font-size: 8pt;
   line-height: 1.35;
+  text-align: center;
 }
 .credits-preview-page.press .for-retail {
   font-weight: 700;
