@@ -20,7 +20,8 @@ import "./credits-form.css";
    short-lived (author finishes one credits page then moves on).
    ============================================================== */
 
-const STORAGE_KEY = "credits_form_v1";
+// bump เวอร์ชันเมื่อเปลี่ยน DEFAULTS ครั้งใหญ่ → มองข้าม draft เก่า ให้ค่าเริ่มใหม่โหลดสด
+const STORAGE_KEY = "credits_form_v2";
 
 type CreditsType = "ebook" | "press";
 
