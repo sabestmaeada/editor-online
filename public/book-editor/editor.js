@@ -1606,6 +1606,15 @@ body { padding-bottom: 200px; }
   pointer-events: none;
 }
 
+/* รูป crop (max-width:none + width/height px) ล้นคอลัมน์เมื่อจอแคบ (P2-S130)
+   editor-only: ย่อพอดีคอลัมน์โดยคงสัดส่วน (--fit-ar) → object-fit cover + annotation ตรงเป๊ะ
+   runtime + ถอด class/ตัวแปรตอนเซฟ → ไม่แตะ HTML/PDF */
+.book-img img.editor-fit {
+  max-width: 100% !important;
+  height: auto !important;
+  aspect-ratio: var(--fit-ar);
+}
+
 .content b, .content strong { font-weight: 600; color: var(--accent-dk); }
 .content i, .content em { font-style: italic; }
 .preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
@@ -1899,6 +1908,7 @@ ${bodyContent}
     doc.querySelectorAll('.img-line-cap').forEach((c) => {
       if (!c.getAttribute('stroke')) c.setAttribute('stroke', 'none');
     });
+    bindEditorFit(doc);      // P2-S130 — รูป crop ย่อพอดีคอลัมน์ (editor-only, ไม่เซฟ)
     bindTableContextMenu(doc);
     bindTableResize(doc);
     bindTableKeyboard(doc);
@@ -5377,6 +5387,7 @@ function toggleCrop() {
 
 function enterCrop(img) {
   if (annotatingFrame) exitAnnotateMode();
+  removeEditorFit(img);   // P2-S130 — ถอด responsive-fit ก่อน เพื่อวัด/ครอบที่ขนาด px จริง
   croppingImg = img;
   cropStyleBackup = img.getAttribute('style') || '';
   cropBaseWidth = img.getBoundingClientRect().width || 300;
@@ -5412,6 +5423,34 @@ function exitCrop(apply) {
   // P2-S95 — crop changed the image aspect; resync the line overlay's viewBox
   // so existing lines' dot caps/handles stay circular and lines un-skewed.
   syncImageLines(img.closest('.img-frame'));
+  applyEditorFit(img);   // P2-S130 — ออก crop แล้ว ให้ย่อพอดีคอลัมน์อีกครั้ง (editor-only)
+}
+
+/* ── editor-fit (P2-S130) — รูป crop ไม่ให้ล้นคอลัมน์ในจอแคบ (editor-only) ──
+ * รูป crop มี width/height เป็น px + max-width:none → หดไม่ได้ → ล้นเมื่อคอลัมน์ < px
+ * แก้เฉพาะจอแก้ไข: ใส่ class .editor-fit + ตัวแปร --fit-ar (สัดส่วนกล่อง) แล้ว runtime CSS
+ * ทำให้ max-width:100% + height:auto + aspect-ratio → ย่อพอดี สัดส่วนคงเดิม → annotation ตรง
+ * ค่าที่ใส่ถูก "ถอดตอนเซฟ" (buildSaveContent) → HTML/PDF ไม่เปลี่ยน */
+function isCroppedImg(img) {
+  if (!img || !img.style) return false;
+  const w = img.style.width, h = img.style.height;
+  return img.style.maxWidth === 'none'
+    && typeof w === 'string' && w.endsWith('px') && parseFloat(w) > 0
+    && typeof h === 'string' && h.endsWith('px') && parseFloat(h) > 0;
+}
+function applyEditorFit(img) {
+  if (!isCroppedImg(img)) return;
+  const w = parseFloat(img.style.width), h = parseFloat(img.style.height);
+  img.style.setProperty('--fit-ar', w + ' / ' + h);
+  img.classList.add('editor-fit');
+}
+function removeEditorFit(img) {
+  if (!img) return;
+  img.classList.remove('editor-fit');
+  if (img.style) img.style.removeProperty('--fit-ar');
+}
+function bindEditorFit(doc) {
+  doc.querySelectorAll('.book-img img').forEach(applyEditorFit);
 }
 
 function applyCropAspect(aspect) {
@@ -7075,6 +7114,13 @@ function buildSaveContent() {
   images.forEach(img => {
     img.setAttribute('src', img.getAttribute('data-original-src'));
     img.removeAttribute('data-original-src');
+  });
+  // P2-S130 — ถอด editor-fit (responsive-fit เฉพาะจอแก้ไข) → HTML/PDF คงรูป crop px เดิม
+  cloneBody.querySelectorAll('img.editor-fit').forEach(img => {
+    img.classList.remove('editor-fit');
+    img.style.removeProperty('--fit-ar');
+    if (!img.getAttribute('class')) img.removeAttribute('class');
+    if (!img.getAttribute('style')) img.removeAttribute('style');
   });
   // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
   cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
