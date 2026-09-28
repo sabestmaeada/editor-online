@@ -1615,6 +1615,17 @@ body { padding-bottom: 200px; }
   aspect-ratio: var(--fit-ar);
 }
 
+/* รูป inline (P2-S133) — เล็กในบรรทัด · base อยู่ใน book CSS ด้วย (render/PDF);
+   ที่นี่เพิ่ม UI ฝั่ง editor: กันลากย้าย, outline ตอนเลือก, handle ลากปรับขนาด */
+.inline-img { display: inline-block; vertical-align: middle; height: 1.4em; width: auto;
+  margin: 0 2px; cursor: pointer; -webkit-user-drag: none; user-select: none; }
+.inline-img.inline-selected { outline: 2px solid #2D6CDF; outline-offset: 1px; }
+.inline-resize-handle {
+  position: absolute; width: 12px; height: 12px; box-sizing: border-box;
+  background: #2D6CDF; border: 2px solid #fff; border-radius: 50%;
+  cursor: nwse-resize; z-index: 60; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+
 .content b, .content strong { font-weight: 600; color: var(--accent-dk); }
 .content i, .content em { font-style: italic; }
 .preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
@@ -1911,6 +1922,7 @@ ${bodyContent}
       if (!c.getAttribute('stroke')) c.setAttribute('stroke', 'none');
     });
     bindEditorFit(doc);      // P2-S130 — รูป crop ย่อพอดีคอลัมน์ (editor-only, ไม่เซฟ)
+    bindInlineImage(doc);    // P2-S133 — รูป inline: คลิกเลือก + ลากมุมปรับขนาด
     bindTableContextMenu(doc);
     bindTableResize(doc);
     bindTableKeyboard(doc);
@@ -3206,7 +3218,8 @@ function bindImageClicks(doc) {
     if (annotatingFrame || croppingImg) return;   // marker/crop handlers own the pointer
     const img = e.target.closest('img');
     doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
-    if (img) img.classList.add('img-selected');
+    // P2-S133 — รูป inline ไม่ใช่ block image → ไม่ให้ถูกเลือกสำหรับ annotate/crop
+    if (img && !img.classList.contains('inline-img')) img.classList.add('img-selected');
   }, true);
 }
 
@@ -5460,6 +5473,84 @@ function bindEditorFit(doc) {
   doc.querySelectorAll('.book-img img').forEach(applyEditorFit);
 }
 
+/* ── รูป inline (P2-S133) — รูปเล็กในบรรทัดข้อความ + ลากมุมปรับขนาด ──
+ * markup ที่เซฟ: <img class="inline-img" style="height:…"> (ไม่มี figure/frame)
+ * เลือก = คลิก → outline + handle มุมขวาล่าง (overlay ชั่วคราวใน body, strip ตอนเซฟ)
+ * ลาก handle → ปรับ height (px) คงสัดส่วน (width:auto) */
+let inlineSelected = null;
+let inlineHandle = null;
+
+function ensureInlineHandle() {
+  const doc = getDoc();
+  if (inlineHandle && inlineHandle.isConnected && inlineHandle.ownerDocument === doc) return inlineHandle;
+  inlineHandle = doc.createElement('div');
+  inlineHandle.className = 'inline-resize-handle';
+  inlineHandle.setAttribute('contenteditable', 'false');
+  inlineHandle.style.display = 'none';
+  doc.body.appendChild(inlineHandle);
+  inlineHandle.addEventListener('mousedown', onInlineHandleDown);
+  return inlineHandle;
+}
+function positionInlineHandle() {
+  if (!inlineSelected || !inlineHandle) return;
+  const rect = inlineSelected.getBoundingClientRect();
+  const win = getWin();
+  inlineHandle.style.left = Math.round(rect.right + win.scrollX - 6) + 'px';
+  inlineHandle.style.top = Math.round(rect.bottom + win.scrollY - 6) + 'px';
+  inlineHandle.style.display = 'block';
+}
+function selectInlineImage(img) {
+  if (inlineSelected && inlineSelected !== img) inlineSelected.classList.remove('inline-selected');
+  inlineSelected = img;
+  img.classList.add('inline-selected');
+  ensureInlineHandle();
+  positionInlineHandle();
+}
+function deselectInlineImage() {
+  if (inlineSelected) inlineSelected.classList.remove('inline-selected');
+  inlineSelected = null;
+  if (inlineHandle) { inlineHandle.remove(); inlineHandle = null; }   // ลบ overlay ออกจาก DOM
+}
+function onInlineHandleDown(e) {
+  if (!inlineSelected) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const doc = getDoc();
+  const img = inlineSelected;
+  const startY = e.clientY;
+  const startH = img.getBoundingClientRect().height || parseFloat(getWin().getComputedStyle(img).height) || 24;
+  // snapshot สะอาด (ไม่มี handle/สถานะเลือก) แล้วแทรกกลับ → undo ไม่ทิ้ง handle ค้าง
+  if (inlineHandle) { inlineHandle.remove(); inlineHandle = null; }
+  img.classList.remove('inline-selected');
+  pushUndoSnapshot();
+  img.classList.add('inline-selected');
+  ensureInlineHandle();
+  positionInlineHandle();
+  const onMove = (ev) => {
+    const nh = Math.max(10, Math.round(startH + (ev.clientY - startY)));
+    img.style.height = nh + 'px';
+    img.style.width = 'auto';   // คงสัดส่วน
+    positionInlineHandle();
+  };
+  const onUp = () => {
+    doc.removeEventListener('mousemove', onMove);
+    doc.removeEventListener('mouseup', onUp);
+    setDirty(true);
+  };
+  doc.addEventListener('mousemove', onMove);
+  doc.addEventListener('mouseup', onUp);
+}
+function bindInlineImage(doc) {
+  inlineSelected = null;
+  inlineHandle = null;
+  doc.body.addEventListener('click', (e) => {
+    const img = e.target.closest && e.target.closest('.inline-img');
+    if (img) { selectInlineImage(img); return; }
+    if (e.target.closest && e.target.closest('.inline-resize-handle')) return;
+    if (inlineSelected) deselectInlineImage();
+  });
+}
+
 function applyCropAspect(aspect) {
   if (!croppingImg) return;
   cropAspect = aspect;
@@ -5684,6 +5775,7 @@ function showImageModalForEdit(img) {
   document.getElementById('imageModalTitle').textContent = '🖼️ แก้ไขรูปภาพ';
   document.getElementById('imgSubmitBtn').textContent = 'บันทึก';
   document.getElementById('imgDeleteBtn').style.display = 'flex';
+  document.getElementById('imgInline').checked = img.classList.contains('inline-img'); // P2-S133
 
   resetImageFilePicker(); // ล้างค่าก่อนเปิด
 
@@ -5957,6 +6049,7 @@ function showImageModal() {
   document.getElementById('imgHeight').value = '';
   document.getElementById('imgObjectFit').value = '';
   document.getElementById('imgShowCaption').checked = false; // ค่าเริ่มต้น: ไม่แสดงคำอธิบายใต้ภาพ
+  document.getElementById('imgInline').checked = false;      // ค่าเริ่มต้น: แทรกแบบ block (P2-S133)
 
   document.getElementById('imgPreview').classList.remove('show');
   resetImageFilePicker();
@@ -6022,25 +6115,28 @@ async function insertImage() {
     }
 
     editingImage.setAttribute('alt', alt);
-    editingImage.style.width = width || '';
-    // ความสูง: ไม่แตะ style.height ที่นี่ (P2-S94) — เครื่องมือ Crop เป็นเจ้าของค่านี้
-    // การเขียนทับด้วยค่าว่างจะลบ crop ทิ้งและทำให้ overlay (ตัวชี้/เส้น/กรอบ/กล่อง) ขยับ
-    editingImage.style.objectFit = objectFit || '';
-    // P2-S113 — แก้ object-fit/ความกว้างจาก dialog อาจเปลี่ยนสถานะ crop → sync data-crop
-    updateCropData(editingImage);
+    // P2-S133 — รูป inline: อัปเดตแค่ src/alt · ไม่แตะ width/crop/figure/caption (คงขนาด height เดิม)
+    if (!editingImage.classList.contains('inline-img')) {
+      editingImage.style.width = width || '';
+      // ความสูง: ไม่แตะ style.height ที่นี่ (P2-S94) — เครื่องมือ Crop เป็นเจ้าของค่านี้
+      // การเขียนทับด้วยค่าว่างจะลบ crop ทิ้งและทำให้ overlay (ตัวชี้/เส้น/กรอบ/กล่อง) ขยับ
+      editingImage.style.objectFit = objectFit || '';
+      // P2-S113 — แก้ object-fit/ความกว้างจาก dialog อาจเปลี่ยนสถานะ crop → sync data-crop
+      updateCropData(editingImage);
 
-    const figure = editingImage.closest('figure');
-    if (figure) {
-      const showCaption = document.getElementById('imgShowCaption').checked;
-      let caption = figure.querySelector('figcaption');
-      if (showCaption) {
-        if (!caption) {
-          caption = figure.ownerDocument.createElement('figcaption');
-          figure.appendChild(caption); // ต่อท้าย figure (หลัง .img-frame) — ไม่กระทบ overlay
+      const figure = editingImage.closest('figure');
+      if (figure) {
+        const showCaption = document.getElementById('imgShowCaption').checked;
+        let caption = figure.querySelector('figcaption');
+        if (showCaption) {
+          if (!caption) {
+            caption = figure.ownerDocument.createElement('figcaption');
+            figure.appendChild(caption); // ต่อท้าย figure (หลัง .img-frame) — ไม่กระทบ overlay
+          }
+          caption.textContent = alt;
+        } else if (caption) {
+          caption.remove(); // เอาติ๊กออก = ลบคำอธิบายใต้ภาพ
         }
-        caption.textContent = alt;
-      } else if (caption) {
-        caption.remove(); // เอาติ๊กออก = ลบคำอธิบายใต้ภาพ
       }
     }
 
@@ -6082,6 +6178,19 @@ async function insertImage() {
     }
 
     const escAlt = escapeHtml(alt);
+
+    // P2-S133 — แทรกรูป inline (เล็กในบรรทัด) ที่ caret แทน block figure
+    // ขนาดเริ่มต้น height:1.4em (สเกลตามข้อความ) · ลากปรับขนาดได้ภายหลัง
+    if (document.getElementById('imgInline').checked) {
+      const inlineHtml =
+        `<img class="inline-img" src="${escapeHtml(finalSrc)}" alt="${escAlt}" loading="lazy"${dataOriginalSrcAttr} style="height:1.4em;">`;
+      getDoc().execCommand('insertHTML', false, inlineHtml);
+      setDirty(true);
+      closeImageModal();
+      showToast('แทรกรูป inline แล้ว — คลิกที่รูปเพื่อเลือก แล้วลากมุมขวาล่างปรับขนาด');
+      return;
+    }
+
     // ค่าเริ่มต้นไม่แสดง figcaption — สร้างเฉพาะเมื่อผู้ใช้ติ๊ก "แสดงคำอธิบายใต้ภาพ"
     const showCaption = document.getElementById('imgShowCaption').checked;
     const captionHtml = showCaption ? `\n  <figcaption>${escAlt}</figcaption>` : '';
@@ -7129,6 +7238,9 @@ function buildSaveContent() {
     if (!img.getAttribute('class')) img.removeAttribute('class');
     if (!img.getAttribute('style')) img.removeAttribute('style');
   });
+  // P2-S133 — รูป inline: ถอด handle (overlay) + สถานะเลือก (editor-only) → เหลือแค่ .inline-img
+  cloneBody.querySelectorAll('.inline-resize-handle').forEach(h => h.remove());
+  cloneBody.querySelectorAll('img.inline-selected').forEach(img => img.classList.remove('inline-selected'));
   // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
   cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
 

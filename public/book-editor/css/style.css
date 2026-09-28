@@ -708,6 +708,15 @@ tr:hover td {
   font-style: italic;
 }
 
+/* รูป inline (P2-S133) — รูปเล็กในบรรทัดข้อความ · ขนาดเริ่มต้น 1.4em (สเกลตามฟอนต์) */
+.inline-img {
+  display: inline-block;
+  vertical-align: middle;
+  height: 1.4em;
+  width: auto;
+  margin: 0 2px;
+}
+
 /* ── Image number markers (P2-S81) — fallback content CSS ──────
    The editor injects an equivalent block at runtime; these rules
    cover standalone rendering of the saved HTML with style.css.
