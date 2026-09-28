@@ -5540,9 +5540,27 @@ function onInlineHandleDown(e) {
   doc.addEventListener('mousemove', onMove);
   doc.addEventListener('mouseup', onUp);
 }
+/* self-healing (P2-S133b) — .inline-img ทุกตัวต้องมี inline height เสมอ
+ * บาง path (เช่น คัดลอก/วาง แล้วเบราว์เซอร์ strip style) ทำให้หลุดมาไม่มี height
+ * → PDF แสดงขนาดเต็มล้นหน้า · เติม height:1.4em ให้ตัวที่ขาด (คืนค่า spec) */
+function healInlineImages(root) {
+  if (!root || !root.querySelectorAll) return 0;
+  let fixed = 0;
+  root.querySelectorAll('img.inline-img').forEach((img) => {
+    const st = img.getAttribute('style') || '';
+    if (!/(?:^|;)\s*height\s*:/i.test(st)) {
+      img.style.height = '1.4em';
+      if (!/(?:^|;)\s*width\s*:/i.test(img.getAttribute('style') || '')) img.style.width = 'auto';
+      fixed++;
+    }
+  });
+  return fixed;
+}
+
 function bindInlineImage(doc) {
   inlineSelected = null;
   inlineHandle = null;
+  healInlineImages(doc.body);   // P2-S133b — ซ่อมรูป inline ที่โหลดมาโดยไม่มี height
   doc.body.addEventListener('click', (e) => {
     const img = e.target.closest && e.target.closest('.inline-img');
     if (img) { selectInlineImage(img); return; }
@@ -6465,7 +6483,11 @@ function bindPasteHoist(doc) {
   if (!doc.body || doc.body._pasteHoistBound) return;
   doc.body._pasteHoistBound = true;
   doc.addEventListener('paste', () => {
-    setTimeout(() => { hoistBlocksFromP(getDoc()); setDirty(true); }, 0);
+    setTimeout(() => {
+      hoistBlocksFromP(getDoc());
+      healInlineImages(getDoc().body);   // P2-S133b — วางแล้ว style อาจหลุด → เติม height กลับ
+      setDirty(true);
+    }, 0);
   });
 }
 
@@ -7241,6 +7263,8 @@ function buildSaveContent() {
   // P2-S133 — รูป inline: ถอด handle (overlay) + สถานะเลือก (editor-only) → เหลือแค่ .inline-img
   cloneBody.querySelectorAll('.inline-resize-handle').forEach(h => h.remove());
   cloneBody.querySelectorAll('img.inline-selected').forEach(img => img.classList.remove('inline-selected'));
+  // P2-S133b — การันตี: .inline-img ทุกตัวต้องมี inline height ก่อน serialize (self-healing)
+  healInlineImages(cloneBody);
   // strip contenteditable=false ที่ใส่บน <del> ตอน track changes — เป็น attribute สำหรับ editor เท่านั้น
   cloneBody.querySelectorAll('del[contenteditable]').forEach(d => d.removeAttribute('contenteditable'));
 
