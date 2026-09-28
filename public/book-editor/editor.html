@@ -133,6 +133,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
+      <button class="tb-btn" id="noIndentBtn" data-tip="ยกเลิก/คืนเยื้องบรรทัดแรก (ในคอลัมน์เลือกขอบเขตได้)" onclick="toggleNoIndent(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><path d="M6.5 4.5 L4 6 L6.5 7.5" stroke-width="1.6"/></svg>
+      </button>
       <div class="tb-sep"></div>
 
       <button class="tb-btn" data-tip="แทรกลิงก์" onclick="showLinkModal()">
@@ -566,6 +569,18 @@
   <div class="qi-item" data-align="justifyFull" onclick="setAlign('justifyFull')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
     กระจายเต็มบรรทัด
+  </div>
+</div>
+
+<!-- ยกเลิกเยื้องบรรทัดแรก (P2-S134) — เมนูเลือกขอบเขตเมื่ออยู่ในคอลัมน์ -->
+<div id="noIndentMenu" class="marker-menu align-menu" role="menu" aria-label="ขอบเขตยกเลิกเยื้องบรรทัดแรก">
+  <div class="qi-item" onclick="applyNoIndent('p')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="7" x2="20" y2="7"/><line x1="4" y1="13" x2="20" y2="13"/><line x1="4" y1="19" x2="20" y2="19"/></svg>
+    เฉพาะย่อหน้านี้
+  </div>
+  <div class="qi-item" onclick="applyNoIndent('col')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="7" height="16" rx="1"/><line x1="13" y1="8" x2="21" y2="8"/><line x1="13" y1="13" x2="21" y2="13"/><line x1="13" y1="18" x2="21" y2="18"/></svg>
+    ทั้งคอลัมน์
   </div>
 </div>
 

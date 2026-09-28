@@ -451,6 +451,10 @@ body {
   widows: 3;
 }
 
+/* ยกเลิกเยื้องบรรทัดแรก (P2-S134) — เฉพาะย่อหน้า (p.no-indent) หรือทั้งคอลัมน์ (.bd-col.no-indent) */
+.content p.no-indent { text-indent: 0; }
+.content .bd-col.no-indent p { text-indent: 0; }
+
 .content strong,
 .content b {
   font-weight: 600;

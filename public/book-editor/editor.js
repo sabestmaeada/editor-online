@@ -1626,6 +1626,11 @@ body { padding-bottom: 200px; }
   cursor: nwse-resize; z-index: 60; box-shadow: 0 1px 3px rgba(0,0,0,.4);
 }
 
+/* ยกเลิกเยื้องบรรทัดแรก (P2-S134) — .no-indent ที่ p (เฉพาะย่อหน้า) หรือ .bd-col (ทั้งคอลัมน์)
+   ใส่ใน runtime ด้วย → ใช้ได้แม้หนังสือเก่าที่ style.css ยังไม่มีกฎนี้ */
+.content p.no-indent { text-indent: 0; }
+.content .bd-col.no-indent p { text-indent: 0; }
+
 .content b, .content strong { font-weight: 600; color: var(--accent-dk); }
 .content i, .content em { font-style: italic; }
 .preface-content b, .preface-content strong { font-weight: 600; color: var(--accent-dk); }
@@ -3658,6 +3663,51 @@ function hideAlignMenu() {
   // keyboard interaction, which would otherwise leave a blue focus ring.
   const caret = document.getElementById('alignCaretBtn');
   if (caret) caret.blur();
+}
+
+/* ── ยกเลิกเยื้องบรรทัดแรก (P2-S134) — คลาส .no-indent ที่ <p> หรือ .bd-col ──
+ * นอกคอลัมน์: สลับที่ย่อหน้าทันที · ในคอลัมน์: เปิดเมนูถามขอบเขต (ย่อหน้า/ทั้งคอลัมน์) */
+let noIndentP = null;   // ย่อหน้าเป้าหมาย จับไว้ตอนกดปุ่ม (กันเมนูรบกวน selection)
+function caretParagraph() {
+  const sel = getWin().getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.anchorNode;
+  if (n && n.nodeType === 3) n = n.parentNode;
+  if (!n || !n.closest) return null;
+  const p = n.closest('p');
+  return (p && p.closest('.content')) ? p : null;
+}
+function toggleNoIndent(evt) {
+  const menu = document.getElementById('noIndentMenu');
+  if (menu && menu.classList.contains('show')) { hideNoIndentMenu(); return; }
+  const p = caretParagraph();
+  if (!p) { showToast('คลิกในย่อหน้าก่อนครับ'); return; }
+  noIndentP = p;
+  if (!p.closest('.bd-col')) { applyNoIndent('p'); return; }   // นอกคอลัมน์ → สลับเลย
+  // ในคอลัมน์ → เปิดเมนูถามขอบเขต
+  const anchor = document.getElementById('noIndentBtn');
+  if (anchor && menu) {
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = `${r.bottom + 6}px`;
+    menu.style.left = `${r.left}px`;
+    menu.classList.add('show');
+  }
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+}
+function hideNoIndentMenu() {
+  const menu = document.getElementById('noIndentMenu');
+  if (menu) menu.classList.remove('show');
+}
+function applyNoIndent(scope) {
+  const p = (noIndentP && noIndentP.isConnected) ? noIndentP : caretParagraph();
+  if (!p) { showToast('คลิกในย่อหน้าก่อนครับ'); hideNoIndentMenu(); return; }
+  const target = scope === 'col' ? (p.closest('.bd-col') || p) : p;
+  const label = scope === 'col' ? 'ทั้งคอลัมน์' : 'ย่อหน้านี้';
+  pushUndoSnapshot();
+  const off = target.classList.toggle('no-indent');
+  setDirty(true);
+  hideNoIndentMenu();
+  showToast(off ? `ปิดเยื้องบรรทัดแรก (${label})` : `คืนเยื้องบรรทัดแรก (${label})`);
 }
 
 /* ── OL marker-style split-button (P2-S111) — caret opens 1,2,3 / A,B,C /
@@ -5714,6 +5764,8 @@ function bindToolbarMenuDismiss(doc) {
   doc.addEventListener('mousedown', () => {
     const am = document.getElementById('alignMenu');
     if (am && am.classList.contains('show')) hideAlignMenu();
+    const nim = document.getElementById('noIndentMenu');   // P2-S134
+    if (nim && nim.classList.contains('show')) hideNoIndentMenu();
     const otm = document.getElementById('olTypeMenu');
     if (otm && otm.classList.contains('show')) hideOlTypeMenu();
     // P2-S86/87/88 — clicking the canvas closes the rect/line/text submenus.
@@ -7025,6 +7077,15 @@ document.addEventListener('click', (e) => {
       && !alignMenu.contains(e.target)
       && (!alignCaret || !alignCaret.contains(e.target))) {
     hideAlignMenu();
+  }
+
+  // P2-S134 — ปิดเมนูยกเลิกเยื้อง เมื่อคลิกนอกเมนู/ปุ่ม
+  const niMenu = document.getElementById('noIndentMenu');
+  const niBtn = document.getElementById('noIndentBtn');
+  if (niMenu && niMenu.classList.contains('show')
+      && !niMenu.contains(e.target)
+      && (!niBtn || !niBtn.contains(e.target))) {
+    hideNoIndentMenu();
   }
 
   // Close OL marker-style submenu on outside click (P2-S111)
