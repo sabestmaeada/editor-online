@@ -1790,8 +1790,10 @@ td.table-cell-targeted, th.table-cell-targeted {
 
 /* ── Leader lines (P2-S87) ──────────────────────────────────────
    SVG overlay sized to fill the image; viewBox aspect matches the image
-   so % coords map without distortion. Lives ABOVE .img-markers so the
-   line tool can own the pointer; pointer-events gated by .tool-line. */
+   so % coords map without distortion. Default: แทรกก่อน .img-markers →
+   เส้นอยู่ "หลัง" ตัวเลข (P2-S132, ตรงกับ skill/contract); สลับได้ด้วย
+   toggleLinesLayer. Container = pointer-events:none — มีแค่ .img-line-hit
+   ที่ดักคลิก จึงพื้นที่ว่างส่งคลิกทะลุได้ไม่ว่าชั้นเส้นจะหน้า/หลัง. */
 .img-lines {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -4508,8 +4510,10 @@ function initAnnoCustomSwatches() {    // ตั้งพื้น swatch = ส�
 initAnnoCustomSwatches();
 function unitVec(x, y) { const m = Math.hypot(x, y) || 1; return { x: x / m, y: y / m }; }
 
-/** Get/create the per-frame SVG overlay (sits above .img-markers). viewBox
- *  height is derived from the image aspect once, then persists. */
+/** Get/create the per-frame SVG overlay. Default: แทรกไว้ "ก่อน" .img-markers
+ *  → เส้นชี้อยู่ "หลัง" ตัวเลข (ตัวเลขทับปลายเส้น) ตรงกับ skill/ANNOTATION-MARKUP.md.
+ *  สลับหน้า/หลังภายหลังได้ด้วย toggleLinesLayer (P2-S89). viewBox height derived
+ *  from the image aspect once, then persists. */
 function ensureImageLines(frame) {
   let svg = frame.querySelector('.img-lines');
   if (svg) return svg;
@@ -4521,7 +4525,10 @@ function ensureImageLines(frame) {
     preserveAspectRatio: 'none',
     'data-h': String(r2(H)),
   });
-  frame.appendChild(svg);
+  // P2-S132 — ค่าเริ่มต้น: เส้นอยู่หลังตัวเลข → แทรกก่อน .img-markers
+  const markers = frame.querySelector('.img-markers');
+  if (markers) frame.insertBefore(svg, markers);
+  else frame.appendChild(svg);
   return svg;
 }
 
