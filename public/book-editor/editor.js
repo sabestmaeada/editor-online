@@ -3224,7 +3224,10 @@ function bindImageClicks(doc) {
     const img = e.target.closest('img');
     doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
     // P2-S133 — รูป inline ไม่ใช่ block image → ไม่ให้ถูกเลือกสำหรับ annotate/crop
-    if (img && !img.classList.contains('inline-img')) img.classList.add('img-selected');
+    if (img && !img.classList.contains('inline-img')) {
+      img.classList.add('img-selected');
+      ribbonShowImageTab();   // P2-S135 — contextual: เลือกรูป → เด้งแท็บ "รูปภาพ"
+    }
   }, true);
 }
 
@@ -3275,6 +3278,46 @@ updateOlMainIcon();   // reflect the remembered style on the main button
 try {
   if (localStorage.getItem('bookEditor_sidebarCollapsed') === '1') toggleSidebar(true);
 } catch (e) { /* localStorage may be blocked */ }
+
+initRibbon();   // P2-S135 — ribbon: คืนแท็บล่าสุด + ผูกดับเบิลคลิกยุบ/ขยาย
+
+/* ══ Ribbon (P2-S135) — แท็บ + ยุบ/ขยาย + contextual (เลือกรูป→แท็บรูปภาพ) ══ */
+function switchRibbonTab(id) {
+  const tabs = document.querySelectorAll('.rb-tab');
+  let found = false;
+  tabs.forEach((t) => { const on = t.dataset.rbtab === id; t.classList.toggle('active', on); if (on) found = true; });
+  if (!found) return;
+  document.querySelectorAll('.ribbon-panel').forEach((p) => p.classList.toggle('active', p.dataset.rbpanel === id));
+  const ribbon = document.getElementById('ribbon');
+  if (ribbon) ribbon.classList.remove('collapsed');   // คลิกแท็บ = ขยาย
+  try { localStorage.setItem('bookEditor_ribbonTab', id); } catch (e) { /* blocked */ }
+}
+function toggleRibbonCollapse() {
+  const ribbon = document.getElementById('ribbon');
+  if (!ribbon) return;
+  const c = ribbon.classList.toggle('collapsed');
+  try { localStorage.setItem('bookEditor_ribbonCollapsed', c ? '1' : '0'); } catch (e) { /* blocked */ }
+}
+function initRibbon() {
+  const tabsBar = document.getElementById('ribbonTabs');
+  if (tabsBar) tabsBar.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.rb-collapse')) return;   // ปุ่มยุบมี handler ของตัวเอง
+    toggleRibbonCollapse();
+  });
+  let tab = 'home';
+  try { tab = localStorage.getItem('bookEditor_ribbonTab') || 'home'; } catch (e) { /* blocked */ }
+  switchRibbonTab(tab);
+  try {
+    if (localStorage.getItem('bookEditor_ribbonCollapsed') === '1') {
+      const r = document.getElementById('ribbon'); if (r) r.classList.add('collapsed');
+    }
+  } catch (e) { /* blocked */ }
+}
+/* contextual — เลือกรูป (block) → เด้งไปแท็บ "รูปภาพ" (Picture Tools) */
+function ribbonShowImageTab() {
+  const t = document.querySelector('.rb-tab[data-rbtab="image"]');
+  if (t && !t.classList.contains('active')) switchRibbonTab('image');
+}
 
 // P2-S86 — which annotate tool is active while a frame is in annotate mode.
 // 'marker' = numbered circles (P2-S81); 'rect' = highlight rectangles.

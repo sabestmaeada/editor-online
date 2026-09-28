@@ -39,6 +39,7 @@
   --shell-sidebar-w: 260px;
   --shell-toolbar-h: 44px;
   --shell-topbar-h: 48px;
+  --tab-accent: #0078D4;        /* ตัวชี้แท็บ ribbon active (P2-S135) */
   --hd: 'IBM Plex Sans Thai', sans-serif;
   --bd: 'Sarabun', sans-serif;
   --cd: 'JetBrains Mono', monospace;
@@ -402,6 +403,58 @@ body {
 }
 .tb-select:hover { border-color: var(--shell-accent); }
 .tb-select option { background: var(--shell-surface); color: var(--shell-text); }
+
+/* ══════════ Ribbon (P2-S135) — แท็บ + กลุ่มคำสั่ง (คล้าย MS Office) ══════════ */
+.ribbon { flex-shrink: 0; background: var(--shell-surface); }
+
+/* Quick Access ปุ่มไอคอนบน topbar (Undo/Redo) */
+.qa-btn { width: 30px; height: 30px; }
+.qa-sep { width: 1px; height: 20px; background: var(--shell-border); margin: 0 4px; flex-shrink: 0; }
+
+/* แถบแท็บ */
+.ribbon-tabs {
+  display: flex; align-items: flex-end; gap: 2px;
+  padding: 0 10px; border-bottom: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+}
+.rb-tab {
+  font-family: var(--hd); font-size: 12.5px; font-weight: 500;
+  color: var(--shell-text-dim); background: transparent; border: none;
+  border-bottom: 2.5px solid transparent; border-radius: 6px 6px 0 0;
+  padding: 9px 15px 7px; cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color .12s, background .12s;
+}
+.rb-tab:hover { color: var(--shell-text); background: var(--shell-accent-lt); }
+.rb-tab.active { color: var(--shell-text); font-weight: 600; border-bottom-color: var(--tab-accent, #0078D4); }
+.rb-tab-ctx { color: var(--tab-accent, #0078D4); }   /* แท็บ contextual (รูปภาพ) */
+.rb-collapse {
+  margin-left: auto; width: 26px; height: 26px; align-self: center;
+  border: none; background: transparent; color: var(--shell-text-dim);
+  border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.rb-collapse:hover { background: var(--shell-accent-lt); color: var(--shell-text); }
+.rb-collapse svg { width: 16px; height: 16px; transition: transform .18s; }
+.ribbon.collapsed .rb-collapse svg { transform: rotate(180deg); }
+
+/* พาเนล + กลุ่ม */
+.ribbon-body {
+  display: flex; align-items: stretch; flex-wrap: wrap;
+  background: var(--shell-toolbar-bg); border-bottom: 1px solid var(--shell-border);
+  padding: 6px 8px 3px; min-height: 70px; overflow-x: auto;
+}
+.ribbon.collapsed .ribbon-body { display: none; }
+.ribbon-panel { display: none; align-items: stretch; }
+.ribbon-panel.active { display: flex; }
+.rb-group {
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 0 8px; border-right: 1px solid var(--shell-border);
+}
+.rb-group:last-child { border-right: none; }
+.rb-group-row { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; flex: 1; }
+.rb-group-label {
+  font-size: 10px; color: var(--shell-text-dim); text-align: center;
+  padding-top: 3px; letter-spacing: .2px; white-space: nowrap;
+}
 
 /* Tooltip */
 .tb-btn[data-tip]::after {
