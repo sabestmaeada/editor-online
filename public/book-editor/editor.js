@@ -6052,7 +6052,9 @@ function resetImageFilePicker() {
   if (imgUrlEl) imgUrlEl.removeAttribute('readonly');
   
   const embedCheckbox = document.getElementById('imgEmbedFile');
-  if (embedCheckbox) embedCheckbox.checked = true;
+  // ค่าเริ่มต้น: ไม่ติ๊ก = โหมด link (คัดลอกลง ./images/) แทน Base64 · รูป Base64 เดิม
+  // จะถูกตั้ง checked อีกทีใน showImageModalForEdit ตามชนิดรูปจริง
+  if (embedCheckbox) embedCheckbox.checked = false;
 }
 
 function showImageModal() {
