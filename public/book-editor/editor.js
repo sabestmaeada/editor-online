@@ -1853,7 +1853,7 @@ td.table-cell-targeted, th.table-cell-targeted {
   -webkit-print-color-adjust: exact;
 }
 .img-frame.annotating.tool-text .img-textbox { cursor: move; }
-.img-frame.annotating.tool-text .img-textbox.selected { box-shadow: 0 0 0 2px rgba(45,108,223,.55); }
+.img-frame.annotating.tool-text .img-textbox.selected { box-shadow: 0 0 0 1px rgba(255,255,255,.9); }   /* P2-S136 — ขาวบางเหมือน rect: ไม่บังสีเส้นขอบตอนเลือก */
 .img-textbox.editing { cursor: text; outline: none; box-shadow: 0 0 0 2px rgba(45,108,223,.55); }
 .img-textbox-handle {
   position: absolute; right: -6px; top: 50%; margin-top: -6px;
