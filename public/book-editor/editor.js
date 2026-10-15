@@ -1754,6 +1754,11 @@ td.table-cell-targeted, th.table-cell-targeted {
   width: 38px; height: 38px; margin-left: -19px; margin-top: -19px;
   border-width: 2.5px; line-height: 33px; font-size: 18px;
 }
+/* ป้ายลำดับย่อย 2+ ตัวอักษร → ลด font (P2-S137) */
+.img-marker.long { font-size: 11px; letter-spacing: -.3px; }
+.img-frame.msize-1 .img-marker.long { font-size: 7.5px; }
+.img-frame.msize-2 .img-marker.long { font-size: 9px; }
+.img-frame.msize-4 .img-marker.long { font-size: 13px; }
 /* annotate mode — frame interactive, markers grabbable */
 .img-frame.annotating { cursor: crosshair; outline: 2px solid #1A6B52; outline-offset: 2px; }
 /* The <img> itself sets cursor:pointer (a directly-applied rule beats the
@@ -3254,6 +3259,40 @@ try {
   markerContinuous = localStorage.getItem('bookEditor_markerContinuous') === '1';
 } catch (e) { /* localStorage may be blocked */ }
 
+/* ── ป้ายตัวชี้ลำดับย่อย (P2-S137) — ป้ายอิสระ (เลข/ตัวอักษร) + นับต่อฉลาด ──
+ * ป้าย = main + sub โดยแต่ละส่วนเป็น "เลขล้วน" หรือ "ตัวอักษรล้วน" สลับชนิดกัน
+ *   หลักเลข:    1, 1a, 1b, 2, 2a …   · หลักตัวอักษร: a, a1, a2, b, b1 …
+ * markerMainStyle = ชนิดของ "ระดับหลัก" (num/alpha) · auto เพิ่มส่วนท้าย (1a→1b, a1→a2) */
+let markerMainStyle = 'num';
+try {
+  const ms = localStorage.getItem('bookEditor_markerMainStyle');
+  if (ms === 'num' || ms === 'alpha') markerMainStyle = ms;
+} catch (e) { /* blocked */ }
+function mkParse(l) {
+  const m = String(l == null ? '' : l).match(/^([0-9]+|[A-Za-z]+)([0-9]+|[A-Za-z]+)?$/);
+  return m ? { main: m[1], sub: m[2] || '' } : null;
+}
+function mkIsNum(s) { return /^[0-9]+$/.test(s); }
+function mkVal(s) {
+  return mkIsNum(s) ? parseInt(s, 10)
+    : s.toLowerCase().split('').reduce((a, c) => a * 26 + (c.charCodeAt(0) - 96), 0);
+}
+function mkIncLetters(s) {
+  const a = s.split(''); let i = a.length - 1; const up = s === s.toUpperCase();
+  while (i >= 0) {
+    const c = a[i].toLowerCase();
+    if (c === 'z') { a[i] = up ? 'A' : 'a'; i--; }
+    else { a[i] = String.fromCharCode(c.charCodeAt(0) + 1); if (up) a[i] = a[i].toUpperCase(); return a.join(''); }
+  }
+  return (up ? 'A' : 'a') + a.join('');
+}
+function mkIncPart(s) { return mkIsNum(s) ? String(parseInt(s, 10) + 1) : mkIncLetters(s); }
+/** ป้ายถัดไป (นับต่อฉลาด): มี sub → +sub · ไม่มี → +main */
+function mkAutoAfter(l) { const p = mkParse(l); if (!p) return l; return p.sub ? p.main + mkIncPart(p.sub) : mkIncPart(p.main); }
+/** ป้ายแรกของสไตล์หลักปัจจุบัน */
+function mkFirst() { return markerMainStyle === 'alpha' ? 'a' : '1'; }
+function mkLabelOf(m) { return m.getAttribute('data-n') || m.textContent || ''; }
+
 // P2-S92 — marker background colour. Default green (#1A6B52) renders via CSS
 // with NO inline style; other colours are written inline so they persist.
 const MARKER_COLORS = ['#1A6B52', '#E5534B', '#E08A1E', '#2D6CDF', '#18181B'];
@@ -3930,6 +3969,9 @@ function updateMarkerColorSwatches() {
   if (!menu) return;
   menu.querySelectorAll('.marker-swatch').forEach((s) =>
     s.classList.toggle('active', s.getAttribute('data-color') === markerColor));
+  // P2-S137 — ไฮไลต์ปุ่มระดับหลักที่เลือกอยู่
+  menu.querySelectorAll('[data-mkstyle]').forEach((b) =>
+    b.classList.toggle('is-active', b.getAttribute('data-mkstyle') === markerMainStyle));
 }
 
 /** Pick a marker background colour — applies to ALL markers on the current
@@ -3988,22 +4030,66 @@ function markerMenuAction(action) {
   else if (action === 'bigger') { changeMarkerSize(1); }
   else if (action === 'smaller') { changeMarkerSize(-1); }
   else if (action === 'continuous') { toggleContinuousMode(); }
+  // P2-S137 — ระดับหลัก + ป้ายถัดไป (หลัก/ย่อย)
+  else if (action === 'style-num') { setMarkerMainStyle('num'); }
+  else if (action === 'style-alpha') { setMarkerMainStyle('alpha'); }
+  else if (action === 'next-main') { markerNextMode('main'); }
+  else if (action === 'next-sub') { markerNextMode('sub'); }
+}
+/** ตั้งชนิดของ "ระดับหลัก" (num/alpha) + รีเซ็ตป้ายถัดไป (P2-S137) */
+function setMarkerMainStyle(style) {
+  markerMainStyle = (style === 'alpha') ? 'alpha' : 'num';
+  try { localStorage.setItem('bookEditor_markerMainStyle', markerMainStyle); } catch (e) { /* blocked */ }
+  markerNextOverride = null;   // ป้ายถัดไป = หลักตัวแรกของสไตล์ใหม่
+  updateMarkerMenuState();
+  updateMarkerColorSwatches();   // ไฮไลต์ปุ่มโหมดในเมนูทันที (เมนูยังเปิดค้างอยู่)
+  showToast('ระดับหลัก: ' + (markerMainStyle === 'alpha' ? 'ตัวอักษร a,b,c' : 'เลข 1,2,3')
+    + ' · ป้ายถัดไป: ' + peekNextMarkerNumber(annotatingFrame));
+}
+/** ตั้งป้ายถัดไปเป็น "หลัก" หรือ "ย่อย" (P2-S137) */
+function markerNextMode(mode) {
+  const scope = markerScopeFor(annotatingFrame && annotatingFrame.querySelector('.img-markers'));
+  markerNextOverride = (mode === 'sub') ? markerSubNext(scope) : markerMainNext(scope);
+  updateMarkerMenuState();
+  showToast('ป้ายถัดไป: ' + markerNextOverride + (mode === 'sub' ? ' (ย่อย)' : ' (หลัก)'));
 }
 
 /** Next number for a new marker = max existing data-n + 1.
  *  Per-image mode scopes to the current frame; continuous mode scopes
  *  to the whole document so numbers carry across images. */
-function nextMarkerNumber(markers) {
-  const scope = markerContinuous ? getDoc().body : markers;
-  let max = 0;
-  if (scope) {
-    scope.querySelectorAll('.img-marker').forEach((m) => {
-      const n = parseInt(m.getAttribute('data-n') || '0', 10);
-      if (n > max) max = n;
-    });
-  }
-  return max + 1;
+function markerScopeFor(frameMarkers) {
+  return markerContinuous ? getDoc().body : frameMarkers;
 }
+/** ป้าย "ระดับหลัก" ถัดไป ตามสไตล์ปัจจุบัน (เลขหลักถัดไป หรือตัวอักษรถัดไป) */
+function markerMainNext(scope) {
+  let best = null;
+  if (scope) scope.querySelectorAll('.img-marker').forEach((m) => {
+    const p = mkParse(mkLabelOf(m)); if (!p) return;
+    if (mkIsNum(p.main) !== (markerMainStyle === 'num')) return;   // เฉพาะหลักชนิดเดียวกับสไตล์
+    if (best === null || mkVal(p.main) > mkVal(best)) best = p.main;
+  });
+  return best === null ? mkFirst() : mkIncPart(best);
+}
+/** ป้าย "ย่อย" ถัดไป — ยึดระดับหลัก (markerMainStyle):
+ *  กลุ่ม = ป้ายหลักของตัวชี้ล่าสุดที่ "ชนิดเดียวกับระดับหลัก" (ข้ามชนิดอื่น)
+ *  ชนิดของย่อย = สลับกับระดับหลัก (หลักเลข→ย่อยอักษร 2a · หลักอักษร→ย่อยเลข b1) */
+function markerSubNext(scope) {
+  const styleNum = markerMainStyle === 'num';
+  const firstSub = styleNum ? 'a' : '1';
+  if (!scope) return mkFirst() + firstSub;   // ยังไม่เลือกรูป → ย่อยตัวแรก (1a / a1)
+  const parsed = Array.from(scope.querySelectorAll('.img-marker'))
+    .map((m) => mkParse(mkLabelOf(m)))
+    .filter((p) => p && mkIsNum(p.main) === styleNum);   // เฉพาะกลุ่มชนิดเดียวกับระดับหลัก
+  const g = parsed.length ? parsed[parsed.length - 1].main : mkFirst();
+  const subs = parsed
+    .filter((p) => p.main === g && p.sub && mkIsNum(p.sub) !== styleNum)
+    .map((p) => p.sub);
+  if (!subs.length) return g + firstSub;
+  const best = subs.reduce((b, s) => (mkVal(s) > mkVal(b) ? s : b), subs[0]);
+  return g + mkIncPart(best);
+}
+/** คงชื่อเดิมไว้ให้โค้ดอื่นเรียก — ค่าเริ่มต้น = ป้ายหลักถัดไป */
+function nextMarkerNumber(markers) { return markerMainNext(markerScopeFor(markers)); }
 
 /* ── "Next number" override (P2-S81). Double-clicking a marker opens a
  *    dialog that relabels THAT marker to N and arms a shared running
@@ -4020,20 +4106,19 @@ let markerStartTargetMarker = null;
 // markers themselves persist in HTML; this running pointer resets on load).
 let markerNextOverride = null;
 
-/** What the next marker number would be, without consuming the counter. */
+/** ป้ายถัดไป (ไม่กินตัวนับ) — override ที่ตั้งไว้ หรือป้ายหลักถัดไป (P2-S137) */
 function peekNextMarkerNumber(frame) {
   if (markerNextOverride != null) return markerNextOverride;
-  return nextMarkerNumber(frame ? frame.querySelector('.img-markers') : null);
+  return markerMainNext(markerScopeFor(frame && frame.querySelector('.img-markers')));
 }
 
-/** Number for a NEW marker — uses + advances the shared override if set. */
+/** ป้ายสำหรับตัวชี้ใหม่ — ใช้ override (ถ้ามี) แล้วนับต่อฉลาด · ไม่งั้นใช้ป้ายหลักถัดไป
+ *  แล้วตั้ง override ให้ตัวถัดไปนับต่อ (P2-S137) */
 function computeNextMarkerNumber(frame) {
-  if (markerNextOverride != null) {
-    const n = markerNextOverride;
-    markerNextOverride = n + 1; // advance the shared counter
-    return n;
-  }
-  return nextMarkerNumber(frame.querySelector('.img-markers'));
+  const scope = markerScopeFor(frame && frame.querySelector('.img-markers'));
+  const label = (markerNextOverride != null) ? markerNextOverride : markerMainNext(scope);
+  markerNextOverride = mkAutoAfter(label);   // ตัวถัดไปนับต่อจากป้ายนี้ (1a→1b, a1→a2, 1→2)
+  return label;
 }
 
 function openMarkerStartDialog(frame, marker) {
@@ -4042,14 +4127,8 @@ function openMarkerStartDialog(frame, marker) {
   markerStartTargetMarker = marker || null;
   const input = document.getElementById('markerStartInput');
   if (input) {
-    // Prefill with the clicked marker's current number (the value being
-    // reassigned); fall back to the frame's next number.
-    const cur = marker
-      ? parseInt(marker.getAttribute('data-n') || '', 10)
-      : NaN;
-    input.value = String(
-      Number.isFinite(cur) ? cur : peekNextMarkerNumber(frame),
-    );
+    // เติมค่า: ป้ายปัจจุบันของตัวที่ดับเบิลคลิก · ไม่งั้น = ป้ายถัดไป (P2-S137 — รับ text)
+    input.value = marker ? mkLabelOf(marker) : String(peekNextMarkerNumber(frame));
   }
   document.getElementById('markerStartModal').classList.add('show');
   if (input) { input.focus(); input.select(); }
@@ -4062,18 +4141,18 @@ function setMarkerStartValue(n) {
 
 function applyMarkerStart() {
   const input = document.getElementById('markerStartInput');
-  let n = parseInt(input && input.value, 10);
-  if (!Number.isFinite(n) || n < 1) n = 1;
-  // Relabel the double-clicked marker itself to N…
+  // P2-S137 — ป้ายอิสระ (เลข/ตัวอักษร เช่น 1, 1a, a, a2) · จำกัด 4 ตัวอักษร
+  let label = String((input && input.value) || '').trim().slice(0, 4);
+  if (!label) label = mkFirst();
   if (markerStartTargetMarker) {
-    markerStartTargetMarker.setAttribute('data-n', String(n));
-    markerStartTargetMarker.textContent = String(n);
+    markerStartTargetMarker.setAttribute('data-n', label);
+    markerStartTargetMarker.textContent = label;
+    markerStartTargetMarker.classList.toggle('long', label.length > 1);
   }
-  // …and set the shared running counter so the NEXT marker (on ANY
-  // image) continues from N+1. Other existing markers are untouched.
-  markerNextOverride = n + 1;
+  // ตั้งตัวนับให้ตัวถัดไปนับต่อฉลาดจากป้ายนี้ (1a→1b, a1→a2, 1→2) ข้ามรูปได้
+  markerNextOverride = mkAutoAfter(label);
   setDirty(true);
-  showToast('ตั้งตัวชี้นี้เป็นเลข ' + n + ' (ตัวถัดไปนับต่อ ' + (n + 1) + ' ข้ามรูปได้)');
+  showToast('ตั้งป้ายตัวชี้เป็น "' + label + '" · ตัวถัดไป: ' + markerNextOverride);
   closeMarkerStartModal();
 }
 
@@ -4098,9 +4177,11 @@ function renumberMarkers() {
     const n = String(i + 1);
     m.setAttribute('data-n', n);
     m.textContent = n;
+    m.classList.toggle('long', n.length > 1);   // P2-S137
   });
+  markerNextOverride = null;   // นับต่อจากลำดับที่เรียงใหม่
   setDirty(true);
-  showToast('เรียงเลขใหม่แล้ว');
+  showToast('เรียงเลขใหม่แล้ว (เป็นเลขล้วน 1,2,3)');
 }
 
 /** Continuous renumber: walk every image's markers in document order
@@ -4119,9 +4200,11 @@ function renumberAllContinuous() {
         const n = String(counter++);
         m.setAttribute('data-n', n);
         m.textContent = n;
+        m.classList.toggle('long', n.length > 1);   // P2-S137
         touched++;
       });
   });
+  markerNextOverride = null;
   if (touched > 0) setDirty(true);
   showToast('เรียงเลขต่อเนื่องข้ามรูปแล้ว');
 }
@@ -4200,7 +4283,7 @@ function bindMarkerEvents(doc) {
     const markers = frame.querySelector('.img-markers');
     const n = String(computeNextMarkerNumber(frame));
     const m = doc.createElement('span');
-    m.className = 'img-marker';
+    m.className = 'img-marker' + (n.length > 1 ? ' long' : '');   // P2-S137 — ป้ายยาว → font เล็กลง
     m.setAttribute('data-n', n);
     m.textContent = n;
     m.style.left = x.toFixed(1) + '%';
@@ -5818,6 +5901,10 @@ function bindToolbarMenuDismiss(doc) {
     if (lm && lm.classList.contains('show')) hideLineMenu();
     const tm = document.getElementById('textMenu');
     if (tm && tm.classList.contains('show')) hideTextMenu();
+    // P2-S138 — marker submenu too (clicking the image to place a marker
+    // never reaches the parent-document outside-click handler).
+    const mm = document.getElementById('markerMenu');
+    if (mm && mm.classList.contains('show')) hideMarkerMenu();
   }, true);
 
   doc.addEventListener('keydown', (e) => {

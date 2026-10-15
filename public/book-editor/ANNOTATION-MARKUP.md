@@ -53,7 +53,7 @@
 | `.book-img` | `<figure>` | บล็อกรูปทั้งก้อน (มีอยู่เดิม) |
 | `.img-frame` | `<span>` | กรอบอ้างอิงพิกัด `position:relative; display:inline-block` · `+ .msize-1..4` (ขนาดตัวชี้, ไม่มี = 3) |
 | `.img-markers` | `<span>` | ชั้น overlay ของ marker/rect/textbox (`position:absolute; inset:0; pointer-events:none`) |
-| `.img-marker` | `<span>` | ตัวชี้ตัวเลข · `data-n="N"` = เลขของมัน · พิกัด `left/top` % (จุดอ้างอิง = กึ่งกลางวงกลม ชดเชยด้วย margin) |
+| `.img-marker` | `<span>` | ตัวชี้ · `data-n` = **ป้าย** (เลขหรือลำดับย่อย เช่น `1`, `1a`, `a`, `a2` — P2-S137) = textContent · พิกัด `left/top` % (จุดอ้างอิง = กึ่งกลางวงกลม) · ป้าย 2+ ตัวอักษรมีคลาส `.long` (font เล็กลง) |
 | `.img-rect` | `<span>` | กรอบเน้น · `+ .rounded` = มุมมน · `left/top/width/height` % |
 | `.img-textbox` | `<div>` | กล่องข้อความ callout · `contenteditable="false"` ตอน idle · `left/top/width` % (จุดอ้างอิง = ขอบบนซ้าย) |
 | `.img-lines` | `<svg>` | ชั้นเส้น · `viewBox="0 0 100 H"` + `preserveAspectRatio="none"` + `data-h="H"` |
@@ -108,7 +108,7 @@ editor ทำความสะอาดก่อนเซฟ → markup ที�
 
 | attribute | บน | ความหมาย |
 |---|---|---|
-| `data-n` | `.img-marker` | เลขที่แสดงของตัวชี้ |
+| `data-n` | `.img-marker` | **ป้ายที่แสดง** = textContent · เลขล้วน (`1`) หรือลำดับย่อย (`1a`, `a2`) — P2-S137 · ป้ายยาว >1 ตัว → `.img-marker.long` |
 | `msize-1..4` (class) | `.img-frame` | ขนาดตัวชี้ (เส้นผ่าศก. 18/24/30/38 px · ไม่มี = 3) |
 | `data-h` | `svg.img-lines` | ความสูง viewBox = `round(100 × สูงกรอบ/กว้างกรอบ)` |
 | `data-type` | `g.img-line` | `straight` / `elbow45` / `elbow90` / `curved` |

@@ -764,6 +764,11 @@ tr:hover td {
   width: 38px; height: 38px; margin-left: -19px; margin-top: -19px;
   border-width: 2.5px; line-height: 33px; font-size: 18px;
 }
+/* ป้ายลำดับย่อย 2+ ตัวอักษร (เช่น 1a, a2) → ลด font ให้พอดีวงกลม (P2-S137) */
+.img-marker.long { font-size: 11px; letter-spacing: -.3px; }
+.img-frame.msize-1 .img-marker.long { font-size: 7.5px; }
+.img-frame.msize-2 .img-marker.long { font-size: 9px; }
+.img-frame.msize-4 .img-marker.long { font-size: 13px; }
 
 /* ── Highlight rectangles (P2-S86) — fallback / standalone (px) ──
    Border-only boxes anchored to the image by %. Colour set inline per
