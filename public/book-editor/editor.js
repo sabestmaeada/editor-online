@@ -1277,6 +1277,19 @@ async function resolveProjectFile(rootHandle, relativePath) {
   } catch (e) { return null; }
 }
 
+/** P2-S144 — "./images/03-setup/x.png" → File (or null). Images may sit in
+ *  sub-folders of images/, and getFileHandle() rejects names containing "/"
+ *  ("Name is not allowed"), so walk the folders via resolveProjectFile.
+ *  Segments are URL-decoded, like a browser loading the file from disk. */
+async function getProjectImageFile(src, imgDirHandle) {
+  if (!src || !src.startsWith('./images/') || !imgDirHandle) return null;
+  const path = src.slice('./images/'.length).replace(/[?#].*$/, '')
+    .split('/')
+    .map((p) => { try { return decodeURIComponent(p); } catch (e) { return p; } })
+    .join('/');
+  return resolveProjectFile(imgDirHandle, path);
+}
+
 async function resolveLinkedStylesheets(parsedDoc) {
   const result = { resolvedCss: '', resolvedHrefs: [] };
   if (!projectDirHandle || !parsedDoc.head) return result;
@@ -1406,10 +1419,9 @@ async function createObjectUrlForProjectImage(src) {
   if (!projectDirHandle) return null;
 
   try {
-    const filename = decodeURIComponent(src.replace('./images/', ''));
     const imgDirHandle = await projectDirHandle.getDirectoryHandle('images');
-    const fileHandle = await imgDirHandle.getFileHandle(filename);
-    const file = await fileHandle.getFile();
+    const file = await getProjectImageFile(src, imgDirHandle);   // P2-S144 — sub-folders OK
+    if (!file) throw new Error('not found');
     projectImageCache.set(src, file);
     const objUrl = await safeBlobToUrl(file);
     if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
@@ -1634,10 +1646,11 @@ async function processAndLoadHtml(htmlString, name) {
       return;
     }
     if (!imgDirHandle) return;
-    const filename = src.replace('./images/', '');
     try {
-      const fileHandle = await imgDirHandle.getFileHandle(filename);
-      const file = await fileHandle.getFile();
+      // P2-S144 — รองรับโฟลเดอร์ย่อย (./images/03-setup/x.png); เดิมส่ง
+      // "03-setup/x.png" ให้ getFileHandle ทั้งก้อน → error → รูปไม่แสดง
+      const file = await getProjectImageFile(src, imgDirHandle);
+      if (!file) throw new Error('not found');
       // ถ้า skipInline: เก็บ cache แต่ไม่ resolve src → iframe จะ render broken
       // แต่หลัง save จะได้ ./images/... กลับมาเหมือนเดิม
       if (skipInline) {
@@ -1651,7 +1664,7 @@ async function processAndLoadHtml(htmlString, name) {
       img.setAttribute('src', objUrl);
       if (objUrl.startsWith('blob:')) activeObjectUrls.push(objUrl);
     } catch (e) {
-      console.warn("หาไฟล์รูปไม่เจอ:", filename);
+      console.warn("หาไฟล์รูปไม่เจอ:", src);
     }
   }
 
