@@ -276,6 +276,19 @@
             </div>
             <div class="rb-group-label">ติดตามการแก้ไข</div>
           </div>
+          <!-- P2-S140 — ไล่ดูการแก้ไขทีละจุด -->
+          <div class="rb-group">
+            <div class="rb-group-row">
+              <button class="tb-btn" id="reviewPrevBtn" data-tip="การแก้ไขก่อนหน้า" onclick="goReviewChange(-1)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <span class="rb-counter is-zero" id="reviewCounter" aria-live="polite">0 / 0</span>
+              <button class="tb-btn" id="reviewNextBtn" data-tip="การแก้ไขถัดไป" onclick="goReviewChange(1)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            <div class="rb-group-label">ไล่ดูการแก้ไข</div>
+          </div>
         </div>
 
       </div>

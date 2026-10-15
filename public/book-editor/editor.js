@@ -514,7 +514,9 @@ function performTrackedDeleteInto(range, doc, isBackward) {
     return;
   }
   // Safety: ถ้า fragment ไม่มี text จริง ๆ (โครงสร้างเปล่า) → ไม่ wrap
-  if (fragment.textContent.trim() === '' && !fragment.querySelector('img')) {
+  // P2-S141 — ห้าม trim(): ช่องว่าง/nbsp เป็นเนื้อหาที่ต้องติดตาม
+  // (เดิม trim() ทำให้ลบช่องว่างแล้วหายไปเลย ไม่มี <del>)
+  if (fragment.textContent === '' && !fragment.querySelector('img')) {
     range.collapse(true);
     return;
   }
@@ -569,8 +571,11 @@ function isOurDel(el) {
   return el.getAttribute('data-user') === currentUser.name;
 }
 
+// P2-S142 — "+" → "*": also matches the empty text node that insertNode /
+// extractContents leave behind, which used to block merging (each Backspace
+// became its own <del>).
 function isOnlyZwsp(n) {
-  return n && n.nodeType === Node.TEXT_NODE && /^[​]+$/.test(n.nodeValue);
+  return n && n.nodeType === Node.TEXT_NODE && /^[​]*$/.test(n.nodeValue);
 }
 
 // ลบ ZWSP text node ที่ติดกับ el ในทิศที่ระบุ (prev/next) แล้วคืน sibling ที่อยู่ถัดจากนั้น
@@ -661,6 +666,10 @@ function rangeCrossesBlocks(range) {
 // ==============================================
 
 let currentTrackChangeNode = null;
+// P2-S140 — review navigation (‹ › in the ribbon)
+let reviewPos = null;            // last change visited/clicked — drives the "n / N" counter
+let reviewNavActive = false;     // popover opened by ‹ › → accept/reject jumps to the next one
+let reviewNavScrolling = false;  // our own scroll must not close the popover
 
 function acceptAllChanges() {
   const doc = getDoc();
@@ -674,6 +683,7 @@ function acceptAllChanges() {
   }
   if (!confirm(`ยอมรับการแก้ไขทั้งหมด ${total} รายการ?\n(เพิ่ม ${insertions.length} · ลบ ${deletions.length})`)) return;
 
+  hideTrackChangeMenu();   // P2-S140 — popover node is about to vanish
   pushUndoSnapshot();
   insertions.forEach(ins => {
     while (ins.firstChild) ins.parentNode.insertBefore(ins.firstChild, ins);
@@ -702,6 +712,7 @@ function acceptMyChanges() {
   }
   if (!confirm(`ยอมรับการแก้ไขของคุณ (${currentUser.name}) ทั้งหมด ${total} รายการ?\n(เพิ่ม ${myIns.length} · ลบ ${myDel.length})`)) return;
 
+  hideTrackChangeMenu();   // P2-S140 — popover node is about to vanish
   pushUndoSnapshot();
   myIns.forEach(ins => {
     while (ins.firstChild) ins.parentNode.insertBefore(ins.firstChild, ins);
@@ -730,6 +741,7 @@ function rejectMyChanges() {
   }
   if (!confirm(`ปฏิเสธการแก้ไขของคุณ (${currentUser.name}) ทั้งหมด ${total} รายการ? (คืนค่ากลับเป็นต้นฉบับ)\n(เพิ่ม ${myIns.length} · ลบ ${myDel.length})`)) return;
 
+  hideTrackChangeMenu();   // P2-S140 — popover node is about to vanish
   pushUndoSnapshot();
   myIns.forEach(ins => ins.remove());
   myDel.forEach(del => {
@@ -754,6 +766,7 @@ function rejectAllChanges() {
   }
   if (!confirm(`ปฏิเสธการแก้ไขทั้งหมด ${total} รายการ? (คืนค่ากลับเป็นต้นฉบับ)\n(เพิ่ม ${insertions.length} · ลบ ${deletions.length})`)) return;
 
+  hideTrackChangeMenu();   // P2-S140 — popover node is about to vanish
   pushUndoSnapshot();
   insertions.forEach(ins => ins.remove());
   deletions.forEach(del => {
@@ -847,14 +860,25 @@ function bindTrackChangesClicks(doc) {
       showTrackChangeMenu(target);
     } else {
       hideTrackChangeMenu();
+      reviewPos = null;          // P2-S140 — caret moved elsewhere → counter "– / N"
+      updateReviewCounter();
     }
   });
-  doc.addEventListener('scroll', hideTrackChangeMenu, { passive: true });
+  doc.addEventListener('scroll', () => {
+    if (!reviewNavScrolling) hideTrackChangeMenu();
+  }, { passive: true });
   window.addEventListener('resize', hideTrackChangeMenu);
 }
 
-function showTrackChangeMenu(node) {
+/** fromNav = opened by the ribbon ‹ › buttons (P2-S140): flash the change and
+ *  make accept/reject continue to the next one. A plain click keeps the old
+ *  behaviour (popover only, no auto-advance). */
+function showTrackChangeMenu(node, fromNav) {
   currentTrackChangeNode = node;
+  reviewNavActive = !!fromNav;
+  reviewPos = node;
+  if (!node.classList.contains('tc-current')) markReviewNode(node, false);
+  updateReviewCounter();
   const menu = document.getElementById('trackChangeMenu');
   if (!menu) return;
 
@@ -896,42 +920,170 @@ function showTrackChangeMenu(node) {
 
 function hideTrackChangeMenu() {
   const menu = document.getElementById('trackChangeMenu');
+  const wasOpen = !!(menu && menu.classList.contains('show')) || !!currentTrackChangeNode;
   if (menu) menu.classList.remove('show');
   currentTrackChangeNode = null;
+  reviewNavActive = false;
+  if (wasOpen) clearReviewMarks(getDoc());   // (runs on every iframe scroll — skip when idle)
 }
 
 function acceptCurrentChange() {
   if (!currentTrackChangeNode) return;
+  const advance = reviewNavActive;
+  clearReviewMarks(getDoc());   // keep the highlight class out of the undo snapshot
   pushUndoSnapshot();
-  
+
   const node = currentTrackChangeNode;
+  const mark = reviewRangeBefore(node);
   if (node.tagName === 'INS') {
     while (node.firstChild) node.parentNode.insertBefore(node.firstChild, node);
     node.remove();
   } else if (node.tagName === 'DEL') {
     node.remove();
   }
-  
+
   hideTrackChangeMenu();
   setDirty(true);
   updateStatus();
+  if (advance) reviewAdvanceFrom(mark);
 }
 
 function rejectCurrentChange() {
   if (!currentTrackChangeNode) return;
+  const advance = reviewNavActive;
+  clearReviewMarks(getDoc());
   pushUndoSnapshot();
-  
+
   const node = currentTrackChangeNode;
+  const mark = reviewRangeBefore(node);
   if (node.tagName === 'INS') {
     node.remove();
   } else if (node.tagName === 'DEL') {
     while (node.firstChild) node.parentNode.insertBefore(node.firstChild, node);
     node.remove();
   }
-  
+
   hideTrackChangeMenu();
   setDirty(true);
   updateStatus();
+  if (advance) reviewAdvanceFrom(mark);
+}
+
+// ==============================================
+// TRACK CHANGES — REVIEW NAVIGATION (P2-S140)
+// Ribbon ‹ › walk every ins/del in document order, starting from the caret.
+// A replacement (del + ins) counts as two stops, like Word. The highlight
+// classes (.tc-current / .tc-flash) are editor-only and stripped on save.
+// ==============================================
+
+const REVIEW_SEL = 'ins[data-user], del[data-user]';
+
+function reviewItems(doc) {
+  return doc && doc.body ? Array.from(doc.body.querySelectorAll(REVIEW_SEL)) : [];
+}
+
+/** Collapsed range just before `node` (live — survives unwrap/remove). */
+function reviewRangeBefore(node) {
+  const r = node.ownerDocument.createRange();
+  r.setStartBefore(node);
+  r.collapse(true);
+  return r;
+}
+
+function clearReviewMarks(doc) {
+  if (!doc || !doc.body) return;
+  doc.body.querySelectorAll('.tc-current, .tc-flash').forEach((el) => {
+    el.classList.remove('tc-current', 'tc-flash');
+    if (!el.classList.length) el.removeAttribute('class');
+  });
+}
+
+function markReviewNode(node, flash) {
+  clearReviewMarks(node.ownerDocument);
+  node.classList.add('tc-current');
+  if (flash) {
+    void node.offsetWidth;          // restart the animation on repeat visits
+    node.classList.add('tc-flash');
+  }
+}
+
+/** dir = 1 (next) / -1 (previous). inclusive = a change starting exactly at
+ *  the caret counts as "next" (used after accept/reject, where the caret sits
+ *  where the resolved change was — e.g. the ins of a del+ins pair). */
+function goReviewChange(dir, inclusive) {
+  const doc = getDoc();
+  if (!doc || !doc.body) return;
+  const list = reviewItems(doc);
+  if (!list.length) {
+    hideTrackChangeMenu();
+    reviewPos = null;
+    updateReviewCounter();
+    showToast('ไม่มีการแก้ไขให้ตรวจทาน');
+    return;
+  }
+  const sel = doc.getSelection();
+  const caret = sel && sel.rangeCount && doc.body.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+  let target = null;
+  if (caret) {
+    const cmp = (el) => caret.compareBoundaryPoints(Range.START_TO_START, reviewRangeBefore(el));
+    if (dir > 0) target = list.find((el) => { const k = cmp(el); return k < 0 || (inclusive && k === 0); });
+    else target = list.slice().reverse().find((el) => cmp(el) > 0);
+    if (!target) {
+      target = dir > 0 ? list[0] : list[list.length - 1];
+      if (list.length > 1) {
+        showToast(dir > 0 ? 'ถึงท้ายเอกสาร — วนกลับไปรายการแรก' : 'ถึงต้นเอกสาร — วนไปรายการสุดท้าย');
+      }
+    }
+  } else {
+    target = dir > 0 ? list[0] : list[list.length - 1];
+  }
+  focusReviewChange(target);
+}
+
+function focusReviewChange(node) {
+  const doc = node.ownerDocument;
+  const win = doc.defaultView;
+  const sel = doc.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(reviewRangeBefore(node));
+
+  // centre it in the editor (instant, so the popover can be placed right after)
+  reviewNavScrolling = true;
+  const r = node.getBoundingClientRect();
+  win.scrollTo({ top: win.scrollY + r.top + r.height / 2 - win.innerHeight / 2, behavior: 'instant' });
+
+  reviewPos = node;
+  markReviewNode(node, true);
+  updateReviewCounter();
+  // wait for the scroll event to pass before showing the popover
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    reviewNavScrolling = false;
+    if (node.isConnected) showTrackChangeMenu(node, true);
+  }));
+}
+
+function reviewAdvanceFrom(mark) {
+  const doc = getDoc();
+  if (!doc || !doc.body) return;
+  const sel = doc.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(mark);
+  if (reviewItems(doc).length) setTimeout(() => goReviewChange(1, true), 160);
+  else showToast('ตรวจครบทุกจุดแล้ว');
+}
+
+function updateReviewCounter() {
+  const out = document.getElementById('reviewCounter');
+  if (!out) return;
+  const list = reviewItems(getDoc());
+  const n = list.length;
+  const i = reviewPos && reviewPos.isConnected ? list.indexOf(reviewPos) : -1;
+  out.textContent = n ? (i >= 0 ? (i + 1) + ' / ' + n : '– / ' + n) : '0 / 0';
+  out.classList.toggle('is-zero', !n);
+  ['reviewPrevBtn', 'reviewNextBtn'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('rb-dim', !n);
+  });
 }
 
 function clearTrackUndo() {
@@ -1014,6 +1166,8 @@ function trackUndo() {
   if (cur) trackRedoStack.push(cur);
   restoreSnapshot(trackUndoStack.pop());
   repairMarkerState(getDoc());   // P2-S91 — clean annotation transient + resync baseline
+  hideTrackChangeMenu();         // P2-S140 — old node refs are gone after a restore
+  clearReviewMarks(getDoc());
   setDirty(true);
   updateStatus();
   return true;
@@ -1025,6 +1179,8 @@ function trackRedo() {
   if (cur) trackUndoStack.push(cur);
   restoreSnapshot(trackRedoStack.pop());
   repairMarkerState(getDoc());   // P2-S91
+  hideTrackChangeMenu();         // P2-S140
+  clearReviewMarks(getDoc());
   setDirty(true);
   updateStatus();
   return true;
@@ -1696,6 +1852,16 @@ del[data-user] {
 ins[data-user]:hover, del[data-user]:hover {
   outline: 1px dashed currentColor;
   outline-offset: 1px;
+}
+/* P2-S140 — change reached by the ribbon ‹ › (editor-only, stripped on save) */
+ins[data-user].tc-current, del[data-user].tc-current {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.tc-flash { animation: tcFlash 1.2s ease-out 1; }
+@keyframes tcFlash {
+  from { background-color: color-mix(in srgb, currentColor 32%, transparent); }
 }
 /* tooltip แสดงชื่อผู้ใช้ — render ด้วย JS ใน parent document (ดู bindTrackHoverTooltip) */
 
@@ -7496,6 +7662,8 @@ function buildSaveContent() {
   cloneBody.querySelectorAll('.img-cropping').forEach(i => i.classList.remove('img-cropping'));
   cloneBody.querySelectorAll('.img-selected, .img-editing')
     .forEach(el => el.classList.remove('img-selected', 'img-editing'));
+  // P2-S140 — review-navigation highlight on ins/del
+  clearReviewMarks({ body: cloneBody });
   // drop the stale per-frame counter attr (now a global session counter)
   cloneBody.querySelectorAll('.img-frame[data-next-n]')
     .forEach(f => f.removeAttribute('data-next-n'));
@@ -7623,6 +7791,7 @@ function updateStatus() {
   const chars = text.length;
   document.getElementById('statusInfo').textContent =
     `${words.toLocaleString()} คำ · ${chars.toLocaleString()} ตัวอักษร`;
+  updateReviewCounter();   // P2-S140 — ribbon ‹ n / N ›
 }
 
 function showToast(msg) {

@@ -454,6 +454,13 @@ body {
 }
 .rb-group:last-child { border-right: none; }
 .rb-group-row { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; flex: 1; }
+/* ตัวนับ ‹ n / N › ในแท็บตรวจทาน (P2-S140) */
+.rb-counter {
+  font-family: var(--hd); font-size: 12px; font-weight: 600; color: var(--shell-text);
+  min-width: 50px; text-align: center; font-variant-numeric: tabular-nums; user-select: none;
+}
+.rb-counter.is-zero { color: var(--shell-text-dim); font-weight: 500; }
+.tb-btn.rb-dim { opacity: .45; }
 .rb-group-label {
   font-size: 10px; color: var(--shell-text-dim); text-align: center;
   padding-top: 3px; letter-spacing: .2px; white-space: nowrap;
