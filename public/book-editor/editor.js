@@ -2170,8 +2170,10 @@ function createSidebarItem(num, title, meta, onclick) {
   return div;
 }
 
+// P2-S143 — instant, not smooth: lazy images (0px tall until loaded) that load
+// mid-animation push the target down and a smooth scroll stops short of it.
 function scrollToEl(el) {
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.scrollIntoView({ behavior: 'instant', block: 'start' });
 }
 
 /** สลับ sidebar (P2-S122). force=true ยุบ, false เปิด, undefined สลับ.
@@ -6099,10 +6101,15 @@ function bindAnchorClicks(doc) {
     if (!a) return;
     const href = a.getAttribute('href') || '';
 
-    // Internal anchor (#id) — smooth scroll ใน iframe
+    // Internal anchor (#id) — scroll ใน iframe
     // ใช้ explicit scrollTo (ไม่ใช้ scrollIntoView) เพราะใน contenteditable=true Chrome จะ
     // วาง caret ตอน click → race กับ scrollIntoView → scroll ไม่ทำงาน
     // raF ทำให้ click event settle ก่อน แล้วค่อย scroll
+    // P2-S143 — instant ไม่ใช่ smooth: รูป lazy (สูง 0 จนกว่าจะโหลด) ที่โหลดระหว่าง
+    // แอนิเมชันดันบทลงไป → smooth หยุดก่อนถึงบท (วัดได้ 277–4,404px)
+    // และชิดขอบบนพอดี (ไม่เว้น 20px): ถ้าขอบจอตกใน padding ล่างของบทก่อนหน้า
+    // browser จะยึด (scroll anchoring) บทก่อนหน้าทั้งก้อน → รูปในบทนั้นโหลดแล้ว
+    // ดันบทเป้าหมายลงโดยไม่ชดเชย. ceil = ขอบจอไม่ล้ำเข้าบทก่อนหน้าแม้เศษพิกเซล
     if (href.startsWith('#')) {
       const id = decodeURIComponent(href.slice(1));
       if (!id) return;
@@ -6114,8 +6121,8 @@ function bindAnchorClicks(doc) {
           const rect = target.getBoundingClientRect();
           const currentTop = win.scrollY || doc.documentElement.scrollTop || 0;
           win.scrollTo({
-            top: Math.max(0, currentTop + rect.top - 20),
-            behavior: 'smooth'
+            top: Math.max(0, Math.ceil(currentTop + rect.top)),
+            behavior: 'instant'
           });
         });
       }
