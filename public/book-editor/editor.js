@@ -7726,8 +7726,51 @@ function syncAriaLabels() {
   });
 }
 
+/** P2-S139 — floating tooltip for every [data-tip] in the shell. One
+ *  position:fixed box on <body>, so the ribbon's overflow can't clip it (the
+ *  old ::after tooltip lost its bottom edge). Shown below the element, flipped
+ *  above when there's no room, clamped to the viewport. */
+function initUiTooltips() {
+  const tip = document.createElement('div');
+  tip.className = 'ui-tip';
+  tip.setAttribute('aria-hidden', 'true'); // buttons already carry aria-label
+  document.body.appendChild(tip);
+  let owner = null;
+
+  const hide = () => { owner = null; tip.classList.remove('show'); };
+  const show = (el) => {
+    const text = el.getAttribute('data-tip');
+    if (!text) { hide(); return; }
+    owner = el;
+    tip.textContent = text;
+    const r = el.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    const gap = 6, pad = 6;
+    let top = r.bottom + gap;
+    if (top + th > window.innerHeight - pad) top = r.top - gap - th;
+    let left = r.left + r.width / 2 - tw / 2;
+    left = Math.max(pad, Math.min(left, window.innerWidth - tw - pad));
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    tip.classList.add('show');
+  };
+
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest && e.target.closest('[data-tip]');
+    if (el === owner) return;
+    if (el) show(el); else hide();
+  });
+  document.addEventListener('mouseout', (e) => {
+    if (owner && !owner.contains(e.relatedTarget)) hide();
+  });
+  // Pressing hides it (and keeps it off a dropdown that opens below).
+  document.addEventListener('mousedown', hide, true);
+  window.addEventListener('scroll', hide, true);
+  window.addEventListener('blur', hide);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   syncAriaLabels();
+  initUiTooltips();
   setupModalFocusManagement();
 
   // Track Changes — load user จาก auth (Firebase) หรือ fallback mock
